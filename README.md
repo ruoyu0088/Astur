@@ -187,13 +187,14 @@ Settings (or `main_key` in `astur.conf`):
 | `main_key` | What it means |
 |---|---|
 | `lalt` (default) | Left Alt, reserved: apps never see it. Left Alt plus a key Astur does not use does nothing (typing, editing and navigation keys, the numpad and F1-F12 are swallowed; volume, media, PrintScreen and F13-F24 still work). Right Alt is untouched; use it for app Alt shortcuts (Alt+F4, menus). Alt+Tab passes through by default; optional replacement uses Astur's workspace-aware picker. |
+| `ralt` | Right Alt, reserved the same way: apps never see it, and Left Alt stays the apps' Alt for menu bars and Alt+F4. Alt+Tab passes through by default; the optional Astur switcher works here too. Right Alt no longer types AltGr characters (on a German layout `@` is AltGr+Q and `€` is AltGr+E), so pick it only if you do not need AltGr. |
 | `win` | The Windows key. Apps and Windows keep it; only Astur's shortcuts are taken, and they replace Windows' own (Win+D, Win+1...). Start does not pop up after a Win shortcut or Win+drag. Win+L always locks the PC, so grow-master moves to `Win+O` (unless another of your shortcuts already uses O). |
 | `alt` | Either Alt, GlazeWM-style. Apps keep their Alt shortcuts except the ones Astur uses; menu bars do not pop up after an Astur shortcut. |
 | `ctrl+win` | Ctrl and the Windows key held together. |
 | `capslock` | Caps Lock becomes the main key and no longer turns capitals on (turn it off first). Pressed where Astur can't see it (an admin window, the lock screen, a UAC prompt, or before Astur starts) it still turns capitals on; press it there again (Win+L locks the PC), or use the on-screen keyboard. |
 
-Right Alt and Ctrl+Alt are not offered: on German, French and similar keyboards
-they type characters (AltGr). Win+L and Ctrl+Alt+Del always belong to Windows.
+Ctrl+Alt is not offered: on German, French and similar keyboards it types
+characters (AltGr). Win+L and Ctrl+Alt+Del always belong to Windows.
 
 In Settings, **Shortcuts > Astur key** shows each choice with the Windows
 shortcuts it would take over with your shortcuts. A new key works at once and
@@ -218,20 +219,21 @@ shortcut follow the key you picked.
 | `Alt` + `Shift` + arrows | Move window by direction (across monitors) |
 | `Alt` + `H` / `L` | Shrink / grow master column (`master` layout) |
 | `Alt` + `M` | Promote focused window to master |
+| `Alt` + `E` | Fill the focused window to the whole work area, or back (toggle) |
 | `Alt` + `F` | Toggle float for focused window |
 | `Alt` + `W` | Close focused window |
 | `Alt` + `Enter` | Launch terminal |
 | `Alt` + `Shift+Enter` | Launch browser |
 | `Alt` + `1`–`9`, `0` | Switch to workspace 1–10 |
 | `Alt` + `Shift` + `1`–`9`, `0` | Move focused window to workspace |
-| `Alt` + `Tab` | Windows switcher by default; optional Astur workspace-aware switcher (Left Alt main key) |
+| `Alt` + `Tab` | Windows switcher by default; optional Astur workspace-aware switcher (Left Alt or Right Alt main key) |
 
 `Alt` here is the main key (above): with `main_key = win` read `Win` + `J`, and so on.
 
 On a monitor running the scrolling layout, the arrows, `J K H L M` and a few new
 keys work on columns instead — see [Scrolling layout](#scrolling-layout).
 
-Letter binds (`J K H L M T F W`, and `R C [ ]` for scrolling) plus extra
+Letter binds (`J K H L M T F W E`, and `R C [ ]` for scrolling) plus extra
 chords (`MOD` = the main key, with `CTRL`, `SHIFT`, `ALT`, `WIN`) are configurable
 in `%USERPROFILE%\.astur\astur.conf`, along with workspace keys, gaps, layout,
 borders, rules, launcher, menus, and desktop tools. Status bar uses `navbar.conf`

@@ -1357,9 +1357,10 @@ fn publish_binds(main: config::MainKey, binds: &[config::Bind]) {
 #[inline]
 unsafe fn live_mods(main_vk: u32, held: bool) -> u8 {
     let mut m = 0;
-    if main_vk == VK_LMENU.0 as u32 {
+    if main_vk == VK_LMENU.0 as u32 || main_vk == VK_RMENU.0 as u32 {
         if held {
-            m |= config::MOD_ALT; // Right Alt stays the apps' Alt
+            // The other Alt stays the apps' Alt.
+            m |= config::MOD_ALT;
         }
     } else if vk_down(VK_MENU) {
         m |= config::MOD_ALT;
@@ -1474,6 +1475,7 @@ fn bind_cmd(action: config::Action, arg: u16) -> Option<Cmd> {
         A::ToggleTiling => Cmd::ToggleTiling,
         A::ToggleTabbed => Cmd::ToggleTabbed,
         A::ToggleFloat => Cmd::ToggleFloat,
+        A::FillDesktop => Cmd::ToggleFill,
         A::CloseWindow => Cmd::CloseFocused,
         A::CycleWidth => Cmd::CycleWidth,
         A::CycleHeight => Cmd::CycleHeight,
@@ -1851,7 +1853,7 @@ unsafe extern "system" fn keyboard_proc(code: i32, wparam: WPARAM, lparam: LPARA
                 return LRESULT(1); // apps never see the reserved main key
             }
             let held = MAIN_DOWN.load(Ordering::Relaxed);
-            let alt_reserved = main_vk == VK_LMENU.0 as u32;
+            let alt_reserved = main_vk == VK_LMENU.0 as u32 || main_vk == VK_RMENU.0 as u32;
 
             // Alt+Tab (and Alt+Shift+Tab) under reserved Left Alt: drive the
             // switcher with injected keys and swallow the physical Tab so it
@@ -2527,6 +2529,7 @@ enum Cmd {
     MoveToWs(usize),
     ToggleTiling,
     ToggleFloat,
+    ToggleFill,
     CloseFocused,
     /// This window was minimized or restored: re-tile its own monitor, if it
     /// is tiled there (`retile_for_target`, resolved when processed).
@@ -2624,6 +2627,7 @@ impl Cmd {
             Cmd::MoveToWs(_) => "MoveToWs",
             Cmd::ToggleTiling => "ToggleTiling",
             Cmd::ToggleFloat => "ToggleFloat",
+            Cmd::ToggleFill => "ToggleFill",
             Cmd::CloseFocused => "CloseFocused",
             Cmd::RetileFor(_) => "RetileFor",
             Cmd::RefreshMonitors => "RefreshMonitors",
@@ -2770,9 +2774,13 @@ fn apply_hook_config(cfg: &Config) {
             log_error!("hotkey {} ({what}): {}", i.chord, i.text);
         }
     }
-    if cfg.alt_tab_replacement && cfg.main_key != config::MainKey::LAlt {
-        // Its Tab path needs the reserved Left Alt (keyboard_proc).
-        log_error!("alt_tab_replacement works only with main_key = lalt; Windows' Alt+Tab runs");
+    if cfg.alt_tab_replacement
+        && !matches!(cfg.main_key, config::MainKey::LAlt | config::MainKey::RAlt)
+    {
+        // Its Tab path needs a reserved Alt (keyboard_proc).
+        log_error!(
+            "alt_tab_replacement works only with main_key = lalt or ralt; Windows' Alt+Tab runs"
+        );
     }
     publish_binds(cfg.main_key, &keys.binds);
 }
@@ -5278,6 +5286,95 @@ fn floats_by_default(exe_path: &str) -> bool {
         .file_name()
         .and_then(|n| n.to_str())
         .is_some_and(|n| n.eq_ignore_ascii_case("astur-settings.exe"))
+}
+
+/// Windows filled to the whole work area by `ToggleFill`, with the rect and
+/// floating state they had before, so the same key restores them.
+static FILLED: Mutex<Option<HashMap<isize, (RECT, bool)>>> = Mutex::new(None);
+
+/// Alt+E: fill the focused window to its monitor's whole work area, or put it
+/// back where it was. In tiling mode a filled window floats (so a re-tile
+/// leaves it alone) and keeps the size and place the tiling gave it until then;
+/// in float mode nothing places windows, so only the rect moves. Both modes
+/// work: the toggle is a shortcut, not a layout feature.
+unsafe fn toggle_fill(mgr: &mut Manager) {
+    let tiling = mgr.tiling;
+    let (mi, a, h) = mgr.focused();
+    if h == 0 || scratch_hidden(h) {
+        return;
+    }
+    let hwnd = hwnd_from(h);
+    // A minimised window's rect is its icon's, off screen: nothing to fill.
+    if IsIconic(hwnd).as_bool() {
+        return;
+    }
+    // Never hold FILLED across the Win32 calls below: a placement posts
+    // events this thread handles (a window's rect changed, tracked windows
+    // changed), and those take the lock too.
+    let prev = {
+        let mut guard = FILLED.lock().unwrap();
+        guard.get_or_insert_with(HashMap::new).remove(&h)
+    };
+    if let Some((old, was_floating)) = prev {
+        // A window the user maximised since filling ignores placement: take
+        // the maximise off first, so the old rect (or the old tile) takes.
+        if IsZoomed(hwnd).as_bool() {
+            let _ = ShowWindow(hwnd, SW_RESTORE);
+        }
+        // Back to the tile it left (or the floating rect it had).
+        if was_floating || !tiling {
+            set_pos_raw(h, old);
+        } else {
+            {
+                let ws = &mut mgr.monitors[mi].workspaces[a];
+                ws.floating.retain(|&x| x != h);
+                ws.focused = h;
+            }
+            // Un-floated, it re-enters the strip at its old slot, which can
+            // lie off the view: scroll to it, or it parks while focused.
+            ensure_visible(mgr, mi, a);
+            retile_monitor(mgr, mi);
+        }
+        focus_window(h);
+        return;
+    }
+    // A maximised window already covers the work area (a tiled one is never
+    // maximised): filling it would only drop the maximised state for the same
+    // picture, and the maximised rect is no rect to go back to.
+    if IsZoomed(hwnd).as_bool() {
+        return;
+    }
+    let mut r = RECT::default();
+    if GetWindowRect(hwnd, &mut r).is_err() {
+        return;
+    }
+    let was_floating = tiling && mgr.monitors[mi].workspaces[a].floating.contains(&h);
+    FILLED
+        .lock()
+        .unwrap()
+        .get_or_insert_with(HashMap::new)
+        .insert(h, (r, was_floating));
+    if tiling {
+        {
+            let ws = &mut mgr.monitors[mi].workspaces[a];
+            if !was_floating {
+                ws.floating.push(h);
+            }
+            ws.focused = h;
+        }
+        // Floating windows are never placed: a parked one would fill off
+        // screen, and it leaves its slot for good now.
+        unpark_tracked(h);
+        slot_forget(h);
+    }
+    let wa = mgr.monitors[mi].work_area;
+    set_pos_raw(h, adjust_for_border(hwnd, wa));
+    if tiling && !was_floating {
+        // The freed slot closes; the filled window is floating, so this
+        // leaves it alone.
+        retile_monitor(mgr, mi);
+    }
+    focus_window(h);
 }
 
 /// Compute the visible-frame correction: Win32 GetWindowRect includes an
@@ -12208,6 +12305,9 @@ unsafe fn untrack_window(mgr: &mut Manager, h: isize) {
         SCRATCHPAD_HIDDEN.store(false, Ordering::Relaxed);
     }
     unmark_hidden_by_us(h); // untracked -> marker would only go stale
+    if let Some(m) = FILLED.lock().unwrap().as_mut() {
+        m.remove(&h);
+    }
     let was_focus = mgr.focused().2 == h;
     if let Some((mi, wi, _)) = mgr.detach_window(h) {
         // Nothing places it from here on, and exit and crash rescue know only
@@ -12859,6 +12959,7 @@ unsafe fn process(mgr: &mut Manager, cmd: Cmd) {
             ensure_visible(mgr, mi, a);
             retile_monitor(mgr, mi);
         }
+        Cmd::ToggleFill => toggle_fill(mgr),
         Cmd::CloseFocused => {
             let (_, _, h) = mgr.focused();
             if h != 0 {
@@ -18559,6 +18660,9 @@ fn sync_managed(mgr: &Manager) {
     }
     if let Some(warm) = WARM.lock().unwrap().as_mut() {
         warm.retain(|h| map.contains_key(h));
+    }
+    if let Some(filled) = FILLED.lock().unwrap().as_mut() {
+        filled.retain(|h, _| map.contains_key(h));
     }
     if let Some(exe) = EXE_CACHE.lock().unwrap().as_mut() {
         exe.retain(|h, _| map.contains_key(h));
@@ -24732,7 +24836,7 @@ fn main() {
 
         println!("Astur running.");
         println!("  Alt below = the main key: Left Alt unless main_key in astur.conf");
-        println!("  says win, alt, ctrl+win or capslock.");
+        println!("  says ralt, win, alt, ctrl+win or capslock.");
         println!("  Alt + left-drag  = move window (drops back into the tiling)");
         println!("  Alt + right-drag = resize nearest corner (red bracket)");
         println!("  --- tiling ---");
@@ -24745,6 +24849,7 @@ fn main() {
         println!("  Alt+H / Alt+L  = shrink / grow the master area");
         println!("  Alt+F          = toggle float for focused window");
         println!("  Alt+W          = close focused window");
+        println!("  Alt+E          = fill the focused window to the work area (or back)");
         println!("  Alt+Space      = app launcher (type to filter, Enter to run)");
         println!("  Alt+Enter      = launch terminal");
         println!("  Alt+Shift+Enter= launch default browser");
@@ -24752,7 +24857,7 @@ fn main() {
         println!("  Alt+Shift+1..0 = move focused window to workspace");
         println!("  Per-monitor status bars, focus-follows-mouse, window rules:");
         println!("  all configurable in astur.conf (see comments in that file).");
-        println!("  Alt+Tab still works. With Left Alt, use RIGHT ALT for app Alt keys.");
+        println!("  Alt+Tab still works. With an Astur Alt, the other Alt is the apps'.");
         println!("  --- config ---");
         println!("  Default 'shared' mode spreads workspaces across monitors:");
         println!("  ws1=mon1, ws2=mon2, ws3=mon3, ws4=mon1 (2nd), and so on.");
@@ -28527,6 +28632,9 @@ mod tests {
         }
         if vk == c.key_close_window {
             return one(Cmd::CloseFocused);
+        }
+        if vk == c.key_fill_desktop {
+            return one(Cmd::ToggleFill);
         }
         if vk == c.key_cycle_width {
             return pick(Cmd::CycleWidth, Cmd::CycleHeight);

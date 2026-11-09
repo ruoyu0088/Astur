@@ -170,8 +170,8 @@ impl Mirrors {
 /// half a list, and nothing the user typed disappears unseen.
 #[derive(Clone, PartialEq, Default, Debug)]
 struct Rows {
-    /// The 12 single-key binds in `BINDS` order; "" = cleared (not written).
-    keys: [String; 12],
+    /// The 13 single-key binds in `BINDS` order; "" = cleared (not written).
+    keys: [String; 13],
     /// One per workspace, also past `workspaces`: those keep what the file
     /// sets for workspaces not shown, for when the count goes back up.
     ws: Vec<WsRow>,
@@ -1311,7 +1311,7 @@ impl App {
             note(ui, &format!("Hold {name} and press the key shown. To change a shortcut, click its key and press the new one ({held} is added for you). Esc cancels, Backspace clears."));
         }
         section(ui, f, "Windows");
-        for (i, &meta) in BINDS.iter().enumerate().take(8) {
+        for (i, &meta) in BINDS.iter().enumerate().take(9) {
             let k = (&mut m.rows.keys[i], dm.rows.keys[i].as_str());
             let n = notes(&issues, |x| BIND_ACTIONS[i].contains(&x.action));
             keys |= key_row(ui, f, meta, k, live[i], (&held, &n), i);
@@ -1416,7 +1416,7 @@ impl App {
                 &d.browser,
             );
             section(ui, f, "Scrolling layout keys");
-            for (i, &meta) in BINDS.iter().enumerate().skip(8) {
+            for (i, &meta) in BINDS.iter().enumerate().skip(9) {
                 let k = (&mut m.rows.keys[i], dm.rows.keys[i].as_str());
                 let n = notes(&issues, |x| BIND_ACTIONS[i].contains(&x.action));
                 keys |= key_row(ui, f, meta, k, live[i], (&held, &n), i);
@@ -1675,8 +1675,8 @@ impl App {
             &mut c.cursor_follows_focus,
             d.cursor_follows_focus,
         );
-        // Only Left Alt is Astur's own Alt; with any other Astur key Alt+Tab
-        // stays Windows' (the WM ignores the setting then).
+        // Only an Astur Alt is Astur's own Alt; with any other Astur key
+        // Alt+Tab stays Windows' (the WM ignores the setting then).
         // (A scope only when disabled: an empty one adds spacing in search.)
         let mut alt_tab = |ui: &mut Ui| {
             toggle(
@@ -1684,14 +1684,14 @@ impl App {
                 f,
                 (
                     "Astur's Alt+Tab switcher",
-                    "Replaces the Windows task switcher with one that knows about workspaces. Needs Left Alt as the Astur key (Shortcuts).",
+                    "Replaces the Windows task switcher with one that knows about workspaces. Needs Left Alt or Right Alt as the Astur key (Shortcuts).",
                     "alt_tab_replacement",
                 ),
                 &mut c.alt_tab_replacement,
                 d.alt_tab_replacement,
             )
         };
-        if c.main_key == MainKey::LAlt {
+        if matches!(c.main_key, MainKey::LAlt | MainKey::RAlt) {
             alt_tab(ui);
         } else {
             ui.add_enabled_ui(false, alt_tab);
@@ -3153,8 +3153,8 @@ impl App {
 /// (label, one plain-language sentence, conf key(s)) for a setting row.
 type Meta<'a> = (&'a str, &'a str, &'a str);
 
-/// The 12 single-key bindings, in `Mirrors::keys` order.
-const BINDS: [Meta<'static>; 12] = [
+/// The 13 single-key bindings, in `Mirrors::keys` order.
+const BINDS: [Meta<'static>; 13] = [
     ("Focus next window", "With Shift too it swaps the window forward instead.", "key_focus_next"),
     ("Focus previous window", "With Shift too it swaps the window backward.", "key_focus_prev"),
     ("Make the main window smaller", "Main + side: a narrower main window. Spiral: a smaller first split. Scrolling: a narrower column (with Shift: a shorter window).", "key_shrink_master"),
@@ -3163,15 +3163,16 @@ const BINDS: [Meta<'static>; 12] = [
     ("Turn tiling on or off", "Off leaves every window floating, as on plain Windows; workspaces keep working.", "key_toggle_tiling"),
     ("Float or tile the window", "Lifts the active window out of the tiling so you can place it yourself, or puts it back.", "key_toggle_float"),
     ("Close the window", "", "key_close_window"),
+    ("Fill the window to the work area", "Puts the active window over the whole work area (the taskbar and the Astur bar stay visible), or back where it was. The same key toggles.", "key_fill_desktop"),
     ("Cycle column width", "Scrolling: steps the column through its widths. With Shift: the window's height.", "key_cycle_width"),
     ("Centre the column", "Scrolling: puts the active column in the middle of the screen.", "key_center_column"),
     ("Pull into the left column", "Scrolling: stacks the window into the column on its left. If it already shares a column, it gets its own instead.", "key_consume_left"),
     ("Pull into the right column", "Scrolling: stacks the window into the column on its right. If it already shares a column, it gets its own instead.", "key_consume_right"),
 ];
 
-/// What each of the 12 binds runs, alone and with Shift (compile_keys'
+/// What each of the 13 binds runs, alone and with Shift (compile_keys'
 /// built-ins), to find its notes among compile_keys' issues.
-const BIND_ACTIONS: [[Action; 2]; 12] = {
+const BIND_ACTIONS: [[Action; 2]; 13] = {
     use Action::*;
     [
         [FocusNext, SwapNext],
@@ -3182,6 +3183,7 @@ const BIND_ACTIONS: [[Action; 2]; 12] = {
         [ToggleTiling, ToggleTabbed],
         [ToggleFloat, ToggleFloat],
         [CloseWindow, CloseWindow],
+        [FillDesktop, FillDesktop],
         [CycleWidth, CycleHeight],
         [CenterColumn, CenterColumn],
         [ConsumeLeft, ConsumeLeft],
@@ -3720,7 +3722,7 @@ fn gaps_row(ui: &mut Ui, f: &mut Find, c: &mut Config, d: &Config) {
     }
 }
 
-/// Bind `i` of the 12 as a capture chip (and its default), after the Astur
+/// Bind `i` of the 13 as a capture chip (and its default), after the Astur
 /// key (`held`), which is implied: Left Alt never reaches this window. A
 /// cleared key can't be written (the parser would keep the old one), so it
 /// stays red until a key is set or reset. `live` is the key Astur uses
@@ -4750,7 +4752,7 @@ fn takeovers(c: &Config, k: MainKey) -> (usize, Vec<(Level, String)>) {
 /// What the picker says beyond a key's own description.
 fn caveat(k: MainKey) -> &'static str {
     match k {
-        MainKey::LAlt => "",
+        MainKey::LAlt | MainKey::RAlt => "",
         MainKey::Win | MainKey::CtrlWin => "Tapping the Windows key on its own still opens Start; after an Astur shortcut it stays closed.",
         MainKey::Alt => "Menu bars don't light up after an Astur shortcut.",
         MainKey::CapsLock => "Shift still types capital letters.",
@@ -4845,9 +4847,9 @@ fn fixed(c: &Config) -> Vec<(String, &'static str, &'static [Action])> {
     ];
     // Astur's own Alt+Tab needs its Alt to be Astur's (the WM ignores
     // alt_tab_replacement under any other key).
-    if c.main_key == MainKey::LAlt {
+    if matches!(c.main_key, MainKey::LAlt | MainKey::RAlt) {
         let tab = "Switch windows (Astur's switcher when it is on)";
-        v.insert(6, ("Alt+Tab".into(), tab, &[]));
+        v.insert(6, (format!("{}Tab", m), tab, &[]));
     }
     v
 }
@@ -5465,8 +5467,8 @@ fn cheat_sheet(c: &Config) -> String {
     lines.join("\n") + "\n"
 }
 
-/// The 12 single-key binds' VK codes, in `BINDS` order.
-fn binds(c: &Config) -> [u32; 12] {
+/// The 13 single-key binds' VK codes, in `BINDS` order.
+fn binds(c: &Config) -> [u32; 13] {
     [
         c.key_focus_next,
         c.key_focus_prev,
@@ -5476,6 +5478,7 @@ fn binds(c: &Config) -> [u32; 12] {
         c.key_toggle_tiling,
         c.key_toggle_float,
         c.key_close_window,
+        c.key_fill_desktop,
         c.key_cycle_width,
         c.key_center_column,
         c.key_consume_left,
@@ -5483,7 +5486,7 @@ fn binds(c: &Config) -> [u32; 12] {
     ]
 }
 
-fn binds_mut(c: &mut Config) -> [&mut u32; 12] {
+fn binds_mut(c: &mut Config) -> [&mut u32; 13] {
     [
         &mut c.key_focus_next,
         &mut c.key_focus_prev,
@@ -5493,6 +5496,7 @@ fn binds_mut(c: &mut Config) -> [&mut u32; 12] {
         &mut c.key_toggle_tiling,
         &mut c.key_toggle_float,
         &mut c.key_close_window,
+        &mut c.key_fill_desktop,
         &mut c.key_cycle_width,
         &mut c.key_center_column,
         &mut c.key_consume_left,
@@ -5799,7 +5803,7 @@ fn ws_problems(rows: &[WsRow], count: usize) -> Vec<Option<String>> {
 
 // The tables into the Config, each only while every row in it is valid.
 
-fn fold_keys(keys: &[String; 12], c: &mut Config) {
+fn fold_keys(keys: &[String; 13], c: &mut Config) {
     for (slot, k) in binds_mut(c).into_iter().zip(keys) {
         if let Some(vk) = key_to_vk(k) {
             *slot = vk;
@@ -6182,6 +6186,7 @@ fn conf_pairs(c: &Config) -> (Pairs, Pairs) {
         ("key_toggle_tiling", vk_to_key(c.key_toggle_tiling)),
         ("key_toggle_float", vk_to_key(c.key_toggle_float)),
         ("key_close_window", vk_to_key(c.key_close_window)),
+        ("key_fill_desktop", vk_to_key(c.key_fill_desktop)),
         ("key_cycle_width", vk_to_key(c.key_cycle_width)),
         ("key_center_column", vk_to_key(c.key_center_column)),
         ("key_consume_left", vk_to_key(c.key_consume_left)),
@@ -8773,6 +8778,10 @@ fn tips(c: &Config) -> Vec<(String, &'static str)> {
     v.push((format!("{m}Enter"), "Open your terminal"));
     let float = format!("{m}{}", k(c.key_toggle_float));
     v.push((float, "Float the window, or tile it again"));
+    v.push((
+        format!("{m}{}", k(c.key_fill_desktop)),
+        "Fill the window over the whole work area, or back",
+    ));
     v.push((format!("{m}{}", k(c.key_close_window)), "Close the window"));
     if c.system_menu_enabled {
         v.push((

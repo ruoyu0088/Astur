@@ -27,8 +27,8 @@ Fast, free, portable tiling window manager for Windows 10/11. Single Rust `.exe`
 no installer, no required config. Alt-drag move, nearest-corner resize, dwindle/
 master tiling, ≤20 workspaces, per-monitor status bar, composited workspace +
 window animations. The main key (`main_key`) is the modifier: Left Alt by default,
-reserved (apps never see it); Win / Alt / Ctrl+Win (passed through, masked) or
-Caps Lock (reserved) are options.
+reserved (apps never see it); Right Alt (also reserved), Win / Alt / Ctrl+Win
+(passed through, masked) or Caps Lock (reserved) are options.
 
 ## The bar to hold (don't regress these)
 

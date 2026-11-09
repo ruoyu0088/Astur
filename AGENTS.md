@@ -35,8 +35,9 @@ single Rust `.exe` with no installer and no required config. Core hooks:
 The Astur modifier is the **main key** (`main_key`, config `MainKey`): Left Alt by
 default, fully reserved (apps never see it; Left Alt + an unbound
 typing/editing/navigation key is swallowed, never passed bare — see
-`swallow_unbound`; Right Alt is untouched; Alt+Tab still works via a synthetic
-Alt). Caps Lock can be reserved the same way. Win, Alt or Ctrl+Win are passed
+`swallow_unbound`; the other Alt is untouched; Alt+Tab still works via a synthetic
+Alt). Right Alt can be reserved the same way (`ralt`). Caps Lock can be reserved
+the same way. Win, Alt or Ctrl+Win are passed
 through instead: only bound keys are swallowed, plus the 0xE8 mask key so Start /
 menu bars don't open (`needs_mask`). Every hotkey is one load from the lock-free
 `BINDS` table, filled from astur-config's pure `compile_keys`.

@@ -210,6 +210,7 @@ pub struct Config {
     pub key_center_column: u32,  // Alt+<key> scrolling: centre focused column (default C)
     pub key_consume_left: u32,   // Alt+<key> scrolling: consume/expel left (default [)
     pub key_consume_right: u32,  // Alt+<key> scrolling: consume/expel right (default ])
+    pub key_fill_desktop: u32,   // Alt+<key> fill the focused window to the work area (default E)
     pub theme: String,           // popup palette: dark | light | auto (follows Windows)
     pub acrylic: bool,           // experimental acrylic blur behind the popups
     pub bar_floating: bool,      // detached rounded bar (margins from the screen edges)
@@ -1300,6 +1301,7 @@ impl Config {
             key_center_column: 0x43,  // C
             key_consume_left: 0xDB,   // [ (VK_OEM_4)
             key_consume_right: 0xDD,  // ] (VK_OEM_6)
+            key_fill_desktop: 0x45,   // E
             main_key: MainKey::LAlt,
             theme: "dark".to_string(),
             acrylic: false,
@@ -1819,6 +1821,8 @@ extra_hotkeys = ALT+GRAVE|scratchpad|
 # 'Alt' in this list means the main key. Choices:
 #   lalt      Left Alt (default). Astur keeps it: apps never see Left Alt, so
 #             use Right Alt for app shortcuts (Alt+F4, menus).
+#   ralt      Right Alt. Astur keeps it: apps never see Right Alt, so use
+#             Left Alt for app shortcuts (Alt+F4, menus).
 #   win       Windows key. Apps keep it; only Astur's shortcuts are taken and
 #             they replace Windows' own (Win+D ...). Win+L always locks the
 #             PC, so key_grow_master's default L becomes O (if O is free).
@@ -1836,6 +1840,7 @@ main_key = lalt
 #   Alt+arrows           focus window by direction (cursor follows)
 #   Alt+Shift+arrows     move window by direction (across monitors)
 #   Alt+M                promote focused window to master
+#   Alt+E                fill the focused window to the whole work area (toggle)
 #   Alt+H / Alt+L        master layout: shrink / grow the master column;
 #                        dwindle layout: shrink / grow the focused window's split
 #   Alt+F                toggle floating for the focused window
@@ -1871,7 +1876,7 @@ main_key = lalt
 #                        beside it, middle = stack into its column
 #   Alt + right-drag     side edge = column width, top/bottom = window height
 #
-# The letter keys above (J K H L M T F W, and R C [ ] for scrolling) are
+# The letter keys above (J K H L M T F W E, and R C [ ] for scrolling) are
 # rebindable. Each takes a single key name (see the 'keys' type at the top of
 # this file). Arrows, Home, End and Enter are fixed.  key
 key_focus_next = J
@@ -1886,6 +1891,7 @@ key_cycle_width = R
 key_center_column = C
 key_consume_left = [
 key_consume_right = ]
+key_fill_desktop = E
 # ============================================================================
 ";
 
@@ -3083,6 +3089,11 @@ fn parse_into_from(c: &mut Config, text: &str, source: &str) {
                     c.key_consume_right = k;
                 }
             }
+            "key_fill_desktop" => {
+                if let Some(k) = key_to_vk(v) {
+                    c.key_fill_desktop = k;
+                }
+            }
             "main_key" | "mod" => {
                 if let Some(k) = MainKey::from_name(v) {
                     c.main_key = k;
@@ -3572,6 +3583,7 @@ pub fn reload_groups(old: &Config, new: &Config) -> ReloadGroups {
         key_center_column,
         key_consume_left,
         key_consume_right,
+        key_fill_desktop,
         main_key,
         theme,
         acrylic,
@@ -3682,6 +3694,7 @@ pub fn reload_groups(old: &Config, new: &Config) -> ReloadGroups {
     diff!(live: key_shrink_master, key_grow_master, key_promote_master);
     diff!(live: key_toggle_tiling, key_toggle_float, key_close_window);
     diff!(live: key_cycle_width, key_center_column, key_consume_left, key_consume_right);
+    diff!(live: key_fill_desktop);
     diff!(live: main_key);
     // Fail-safe: a difference none of the above caught (a field compared in
     // the wrong place, a PartialEq quirk) must still apply, so do it all.
@@ -3734,6 +3747,8 @@ pub enum MainKey {
     /// Reserved: the WM swallows it, apps never see Left Alt.
     #[default]
     LAlt,
+    /// Reserved: the WM swallows it, apps never see Right Alt.
+    RAlt,
     /// Passed through; only the bound keys are swallowed.
     Win,
     /// Either Alt, passed through (GlazeWM-style).
@@ -3746,8 +3761,9 @@ pub enum MainKey {
 
 impl MainKey {
     /// Every choice, in the order a picker lists them.
-    pub const ALL: [MainKey; 5] = [
+    pub const ALL: [MainKey; 6] = [
         MainKey::LAlt,
+        MainKey::RAlt,
         MainKey::Win,
         MainKey::Alt,
         MainKey::CtrlWin,
@@ -3758,6 +3774,7 @@ impl MainKey {
     pub fn name(self) -> &'static str {
         match self {
             MainKey::LAlt => "lalt",
+            MainKey::RAlt => "ralt",
             MainKey::Win => "win",
             MainKey::Alt => "alt",
             MainKey::CtrlWin => "ctrl+win",
@@ -3773,6 +3790,7 @@ impl MainKey {
             .to_ascii_lowercase();
         Some(match v.as_str() {
             "lalt" | "leftalt" | "left_alt" => MainKey::LAlt,
+            "ralt" | "rightalt" | "right_alt" => MainKey::RAlt,
             "win" | "windows" => MainKey::Win,
             "alt" => MainKey::Alt,
             "ctrl+win" | "win+ctrl" => MainKey::CtrlWin,
@@ -3785,6 +3803,7 @@ impl MainKey {
     pub fn label(self) -> &'static str {
         match self {
             MainKey::LAlt => "Left Alt",
+            MainKey::RAlt => "Right Alt",
             MainKey::Win => "Windows key",
             MainKey::Alt => "Alt (either side)",
             MainKey::CtrlWin => "Ctrl + Windows key",
@@ -3798,6 +3817,10 @@ impl MainKey {
             MainKey::LAlt => {
                 "Recommended. Astur keeps Left Alt to itself, so apps never react to it. \
                  Use Right Alt for app shortcuts such as Alt+F4."
+            }
+            MainKey::RAlt => {
+                "Astur keeps Right Alt to itself, so apps never react to it. \
+                 Use Left Alt for app shortcuts such as Alt+F4."
             }
             MainKey::Win => {
                 "Apps and Windows keep the Windows key; only Astur's own shortcuts take \
@@ -3824,7 +3847,7 @@ impl MainKey {
     /// The modifier bits `MOD` stands for.
     pub fn bits(self) -> u8 {
         match self {
-            MainKey::LAlt | MainKey::Alt => MOD_ALT,
+            MainKey::LAlt | MainKey::RAlt | MainKey::Alt => MOD_ALT,
             MainKey::Win => MOD_WIN,
             MainKey::CtrlWin => MOD_CTRL | MOD_WIN,
             MainKey::CapsLock => MOD_HYPER,
@@ -3836,6 +3859,7 @@ impl MainKey {
     pub fn reserved_vk(self) -> u32 {
         match self {
             MainKey::LAlt => 0xA4,
+            MainKey::RAlt => 0xA5,
             MainKey::CapsLock => 0x14,
             _ => 0,
         }
@@ -3880,6 +3904,7 @@ pub enum Action {
     MoveUp,
     MoveRight,
     MoveDown,
+    FillDesktop,
     SwitchWorkspace,
     MoveToWorkspace,
     Extra,
@@ -3888,7 +3913,7 @@ pub enum Action {
 impl Action {
     /// Every action in declaration order (`ALL[a as usize] == a`), which is
     /// how a table entry stores it.
-    pub const ALL: [Action; 37] = {
+    pub const ALL: [Action; 38] = {
         use Action::*;
         [
             Launcher,
@@ -3925,6 +3950,7 @@ impl Action {
             MoveUp,
             MoveRight,
             MoveDown,
+            FillDesktop,
             SwitchWorkspace,
             MoveToWorkspace,
             Extra,
@@ -3969,6 +3995,7 @@ impl Action {
             MoveUp => "Move the window up",
             MoveRight => "Move the window right",
             MoveDown => "Move the window down",
+            FillDesktop => "Fill the focused window to the work area",
             SwitchWorkspace => "Go to a workspace",
             MoveToWorkspace => "Move the window to a workspace",
             Extra => "Custom shortcut",
@@ -4106,7 +4133,7 @@ fn refusal(main: MainKey, mods: u8, vk: u32) -> Option<&'static str> {
              and a key on its own is typing",
         );
     }
-    if main == MainKey::LAlt && mods & MOD_ALT != 0 && vk == 0x09 {
+    if matches!(main, MainKey::LAlt | MainKey::RAlt) && mods & MOD_ALT != 0 && vk == 0x09 {
         return Some("Alt+Tab always switches windows");
     }
     if mods == MOD_WIN && vk == 0x4C {
@@ -4190,7 +4217,7 @@ fn caution(main: MainKey, mods: u8, vk: u32) -> Option<(Level, String)> {
     // what it always did. Reporting it as a takeover pushed users off valid
     // binds.
     let reserved = match main {
-        MainKey::LAlt => MOD_ALT | MOD_HYPER,
+        MainKey::LAlt | MainKey::RAlt => MOD_ALT | MOD_HYPER,
         _ => MOD_HYPER,
     };
     if mods & reserved != 0 {
@@ -4270,7 +4297,7 @@ impl Keymap {
     /// (typing), and Win+Ctrl+arrows switch virtual desktops.
     fn put_loose(&mut self, c: &Config, mods: u8, vk: u32, act: (Action, u16), quiet: bool) {
         self.put(c, mods, vk, act, quiet);
-        if c.main_key == MainKey::LAlt {
+        if matches!(c.main_key, MainKey::LAlt | MainKey::RAlt) {
             self.put(c, mods | MOD_CTRL, vk, act, true);
         }
     }
@@ -4283,7 +4310,7 @@ impl Keymap {
         self.put_loose(c, m, vk, (plain, 0), false);
         match shifted {
             Some(s) => self.put_loose(c, m | MOD_SHIFT, vk, (s, 0), false),
-            None if c.main_key == MainKey::LAlt => {
+            None if matches!(c.main_key, MainKey::LAlt | MainKey::RAlt) => {
                 self.put_loose(c, m | MOD_SHIFT, vk, (plain, 0), true)
             }
             None => {}
@@ -4331,6 +4358,7 @@ pub fn grow_master_key(c: &Config) -> u32 {
         c.key_center_column,
         c.key_consume_left,
         c.key_consume_right,
+        c.key_fill_desktop,
     ];
     let extra_on_o = c.extra_hotkeys.iter().any(|h| {
         (h.action != "scratchpad" || c.scratchpad_enabled)
@@ -4395,6 +4423,7 @@ pub fn compile_keys(c: &Config) -> Keymap {
         (c.key_center_column, CenterColumn, None),
         (c.key_consume_left, ConsumeLeft, None),
         (c.key_consume_right, ConsumeRight, None),
+        (c.key_fill_desktop, FillDesktop, None),
         (0x24, FirstColumn, Some(MoveFirstColumn)),
         (0x23, LastColumn, Some(MoveLastColumn)),
         (0x0D, Terminal, Some(Browser)),
@@ -4761,6 +4790,7 @@ outer_gap = 4
         assert_eq!(t.key_center_column, d.key_center_column);
         assert_eq!(t.key_consume_left, d.key_consume_left);
         assert_eq!(t.key_consume_right, d.key_consume_right);
+        assert_eq!(t.key_fill_desktop, d.key_fill_desktop);
     }
 
     #[test]
@@ -4941,6 +4971,9 @@ outer_gap = 4
     #[test]
     fn main_key_parses_with_its_alias() {
         assert_eq!(Config::defaults().main_key, MainKey::LAlt);
+        assert_eq!(parse_text("main_key = ralt").main_key, MainKey::RAlt);
+        assert_eq!(parse_text("main_key = rightalt").main_key, MainKey::RAlt);
+        assert_eq!(parse_text("mod = right_alt").main_key, MainKey::RAlt);
         assert_eq!(parse_text("main_key = win").main_key, MainKey::Win);
         assert_eq!(parse_text("mod = capslock").main_key, MainKey::CapsLock);
         assert_eq!(parse_text("main_key = shift").main_key, MainKey::LAlt);
@@ -4973,6 +5006,7 @@ outer_gap = 4
         assert_eq!(m[&(MOD_ALT | MOD_SHIFT, 0x4A)], (Action::SwapNext, 0));
         assert_eq!(m[&(MOD_ALT, 0x31)], ws(0));
         assert_eq!(m[&(MOD_ALT, 0x20)], (Action::Launcher, 0));
+        assert_eq!(m[&(MOD_ALT, 0x45)], (Action::FillDesktop, 0));
         assert_eq!(m[&(MOD_ALT | MOD_SHIFT, 0x20)], (Action::SystemMenu, 0));
         // Left Alt's old quirks: Ctrl ignored, Shift ignored with no Shift action.
         assert_eq!(m[&(MOD_ALT | MOD_CTRL, 0x31)], ws(0));
