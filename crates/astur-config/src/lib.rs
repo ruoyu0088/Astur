@@ -1699,6 +1699,9 @@ float_classes =
 # Rich rules. Records separated by ;;, fields by |:
 # action|exe|class|title|workspace|monitor
 # Empty match fields are wildcards. workspace/monitor are 1-based; 0/empty = unset.
+# They decide where an app's windows go: ones that open later and the ones
+# already open when Astur starts (a window a rule sends to another workspace is
+# hidden until you switch there).
 # Example, keep PowerToys popups out of the tiling (match by exe: titles are
 # localized): ignore|PowerToys.AdvancedPaste.exe ;; ignore|PowerToys.Peek.UI.exe
 window_rules =

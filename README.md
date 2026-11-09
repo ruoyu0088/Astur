@@ -177,8 +177,9 @@ them.
   100% screen next to a 150% one both look right. Sizes in the config are
   logical pixels at 100%.
 - **Extras** — coloured borders, unfocused dimming, focus-follows-mouse, rich
-  exe/class/title window rules with workspace/monitor routing, extra shortcuts on
-  the main key, Alt or Win, and live config hot-reload.
+  exe/class/title window rules with workspace/monitor routing (they route
+  windows that open later and the ones already open when Astur starts), extra
+  shortcuts on the main key, Alt or Win, and live config hot-reload.
 
 **The main key.** Every Astur shortcut and mouse move / resize is held with one
 main key, `Alt` in the tables below. It is **Left Alt** unless you pick another in

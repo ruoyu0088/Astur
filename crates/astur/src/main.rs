@@ -115,10 +115,10 @@ use windows::Win32::UI::Input::KeyboardAndMouse::{
 };
 use windows::Win32::UI::Shell::{
     BHID_EnumItems, IEnumShellItems, IShellItem, IShellItemImageFactory,
-    SHCreateItemFromParsingName, SHGetFileInfoW, SHGetImageList, ShellExecuteW, Shell_NotifyIconW,
-    NIF_ICON, NIF_MESSAGE, NIF_TIP, NIM_ADD, NIM_DELETE, NOTIFYICONDATAW, SHFILEINFOW, SHGFI_FLAGS,
-    SHGFI_SYSICONINDEX, SHGFI_USEFILEATTRIBUTES, SHIL_LARGE, SIGDN_NORMALDISPLAY,
-    SIGDN_PARENTRELATIVEPARSING, SIIGBF_ICONONLY,
+    SHCreateItemFromParsingName, SHDefExtractIconW, SHGetFileInfoW, SHGetImageList, ShellExecuteW,
+    Shell_NotifyIconW, NIF_ICON, NIF_MESSAGE, NIF_TIP, NIM_ADD, NIM_DELETE, NOTIFYICONDATAW,
+    SHFILEINFOW, SHGFI_FLAGS, SHGFI_SYSICONINDEX, SHGFI_USEFILEATTRIBUTES, SHIL_LARGE,
+    SIGDN_NORMALDISPLAY, SIGDN_PARENTRELATIVEPARSING, SIIGBF_ICONONLY,
 };
 use windows::Win32::UI::WindowsAndMessaging::{
     AppendMenuW, CopyIcon, CreateIconFromResourceEx, CreateIconIndirect, CreatePopupMenu,
@@ -5011,6 +5011,41 @@ unsafe fn match_window_rule(hwnd: HWND) -> Option<RulePlacement> {
     })
 }
 
+/// Where a window belongs: the monitor and workspace its rule names, else the
+/// monitor it sits on and that monitor's active workspace. Shared by Cmd::Add
+/// (a window that just appeared) and the startup scan, so a rule's workspace
+/// and monitor mean the same thing in both. `pending` is the monitor a launch
+/// was posted for, 0 for none.
+unsafe fn rule_target(
+    mgr: &Manager,
+    hwnd: HWND,
+    rule: Option<RulePlacement>,
+    pending: isize,
+) -> (usize, usize) {
+    let mut mi = mgr
+        .mon_by_hmon(pending)
+        .unwrap_or_else(|| monitor_index_for_window(mgr, hwnd));
+    let mut wi = mgr.monitors[mi].active;
+    if let Some(rule) = rule {
+        if let Some(rule_mon) = rule.monitor {
+            mi = rule_mon.min(mgr.monitors.len().saturating_sub(1));
+            wi = mgr.monitors[mi].active;
+        }
+        if let Some(rule_ws) = rule.workspace {
+            if rule.monitor.is_some() || mgr.cfg.per_monitor {
+                wi = rule_ws.min(mgr.monitors[mi].workspaces.len().saturating_sub(1));
+            } else {
+                // Clamped like the branch above: a rule naming a workspace
+                // past `workspaces` used to index past this monitor's list
+                // below and abort the WM.
+                let last = mgr.cfg.workspaces.saturating_sub(1);
+                (mi, wi) = mgr.global_to_ml(rule_ws.min(last));
+            }
+        }
+    }
+    (mi, wi)
+}
+
 /// Shell/system window classes that must never be tiled. Tooltips, the lock
 /// screen, the task-view/alt-tab surfaces, and various invisible UWP host and
 /// IME windows all show up as top-level windows and would otherwise be grabbed.
@@ -8116,7 +8151,11 @@ unsafe extern "system" fn enum_proc(hwnd: HWND, lparam: LPARAM) -> BOOL {
     BOOL(1)
 }
 
-/// Add every currently-manageable window to its monitor's active workspace.
+/// Add every currently-manageable window to the workspace its rule names, else
+/// the monitor's active workspace. A window a rule parks on a workspace that is
+/// not on screen was visible before Astur started: it is hidden here, and the
+/// switch that shows its workspace reveals it again (restoring a maximised one
+/// as it tiles it).
 unsafe fn assign_existing_windows(mgr: &mut Manager) {
     let mut v: Vec<isize> = Vec::new();
     let _ = EnumWindows(Some(enum_proc), LPARAM(&mut v as *mut Vec<isize> as isize));
@@ -8125,13 +8164,22 @@ unsafe fn assign_existing_windows(mgr: &mut Manager) {
             continue;
         }
         let hwnd = hwnd_from(h);
-        let mi = monitor_index_for_window(mgr, hwnd);
-        let a = mgr.monitors[mi].active;
-        mgr.monitors[mi].workspaces[a].windows.push(h);
-        if should_float(hwnd, match_window_rule(hwnd)) {
-            mgr.monitors[mi].workspaces[a].floating.push(h);
+        let rule = match_window_rule(hwnd);
+        let (mi, wi) = rule_target(mgr, hwnd, rule, 0);
+        let away = wi != mgr.monitors[mi].active;
+        let floating = should_float(hwnd, rule);
+        let ws = &mut mgr.monitors[mi].workspaces[wi];
+        ws.windows.push(h);
+        if floating {
+            ws.floating.push(h);
         }
-        mgr.monitors[mi].workspaces[a].focused = h;
+        ws.focused = h;
+        if away {
+            // Marked before the hide, as switch_plain does: the async
+            // EVENT_OBJECT_HIDE must find the marker already there.
+            mark_hidden_by_us(h);
+            let _ = ShowWindow(hwnd, SW_HIDE);
+        }
     }
 }
 
@@ -12379,28 +12427,7 @@ unsafe fn process(mgr: &mut Manager, cmd: Cmd) {
                     let hwnd = hwnd_from(h);
                     let rule = match_window_rule(hwnd);
                     let pending = std::mem::replace(&mut mgr.pending_launch_mon, 0);
-                    let mut mi = mgr
-                        .mon_by_hmon(pending)
-                        .unwrap_or_else(|| monitor_index_for_window(mgr, hwnd));
-                    let mut wi = mgr.monitors[mi].active;
-                    if let Some(rule) = rule {
-                        if let Some(rule_mon) = rule.monitor {
-                            mi = rule_mon.min(mgr.monitors.len().saturating_sub(1));
-                            wi = mgr.monitors[mi].active;
-                        }
-                        if let Some(rule_ws) = rule.workspace {
-                            if rule.monitor.is_some() || mgr.cfg.per_monitor {
-                                wi = rule_ws
-                                    .min(mgr.monitors[mi].workspaces.len().saturating_sub(1));
-                            } else {
-                                // Clamped like the branch above: a rule naming a
-                                // workspace past `workspaces` used to index past
-                                // this monitor's list below and abort the WM.
-                                let last = mgr.cfg.workspaces.saturating_sub(1);
-                                (mi, wi) = mgr.global_to_ml(rule_ws.min(last));
-                            }
-                        }
-                    }
+                    let (mut mi, mut wi) = rule_target(mgr, hwnd, rule, pending);
                     let pending_at = SCRATCHPAD_PENDING_AT.load(Ordering::Relaxed);
                     let pending =
                         pending_at != 0 && GetTickCount64().saturating_sub(pending_at) <= 5_000;
@@ -20517,11 +20544,11 @@ fn launcher_enumerate() -> Vec<AppEntry> {
 /// failure. Runs on the icon worker (slow shell calls off the UI thread). Requires
 /// COM initialised on the calling thread.
 ///
-/// Primary = the system image list at JUMBO (256px) via `SHGetFileInfo` — the same
-/// source Explorer/Start use, so file-backed apps (.lnk/.exe) get crisp, correctly
-/// alpha'd icons (this is how "Start-Menu-quality" launchers do it). Fallback =
-/// `IShellItemImageFactory` (handles UWP / `shell:AppsFolder` parsing names), whose
-/// HBITMAP is wrapped into an HICON so the paint path is uniform (`DrawIconEx`).
+/// Three resolvers, each answering what the one before it cannot: an
+/// `IShellItemImageFactory` image at the exact size (best quality, UWP too), the
+/// file's own icon resource (`SHDefExtractIcon`, for what the factory only knows
+/// as E_PENDING), and the system image list (for odd paths where both of those
+/// fail). The generic .exe icon is the last resort so a row never renders blank.
 unsafe fn load_icon(path: &str, px: i32) -> isize {
     // 1) Shell item image at EXACTLY the display size: the shell picks the best
     //    native frame and scales it high-quality, and it handles .lnk, .exe AND
@@ -20532,12 +20559,20 @@ unsafe fn load_icon(path: &str, px: i32) -> isize {
     if let Some(hicon) = shell_item_hicon(path, px) {
         return hicon.0 as isize;
     }
-    // 2) System image list at native 32px (SHIL_LARGE == the display box, 1:1) —
+    // 2) The file's own icon resource at exactly `px`: the item factory answers
+    //    E_PENDING (0x8000000A) while the shell warms its cache for a path it has
+    //    not seen this session — cudatext.exe did that on every start, and the
+    //    bar then drew the generic .exe icon for the whole session. Extracting
+    //    from the resource never waits on that cache.
+    if let Some(hicon) = def_extract_icon(path, px) {
+        return hicon.0 as isize;
+    }
+    // 3) System image list at native 32px (SHIL_LARGE == the display box, 1:1) —
     //    robust for odd .lnk/.exe paths where the item factory fails.
     if let Some(hicon) = sys_list_icon(path) {
         return hicon.0 as isize;
     }
-    // 3) Generic executable icon so a row never renders blank. Copy the cached
+    // 4) Generic executable icon so a row never renders blank. Copy the cached
     // base handle because the icon caches own and may destroy what they hold.
     if let Some(hicon) = generic_app_icon() {
         if let Ok(copy) = CopyIcon(hicon) {
@@ -20545,6 +20580,27 @@ unsafe fn load_icon(path: &str, px: i32) -> isize {
         }
     }
     -1
+}
+
+/// The icon resource inside `path` at exactly `px` square. `SHDefExtractIcon`
+/// takes the large and small sizes in one word each (low = large, high =
+/// small); we want the same size either way. A path with no icon resource
+/// (a `.lnk` pointing at a bare document) fails, which sends the caller on to
+/// the image list. `iindex` 0 = the first group in the file.
+unsafe fn def_extract_icon(path: &str, px: i32) -> Option<HICON> {
+    let mut w: Vec<u16> = path.encode_utf16().collect();
+    w.push(0);
+    let px = (px.clamp(1, 256) as u32) & 0xffff;
+    let mut large = HICON::default();
+    let hr = SHDefExtractIconW(
+        PCWSTR(w.as_ptr()),
+        0,
+        0,
+        Some(&mut large),
+        None,
+        px | (px << 16),
+    );
+    (hr.0 >= 0 && !large.0.is_null()).then_some(large)
 }
 
 /// System image-list icon (SHIL_LARGE, native 32px) for a file-backed shell path.
