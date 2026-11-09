@@ -14448,16 +14448,24 @@ unsafe fn file_description(path: &str) -> Option<String> {
     (!text.is_empty()).then(|| text.to_string())
 }
 
-/// Compact bytes/s for the net widget: 0K / 340K / 1.2M.
+/// Compact bytes/s for the net widget: 0K / 340K / 1.2M. Always one width
+/// (the number right-aligned in 5 columns, then the unit) so a rate that
+/// grows or shrinks does not move the rest of the bar; past 1000M the
+/// decimal goes, to keep the 5.
 fn fmt_rate(bps: isize) -> String {
     if bps < 0 {
         return String::new();
     }
     let k = bps as f64 / 1024.0;
     if k < 1000.0 {
-        format!("{:.0}K", k)
+        format!("{k:>5.0}K")
     } else {
-        format!("{:.1}M", k / 1024.0)
+        let m = k / 1024.0;
+        if m < 1000.0 {
+            format!("{m:>5.1}M")
+        } else {
+            format!("{m:>5.0}M")
+        }
     }
 }
 
@@ -15456,6 +15464,14 @@ unsafe fn bar_widget_text(
             (widget_icon_text(mode, icon, text), tone, glyph)
         })
     };
+    // CPU, RAM and volume: the number is 3 columns wide ("  5", " 45",
+    // "100"), so a reading that changes width never moves what follows it.
+    let stat3 = |v: isize, format: &str, icon: &str, tone: Tone| {
+        (v >= 0).then(|| {
+            let text = value(format, &[("value", format!("{v:>3}"))]);
+            (widget_icon_text(mode, icon, text), tone, glyph)
+        })
+    };
     match wgt {
         BarWidget::Clock => Some((
             format_clock_widget(data, &GetLocalTime()),
@@ -15472,13 +15488,13 @@ unsafe fn bar_widget_text(
             let tone = if low { Tone::Alert } else { Tone::Normal };
             stat(bat, &data.battery_format, &data.icon_battery, tone)
         }
-        BarWidget::Mem => stat(
+        BarWidget::Mem => stat3(
             STAT_MEM.load(Ordering::Relaxed),
             &data.mem_format,
             &data.icon_mem,
             Tone::Normal,
         ),
-        BarWidget::Cpu => stat(
+        BarWidget::Cpu => stat3(
             STAT_CPU.load(Ordering::Relaxed),
             &data.cpu_format,
             &data.icon_cpu,
@@ -15508,7 +15524,7 @@ unsafe fn bar_widget_text(
                 None,
             )
         }),
-        BarWidget::Volume => stat(
+        BarWidget::Volume => stat3(
             vol,
             &data.volume_format,
             &data.icon_volume,

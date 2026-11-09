@@ -6912,13 +6912,14 @@ fn widget_panel(ui: &mut Ui, f: &mut Find, c: &mut Config, d: &Config, sel: &mut
 /// Sample readings for the previews: (widget, values, the glyph the glyph
 /// icon modes draw for them: the WM's stat_glyph for 60 % volume, 87 %
 /// battery on battery power, wifi). Disk sizes as the WM's fmt_size writes
-/// them, the keyboard as kbd_names (ISO 639-2 language, ISO 3166 country),
-/// uptime as fmt_uptime.
+/// them, rates as its fmt_rate pads them (a 5-wide number then the unit),
+/// cpu / mem / volume values as its 3-wide stat3 writes them, the keyboard as
+/// kbd_names (ISO 639-2 language, ISO 3166 country), uptime as fmt_uptime.
 const READINGS: [Reading; 8] = [
-    ("cpu", &[("value", "23")], '\u{EEA1}'),
-    ("mem", &[("value", "41")], '\u{EEA0}'),
-    ("net", &[("down", "1.2M"), ("up", "48K")], '\u{E701}'),
-    ("volume", &[("value", "60")], '\u{E994}'),
+    ("cpu", &[("value", " 23")], '\u{EEA1}'),
+    ("mem", &[("value", " 41")], '\u{EEA0}'),
+    ("net", &[("down", "  1.2M"), ("up", "   48K")], '\u{E701}'),
+    ("volume", &[("value", " 60")], '\u{E994}'),
     ("battery", &[("value", "87")], '\u{E859}'),
     (
         "disk",
