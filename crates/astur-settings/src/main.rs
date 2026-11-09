@@ -170,8 +170,8 @@ impl Mirrors {
 /// half a list, and nothing the user typed disappears unseen.
 #[derive(Clone, PartialEq, Default, Debug)]
 struct Rows {
-    /// The 13 single-key binds in `BINDS` order; "" = cleared (not written).
-    keys: [String; 13],
+    /// The 14 single-key binds in `BINDS` order; "" = cleared (not written).
+    keys: [String; 14],
     /// One per workspace, also past `workspaces`: those keep what the file
     /// sets for workspaces not shown, for when the count goes back up.
     ws: Vec<WsRow>,
@@ -1311,7 +1311,7 @@ impl App {
             note(ui, &format!("Hold {name} and press the key shown. To change a shortcut, click its key and press the new one ({held} is added for you). Esc cancels, Backspace clears."));
         }
         section(ui, f, "Windows");
-        for (i, &meta) in BINDS.iter().enumerate().take(9) {
+        for (i, &meta) in BINDS.iter().enumerate().take(10) {
             let k = (&mut m.rows.keys[i], dm.rows.keys[i].as_str());
             let n = notes(&issues, |x| BIND_ACTIONS[i].contains(&x.action));
             keys |= key_row(ui, f, meta, k, live[i], (&held, &n), i);
@@ -1416,7 +1416,7 @@ impl App {
                 &d.browser,
             );
             section(ui, f, "Scrolling layout keys");
-            for (i, &meta) in BINDS.iter().enumerate().skip(9) {
+            for (i, &meta) in BINDS.iter().enumerate().skip(10) {
                 let k = (&mut m.rows.keys[i], dm.rows.keys[i].as_str());
                 let n = notes(&issues, |x| BIND_ACTIONS[i].contains(&x.action));
                 keys |= key_row(ui, f, meta, k, live[i], (&held, &n), i);
@@ -2765,7 +2765,11 @@ impl App {
     }
 
     fn power(&mut self, ui: &mut Ui) {
-        let label = format!("Power menu ({}Shift+Space)", mk(&self.cfg));
+        let label = format!(
+            "Power menu ({}{})",
+            mk(&self.cfg),
+            vk_to_key(self.cfg.key_system_menu)
+        );
         let (c, d, f) = (&mut self.cfg, &self.def, &mut self.find);
         let (m, dm) = (&mut self.mir, &self.def_mir);
         toggle(
@@ -3164,8 +3168,8 @@ impl App {
 /// (label, one plain-language sentence, conf key(s)) for a setting row.
 type Meta<'a> = (&'a str, &'a str, &'a str);
 
-/// The 13 single-key bindings, in `Mirrors::keys` order.
-const BINDS: [Meta<'static>; 13] = [
+/// The 14 single-key bindings, in `Mirrors::keys` order.
+const BINDS: [Meta<'static>; 14] = [
     ("Focus next window", "With Shift too it swaps the window forward instead.", "key_focus_next"),
     ("Focus previous window", "With Shift too it swaps the window backward.", "key_focus_prev"),
     ("Make the main window smaller", "Main + side: a narrower main window. Spiral: a smaller first split. Scrolling: a narrower column (with Shift: a shorter window).", "key_shrink_master"),
@@ -3175,15 +3179,16 @@ const BINDS: [Meta<'static>; 13] = [
     ("Float or tile the window", "Lifts the active window out of the tiling so you can place it yourself, or puts it back.", "key_toggle_float"),
     ("Close the window", "", "key_close_window"),
     ("Fill the window to the work area", "Puts the active window over the whole work area (the taskbar and the Astur bar stay visible), or back where it was. The same key toggles.", "key_fill_desktop"),
+    ("Open the power menu", "Lock, sleep, restart and Astur's own actions in one popup. The menu itself is switched on or off on the Power page.", "key_system_menu"),
     ("Cycle column width", "Scrolling: steps the column through its widths. With Shift: the window's height.", "key_cycle_width"),
     ("Centre the column", "Scrolling: puts the active column in the middle of the screen.", "key_center_column"),
     ("Pull into the left column", "Scrolling: stacks the window into the column on its left. If it already shares a column, it gets its own instead.", "key_consume_left"),
     ("Pull into the right column", "Scrolling: stacks the window into the column on its right. If it already shares a column, it gets its own instead.", "key_consume_right"),
 ];
 
-/// What each of the 13 binds runs, alone and with Shift (compile_keys'
+/// What each of the 14 binds runs, alone and with Shift (compile_keys'
 /// built-ins), to find its notes among compile_keys' issues.
-const BIND_ACTIONS: [[Action; 2]; 13] = {
+const BIND_ACTIONS: [[Action; 2]; 14] = {
     use Action::*;
     [
         [FocusNext, SwapNext],
@@ -3195,6 +3200,7 @@ const BIND_ACTIONS: [[Action; 2]; 13] = {
         [ToggleFloat, ToggleFloat],
         [CloseWindow, CloseWindow],
         [FillDesktop, FillDesktop],
+        [SystemMenu, SystemMenu],
         [CycleWidth, CycleHeight],
         [CenterColumn, CenterColumn],
         [ConsumeLeft, ConsumeLeft],
@@ -4849,7 +4855,6 @@ fn fixed(c: &Config) -> Vec<(String, &'static str, &'static [Action])> {
         (format!("{m}Enter"), "Open the terminal", &[Terminal]),
         (format!("{m}Shift+Enter"), "Open the browser", &[Browser]),
         (format!("{m}Space"), "Launcher", &[Launcher]),
-        (format!("{m}Shift+Space"), "Power menu", &[SystemMenu]),
         (
             format!("{m}Home / End"),
             "Scrolling: first / last column (with Shift: take the window along)",
@@ -4860,7 +4865,7 @@ fn fixed(c: &Config) -> Vec<(String, &'static str, &'static [Action])> {
     // alt_tab_replacement under any other key).
     if matches!(c.main_key, MainKey::LAlt | MainKey::RAlt) {
         let tab = "Switch windows (Astur's switcher when it is on)";
-        v.insert(6, (format!("{}Tab", m), tab, &[]));
+        v.insert(5, (format!("{}Tab", m), tab, &[]));
     }
     v
 }
@@ -5478,8 +5483,8 @@ fn cheat_sheet(c: &Config) -> String {
     lines.join("\n") + "\n"
 }
 
-/// The 13 single-key binds' VK codes, in `BINDS` order.
-fn binds(c: &Config) -> [u32; 13] {
+/// The 14 single-key binds' VK codes, in `BINDS` order.
+fn binds(c: &Config) -> [u32; 14] {
     [
         c.key_focus_next,
         c.key_focus_prev,
@@ -5490,6 +5495,7 @@ fn binds(c: &Config) -> [u32; 13] {
         c.key_toggle_float,
         c.key_close_window,
         c.key_fill_desktop,
+        c.key_system_menu,
         c.key_cycle_width,
         c.key_center_column,
         c.key_consume_left,
@@ -5497,7 +5503,7 @@ fn binds(c: &Config) -> [u32; 13] {
     ]
 }
 
-fn binds_mut(c: &mut Config) -> [&mut u32; 13] {
+fn binds_mut(c: &mut Config) -> [&mut u32; 14] {
     [
         &mut c.key_focus_next,
         &mut c.key_focus_prev,
@@ -5508,6 +5514,7 @@ fn binds_mut(c: &mut Config) -> [&mut u32; 13] {
         &mut c.key_toggle_float,
         &mut c.key_close_window,
         &mut c.key_fill_desktop,
+        &mut c.key_system_menu,
         &mut c.key_cycle_width,
         &mut c.key_center_column,
         &mut c.key_consume_left,
@@ -5814,7 +5821,7 @@ fn ws_problems(rows: &[WsRow], count: usize) -> Vec<Option<String>> {
 
 // The tables into the Config, each only while every row in it is valid.
 
-fn fold_keys(keys: &[String; 13], c: &mut Config) {
+fn fold_keys(keys: &[String; 14], c: &mut Config) {
     for (slot, k) in binds_mut(c).into_iter().zip(keys) {
         if let Some(vk) = key_to_vk(k) {
             *slot = vk;
@@ -6198,6 +6205,7 @@ fn conf_pairs(c: &Config) -> (Pairs, Pairs) {
         ("key_toggle_float", vk_to_key(c.key_toggle_float)),
         ("key_close_window", vk_to_key(c.key_close_window)),
         ("key_fill_desktop", vk_to_key(c.key_fill_desktop)),
+        ("key_system_menu", vk_to_key(c.key_system_menu)),
         ("key_cycle_width", vk_to_key(c.key_cycle_width)),
         ("key_center_column", vk_to_key(c.key_center_column)),
         ("key_consume_left", vk_to_key(c.key_consume_left)),
@@ -8802,7 +8810,7 @@ fn tips(c: &Config) -> Vec<(String, &'static str)> {
     v.push((format!("{m}{}", k(c.key_close_window)), "Close the window"));
     if c.system_menu_enabled {
         v.push((
-            format!("{m}Shift+Space"),
+            format!("{m}{}", k(c.key_system_menu)),
             "Lock, sleep, restart, and Astur's own menu",
         ));
     }
@@ -11190,6 +11198,10 @@ key_close_window = F4
         assert!(t.contains(&"Alt+1 \u{2026} Alt+9".to_string()), "{t:?}");
         assert!(t.contains(&"Alt+J / Alt+K".to_string()), "{t:?}");
         assert!(t.contains(&"Alt+Space".to_string()));
+        assert!(t.contains(&"Alt+.".to_string()), "{t:?}");
+        c.system_menu_enabled = false;
+        assert!(!tips(&c).iter().any(|x| x == "Alt+."));
+        c.system_menu_enabled = true;
         c.key_close_window = 0x51; // Q
         c.workspaces = 3;
         c.launcher_enabled = false;

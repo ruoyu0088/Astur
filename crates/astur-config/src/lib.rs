@@ -211,6 +211,7 @@ pub struct Config {
     pub key_consume_left: u32,   // Alt+<key> scrolling: consume/expel left (default [)
     pub key_consume_right: u32,  // Alt+<key> scrolling: consume/expel right (default ])
     pub key_fill_desktop: u32,   // Alt+<key> fill the focused window to the work area (default E)
+    pub key_system_menu: u32,    // Alt+<key> open the power menu (default .)
     pub theme: String,           // popup palette: dark | light | auto (follows Windows)
     pub acrylic: bool,           // experimental acrylic blur behind the popups
     pub bar_floating: bool,      // detached rounded bar (margins from the screen edges)
@@ -1307,6 +1308,7 @@ impl Config {
             key_consume_left: 0xDB,   // [ (VK_OEM_4)
             key_consume_right: 0xDD,  // ] (VK_OEM_6)
             key_fill_desktop: 0x45,   // E
+            key_system_menu: 0xBE,    // . (VK_OEM_PERIOD)
             main_key: MainKey::LAlt,
             theme: "dark".to_string(),
             acrylic: false,
@@ -1745,7 +1747,8 @@ launcher_file_exclude = .git, node_modules, target
 # Custom records: label|target|icon ;; label|target|icon. icon: auto/path/builtin name.
 launcher_entries =
 
-# Alt+Shift+Space system menu.
+# The system (power) menu: lock, sleep, restart and Astur's own actions.
+# key_system_menu below binds it like the other hotkeys (Alt+. by default).
 system_menu_enabled = true
 system_menu_width = 380
 # Built-ins: lock sleep hibernate sign_out restart shutdown settings open_config
@@ -1846,6 +1849,7 @@ main_key = lalt
 #   Alt+Shift+arrows     move window by direction (across monitors)
 #   Alt+M                promote focused window to master
 #   Alt+E                fill the focused window to the whole work area (toggle)
+#   Alt+.                open the power menu (lock, sleep, restart ...)
 #   Alt+H / Alt+L        master layout: shrink / grow the master column;
 #                        dwindle layout: shrink / grow the focused window's split
 #   Alt+F                toggle floating for the focused window
@@ -1881,9 +1885,9 @@ main_key = lalt
 #                        beside it, middle = stack into its column
 #   Alt + right-drag     side edge = column width, top/bottom = window height
 #
-# The letter keys above (J K H L M T F W E, and R C [ ] for scrolling) are
-# rebindable. Each takes a single key name (see the 'keys' type at the top of
-# this file). Arrows, Home, End and Enter are fixed.  key
+# The keys above (J K H L M T F W E and . for the power menu, and R C [ ] for
+# scrolling) are rebindable. Each takes a single key name (see the 'keys' type
+# at the top of this file). Arrows, Home, End and Enter are fixed.  key
 key_focus_next = J
 key_focus_prev = K
 key_shrink_master = H
@@ -1897,6 +1901,7 @@ key_center_column = C
 key_consume_left = [
 key_consume_right = ]
 key_fill_desktop = E
+key_system_menu = .
 # ============================================================================
 ";
 
@@ -2487,8 +2492,8 @@ const KEY_NAMES: &[(&str, u32)] = &[
     ("'", 0xDE),
     ("Comma", 0xBC),
     (",", 0xBC),
-    ("Period", 0xBE),
     (".", 0xBE),
+    ("Period", 0xBE),
     ("Slash", 0xBF),
     ("/", 0xBF),
     ("Backslash", 0xDC),
@@ -3111,6 +3116,11 @@ fn parse_into_from(c: &mut Config, text: &str, source: &str) {
                     c.key_fill_desktop = k;
                 }
             }
+            "key_system_menu" => {
+                if let Some(k) = key_to_vk(v) {
+                    c.key_system_menu = k;
+                }
+            }
             "main_key" | "mod" => {
                 if let Some(k) = MainKey::from_name(v) {
                     c.main_key = k;
@@ -3601,6 +3611,7 @@ pub fn reload_groups(old: &Config, new: &Config) -> ReloadGroups {
         key_consume_left,
         key_consume_right,
         key_fill_desktop,
+        key_system_menu,
         main_key,
         theme,
         acrylic,
@@ -3711,7 +3722,7 @@ pub fn reload_groups(old: &Config, new: &Config) -> ReloadGroups {
     diff!(live: key_shrink_master, key_grow_master, key_promote_master);
     diff!(live: key_toggle_tiling, key_toggle_float, key_close_window);
     diff!(live: key_cycle_width, key_center_column, key_consume_left, key_consume_right);
-    diff!(live: key_fill_desktop);
+    diff!(live: key_fill_desktop, key_system_menu);
     diff!(live: main_key);
     // Fail-safe: a difference none of the above caught (a field compared in
     // the wrong place, a PartialEq quirk) must still apply, so do it all.
@@ -4376,6 +4387,7 @@ pub fn grow_master_key(c: &Config) -> u32 {
         c.key_consume_left,
         c.key_consume_right,
         c.key_fill_desktop,
+        c.key_system_menu,
     ];
     let extra_on_o = c.extra_hotkeys.iter().any(|h| {
         (h.action != "scratchpad" || c.scratchpad_enabled)
@@ -4399,7 +4411,7 @@ pub fn compile_keys(c: &Config) -> Keymap {
     let mut k = Keymap::default();
     let m = c.main_key.bits();
     if c.system_menu_enabled {
-        k.put_loose(c, m | MOD_SHIFT, 0x20, (SystemMenu, 0), false);
+        k.put_loose(c, m, c.key_system_menu, (SystemMenu, 0), false);
     }
     if c.launcher_enabled {
         k.put_loose(c, m, 0x20, (Launcher, 0), false);
@@ -5043,7 +5055,8 @@ outer_gap = 4
         assert_eq!(m[&(MOD_ALT, 0x31)], ws(0));
         assert_eq!(m[&(MOD_ALT, 0x20)], (Action::Launcher, 0));
         assert_eq!(m[&(MOD_ALT, 0x45)], (Action::FillDesktop, 0));
-        assert_eq!(m[&(MOD_ALT | MOD_SHIFT, 0x20)], (Action::SystemMenu, 0));
+        assert_eq!(m[&(MOD_ALT, 0xBE)], (Action::SystemMenu, 0));
+        assert!(!m.contains_key(&(MOD_ALT | MOD_SHIFT, 0x20)));
         // Left Alt's old quirks: Ctrl ignored, Shift ignored with no Shift action.
         assert_eq!(m[&(MOD_ALT | MOD_CTRL, 0x31)], ws(0));
         assert_eq!(m[&(MOD_ALT | MOD_SHIFT, 0x57)], (Action::CloseWindow, 0));

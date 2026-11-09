@@ -1213,8 +1213,9 @@ unsafe fn vk_down(vk: VIRTUAL_KEY) -> bool {
 /// (launcher / system menu) MUST let these fall through to the system: swallowing
 /// a modifier key-up while a menu is open leaves the global async key state (what
 /// `GetAsyncKeyState` reads) reporting that modifier stuck down — the "phantom
-/// Shift" bug when a menu is opened with Alt+Shift+Space and Shift is released
-/// before the menu closes. Includes the generic codes for injected events too.
+/// Shift" bug when a menu is opened with a Shift chord (the old Alt+Shift+Space
+/// power menu) and Shift is released before the menu closes. Includes the
+/// generic codes for injected events too.
 /// Win and a reserved Caps Lock count too: Win can be the main key, and the
 /// reserved key's own tracking runs after the capture modes, which would
 /// otherwise eat its release and leave it held for good. A Win press while
@@ -22978,8 +22979,9 @@ fn launcher_thread() {
 }
 
 // =========================================================================
-// System / power menu (Alt+Shift+Space): omarchy-style power actions, same
-// hook-driven no-focus model as the launcher. See plan/system-menu.md.
+// System / power menu (key_system_menu, Alt+. by default): omarchy-style power
+// actions, same hook-driven no-focus model as the launcher. See
+// plan/system-menu.md.
 // =========================================================================
 
 const WM_SYSMENU: u32 = WM_USER + 11;
@@ -24834,7 +24836,7 @@ fn main() {
         for i in 0..2 {
             spawn_named(&format!("filesearch-{i}"), filesearch_worker);
         }
-        // System / power menu (Alt+Shift+Space): owns its popup + message pump.
+        // System / power menu (key_system_menu): owns its popup + message pump.
         spawn_named("sysmenu", sysmenu_thread);
         // Hidden window that holds the keyboard when focus is on nothing (#25).
         spawn_named("focus-sink", focus_sink_thread);
@@ -28609,7 +28611,7 @@ mod tests {
     /// read, WIN-only chords it dropped) are not covered here: they are the
     /// documented edge cases in plan/known-issues.md.
     fn old_lookup(c: &Config, vk: u32, shift: bool, ctrl: bool) -> Option<String> {
-        if vk == 0x20 && shift && c.system_menu_enabled {
+        if vk == c.key_system_menu && !shift && c.system_menu_enabled {
             return Some("SystemMenu".into());
         }
         if vk == 0x20 && !shift && c.launcher_enabled {

@@ -5,7 +5,7 @@
 (including a Niri-style scrolling layout, chosen per monitor), a
 per-monitor status bar, up to 20 virtual workspaces, and silky composited
 animations. Full edition adds a configurable **app launcher + file search**
-(Alt+Space), **system menu** (Alt+Shift+Space), desktop tools, settings GUI, and
+(Alt+Space), **system menu** (Alt+. by default), desktop tools, settings GUI, and
 tray icon. A keyboard-driven,
 i3-style alternative to
 [komorebi](https://github.com/LGUG2Z/komorebi),
@@ -40,7 +40,7 @@ Astur comes in two editions from the same project:
 | Tiling · Alt-drag · bar · workspaces · animations | ✓ | ✓ |
 | **Scrolling layout** · tabbed columns · per-monitor layouts | — | ✓ |
 | **App launcher + file search + calculator** (Alt+Space) | — | ✓ |
-| **Power menu** (Alt+Shift+Space) | — | ✓ |
+| **Power menu** (Alt+. by default) | — | ✓ |
 | **Bar widgets** (volume · network · app buttons) + light/dark theme | — | ✓ |
 | Optional switcher · scratchpad · clipboard · emoji · wallpapers · media · IPC | — | ✓ |
 
@@ -127,7 +127,7 @@ them.
   file scope/excludes, result limit, placement, size, rows, font, colours, opacity,
   radius, icons, and mouse navigation are configurable. `Tab` shows Modified / Size /
   Path columns; `Shift+Enter` reveals a file; `F5` refreshes app/custom entries.
-- **System menu** *(Astur)* — `Alt+Shift+Space` opens configurable Power and Setup
+- **System menu** *(Astur)* — `Alt+.` by default (rebindable as `key_system_menu`) opens configurable Power and Setup
   categories with lock/sleep/hibernate/sign-out/restart/shutdown, settings, config,
   reload, restart-Astur, screenshot, and wallpaper actions. Order, width, icons,
   confirmation, custom categories, commands, URLs, and scripts are data-driven.
@@ -211,7 +211,7 @@ shortcut follow the key you picked.
 | `Alt` + left-drag | Move window |
 | `Alt` + right-drag | Resize from nearest corner |
 | `Alt` + `Space` | **App launcher + file search** *(Astur)* |
-| `Alt` + `Shift` + `Space` | **Power / system menu** *(Astur)* |
+| `Alt` + `.` | **Power / system menu** *(Astur)* (rebindable: `key_system_menu`) |
 | `Alt` + `T` | Toggle tiling mode on/off |
 | `Alt` + `J` / `K` | Focus next / previous window |
 | `Alt` + `Shift+J` / `Shift+K` | Swap window with next / previous |
@@ -324,8 +324,9 @@ everything, which also repairs any window left mis-styled:
   `scroll_width_presets`, `scroll_height_presets`, `scroll_center`,
   `tab_bar_height`), gaps, borders, focus, animations/easing, popup theme/geometry,
   launcher providers/custom entries, system actions, desktop tools, rich rules,
-  persistence, IPC, and hotkeys (scrolling keys: `key_cycle_width`,
-  `key_center_column`, `key_consume_left`, `key_consume_right`).
+  persistence, IPC, and hotkeys (`key_focus_next` … `key_fill_desktop`,
+  `key_system_menu`; scrolling keys: `key_cycle_width`, `key_center_column`,
+  `key_consume_left`, `key_consume_right`).
 - **`navbar.conf`** — bar placement/style (`shape`, `palette`, `workspace_style`,
   `font_weight`, `border_width`, `island_padding`, `widget_colors`), three widget
   zones, labels/formats/icons (`icon_mode = glyph` for Windows icons), app
