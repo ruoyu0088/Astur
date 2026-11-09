@@ -21,8 +21,8 @@ use astur_config::{
     parse_window_rules, pin_theme_color, set_conf_key, text_on, vk_to_key, workspace_label, Action,
     BarPreset, BarRoles, BindIssue, Config, HotkeyDef, LauncherEntry, Level, MainKey, SystemAction,
     WindowRule, BAR_ACTIONS, BAR_CLICK_DEFAULTS, BAR_CLICK_WIDGETS, BAR_DARK, BAR_LIGHT,
-    BAR_PRESETS, BAR_WIDGETS, LAYOUTS, MAX_WORKSPACES, MOD_ALT, MOD_CTRL, MOD_HYPER, MOD_SHIFT,
-    MOD_WIN, PALETTES, SWATCH_NAMES,
+    BAR_PRESETS, BAR_WIDGETS, LAYOUTS, MAX_WORKSPACES, MAX_WS_APPS, MOD_ALT, MOD_CTRL, MOD_HYPER,
+    MOD_SHIFT, MOD_WIN, PALETTES, SWATCH_NAMES,
 };
 use eframe::egui::{
     self, Align, Color32, CornerRadius, FontFamily, FontId, Layout, Margin, RichText, Sense,
@@ -2323,16 +2323,27 @@ impl App {
         // Dots draw no labels and stay one size.
         when(ui, f, c.bar_workspace_style != "dot", |ui, f| {
             ws_label_row(ui, f, c, d);
-            toggle(
+            row(
                 ui,
                 f,
                 (
                     "App icons in each workspace",
-                    "Up to three icons of the apps open on each workspace, beside its label.",
+                    "How many icons of the apps open on each workspace show beside its label: 0 leaves them out.",
                     "workspace_apps",
                 ),
                 &mut c.bar_workspace_apps,
-                d.bar_workspace_apps,
+                &d.bar_workspace_apps,
+                |ui, v| {
+                    ui.add(
+                        egui::DragValue::new(v)
+                            .range(0..=MAX_WS_APPS)
+                            .clamp_existing_to_range(false)
+                            .custom_formatter(|n, _| match n {
+                                n if n < 1.0 => "Off".to_string(),
+                                n => format!("{n:.0}"),
+                            }),
+                    );
+                },
             );
         });
         toggle(
@@ -6258,7 +6269,7 @@ fn conf_pairs(c: &Config) -> (Pairs, Pairs) {
         ("title_format", c.bar_title_format.clone()),
         ("title_bold", b(c.bar_title_bold)),
         ("workspace_label", c.bar_workspace_label.clone()),
-        ("workspace_apps", b(c.bar_workspace_apps)),
+        ("workspace_apps", c.bar_workspace_apps.to_string()),
         ("monitors", c.bar_monitors.clone()),
         ("keyboard_format", c.bar_keyboard_format.clone()),
         ("disk_drive", c.bar_disk_drive.clone()),
@@ -6951,7 +6962,8 @@ fn fill_tokens(fmt: &str, values: &[(&str, &str)]) -> String {
 /// and `glyph_only` drops the value too. `drawable`: the icon font has the
 /// glyph. Without it the WM shows the label as `both` does (alone under
 /// glyph_only): CPU and RAM exist only in Segoe Fluent Icons, so on
-/// Windows 10's MDL2 the bar reads "CPU 23%". The keyboard and uptime show
+/// Windows 10's MDL2 the bar reads "CPU  23%" (the 3-wide stat3 value). The
+/// keyboard and uptime show
 /// their value whatever the mode, and never a label.
 fn stat_sample(
     mode: &str,
@@ -8375,17 +8387,21 @@ fn bird(p: &egui::Painter, rect: egui::Rect, colour: Color32) {
 /// The workspace marks a preview draws: (label, width, app icons). Four
 /// workspaces at most, the first two occupied (two apps, then one). Widths
 /// as the WM's mark_widths: `cell`, or room for the label and its icons
-/// once workspace_label is not auto or workspace_apps is on (never dots).
+/// once workspace_label is not auto or workspace_apps is above 0 (never
+/// dots). A count of 1 narrows the sample to one icon per mark, as the WM
+/// would.
 fn ws_marks(p: &egui::Painter, c: &Config, font: &FontId, cell: f32) -> Vec<(String, f32, usize)> {
     let dots = c.bar_workspace_style == "dot";
-    let fit = !dots && (c.bar_workspace_label != "auto" || c.bar_workspace_apps);
+    let fit = !dots && (c.bar_workspace_label != "auto" || c.bar_workspace_apps > 0);
+    let want = (c.bar_workspace_apps as usize).min(MAX_WS_APPS as usize);
     (ws_labels(c, c.workspaces.clamp(1, 4))
         .into_iter()
         .enumerate())
     .map(|(i, label)| {
-        let icons = match c.bar_workspace_apps && !dots {
-            true => [2, 1].get(i).copied().unwrap_or(0),
-            false => 0,
+        let icons = if dots {
+            0
+        } else {
+            [2, 1].get(i).copied().unwrap_or(0).min(want)
         };
         let w = if fit {
             let tw = p.layout_no_wrap(label.clone(), font.clone(), Color32::WHITE);
@@ -11200,8 +11216,8 @@ key_close_window = F4
     fn previews_fall_back_as_the_bar_does() {
         // Windows 10's MDL2 has no CPU glyph: the bar shows the label.
         let sample = |drawable: bool| stat_sample("glyph", "CPU", "{value}%", "cpu", &|_| drawable);
-        assert_eq!(sample(false), (None, "CPU 23%".to_string()));
-        assert_eq!(sample(true), (Some('\u{EEA1}'), "23%".to_string()));
+        assert_eq!(sample(false), (None, "CPU  23%".to_string()));
+        assert_eq!(sample(true), (Some('\u{EEA1}'), " 23%".to_string()));
         // glyph_only: the glyph alone where there is one, else the label
         // alone; the keyboard and uptime keep their value.
         let vol = |drawable: bool| {

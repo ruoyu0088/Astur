@@ -253,7 +253,7 @@ pub struct Config {
     pub bar_custom_format: String,   // {output}
     pub bar_custom_interval: u32,    // seconds between custom runs, 1..=3600
     pub bar_workspace_label: String, // WORKSPACE_LABELS: what a mark shows
-    pub bar_workspace_apps: bool,    // up to 3 app icons in each workspace mark
+    pub bar_workspace_apps: u32,     // app icons in each workspace mark, 0 = none
     /// `monitors`: all | primary | screen numbers ("1 3", 1-based, left to
     /// right); read through `bar_monitor_mask` and `bar_on`.
     pub bar_monitors: String,
@@ -587,6 +587,11 @@ pub const LAYOUTS: &[&str] = &[
 /// slide snapshot (~32 MB of GPU/system-shared memory at 4K, an estimate),
 /// and the pill strip is `workspaces` x `workspace_width` wide.
 pub const MAX_WORKSPACES: usize = 20;
+
+/// Most app icons `workspace_apps` puts in one workspace mark. Past a handful
+/// the mark grows wider than the workspace name it sits beside, and the bar
+/// runs out of room; the settings slider uses it too.
+pub const MAX_WS_APPS: u32 = 8;
 
 /// Built-in scrolling preset cycles. Shared by `defaults()` and the parser,
 /// which falls back to them when a list has nothing valid in it.
@@ -1346,7 +1351,7 @@ impl Config {
             bar_custom_format: "{output}".to_string(),
             bar_custom_interval: 10,
             bar_workspace_label: "auto".to_string(),
-            bar_workspace_apps: false,
+            bar_workspace_apps: 0,
             bar_monitors: "all".to_string(),
             bar_separator_style: "line".to_string(),
             bar_hover: false,
@@ -2051,9 +2056,10 @@ monitors = all
 #   icon_name  icon and name together
 # With anything but auto, a mark widens to fit its label.
 workspace_label = auto
-# Up to 3 app icons in each workspace mark, for the apps open there (not
-# with workspace_style = dot).  bool
-workspace_apps = false
+# How many app icons each workspace mark shows for the apps open there (not
+# with workspace_style = dot): 0 hides them, 5 shows up to 5. true and false
+# still work (3 and 0), the way this key started.  number, 0 to 8
+workspace_apps = 0
 
 # ---------------------------------------------------------------------------
 # Click actions
@@ -2196,6 +2202,17 @@ border = auto
 
 pub fn parse_bool(v: &str) -> bool {
     matches!(v.to_ascii_lowercase().as_str(), "true" | "yes" | "1" | "on")
+}
+
+/// How many app icons a workspace mark shows: `workspace_apps`, a number from
+/// 0 to `MAX_WS_APPS`. The `true` / `false` this key started with still work
+/// (3 and 0), as do the other bool spellings, so an old config reads the same.
+pub fn parse_ws_apps(v: &str) -> u32 {
+    match v.trim().to_ascii_lowercase().as_str() {
+        "true" | "yes" | "on" => 3,
+        "false" | "no" | "off" | "" => 0,
+        other => other.parse::<u32>().map_or(0, |n| n.min(MAX_WS_APPS)),
+    }
 }
 
 /// Parse a comma/semicolon-separated list of window-class names, trimmed.
@@ -3272,7 +3289,7 @@ fn parse_into_from(c: &mut Config, text: &str, source: &str) {
                     c.bar_workspace_label = m;
                 }
             }
-            "workspace_apps" => c.bar_workspace_apps = parse_bool(v),
+            "workspace_apps" => c.bar_workspace_apps = parse_ws_apps(v),
             "monitors" | "bar_monitors" => {
                 if let Some(m) = parse_monitors(v) {
                     c.bar_monitors = m;
@@ -4502,6 +4519,25 @@ outer_gap = 4
     }
 
     #[test]
+    fn workspace_apps_takes_a_count_and_the_old_bools() {
+        assert_eq!(Config::defaults().bar_workspace_apps, 0);
+        // The bools this key started with: on shows 3, off shows none.
+        assert_eq!(parse_ws_apps("true"), 3);
+        assert_eq!(parse_ws_apps("yes"), 3);
+        assert_eq!(parse_ws_apps("false"), 0);
+        assert_eq!(parse_ws_apps("off"), 0);
+        // A count, clamped to what a mark can hold.
+        assert_eq!(parse_ws_apps("1"), 1);
+        assert_eq!(parse_ws_apps("5"), 5);
+        assert_eq!(parse_ws_apps("0"), 0);
+        assert_eq!(parse_ws_apps("99"), MAX_WS_APPS);
+        assert_eq!(parse_ws_apps("nonsense"), 0);
+        let c = parse_pair("workspace_apps = 6\n", "");
+        assert_eq!(c.bar_workspace_apps, 6);
+        assert!(c.unknown_keys.is_empty(), "{:?}", c.unknown_keys);
+    }
+
+    #[test]
     fn async_window_pos_defaults_on_parses_and_round_trips() {
         assert!(Config::defaults().async_window_pos);
         // The shipped template states the default, it does not override it.
@@ -5239,7 +5275,7 @@ outer_gap = 4
             );
             assert_eq!(c.bar_separator_style, "line");
             assert_eq!(c.bar_title_format, "{title}");
-            assert!(!c.bar_hover && !c.bar_title_bold && !c.bar_workspace_apps);
+            assert!(!c.bar_hover && !c.bar_title_bold && c.bar_workspace_apps == 0);
             assert_eq!(c.bar_disk_drive, "C:\\");
             assert_eq!(c.bar_custom_command, "");
             assert_eq!(c.bar_custom_interval, 10);

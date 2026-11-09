@@ -3184,7 +3184,7 @@ struct MonBar {
     title: String,
     apps: Vec<BarApp>,
     layout: String, // this monitor's own layout (layouts are per monitor)
-    /// `workspace_apps`: per mark, up to 3 cached app icons (WS_ICON_PX;
+    /// `workspace_apps`: per mark, up to that many cached app icons (WS_ICON_PX;
     /// 0 / -1 = placeholder) of that workspace's windows. Empty when off.
     ws_icons: Vec<Vec<isize>>,
 }
@@ -3466,7 +3466,7 @@ struct BarData {
     /// (always glyphs) are listed. Otherwise no face check, no extra font.
     icon_font: bool,
     /// Workspace marks fit their labels (`mark_widths`): `workspace_label`
-    /// is not auto, or `workspace_apps` is on.
+    /// is not auto, or `workspace_apps` is above 0.
     ws_fit: bool,
     tiling: bool,
     left: Vec<BarWidget>,
@@ -15008,20 +15008,22 @@ unsafe fn update_bar(mgr: &Manager) {
             })
             .collect();
         // Each mark's app icons, one per app (an exe's windows share one
-        // cached handle), resolved at this monitor's size.
+        // cached handle), resolved at this monitor's size. `workspace_apps`
+        // is how many go in a mark (0 = none, the key's default).
         let ws_icons: Vec<Vec<isize>> =
-            if mgr.cfg.bar_workspace_apps && mgr.cfg.bar_workspace_style != "dot" {
+            if mgr.cfg.bar_workspace_apps > 0 && mgr.cfg.bar_workspace_style != "dot" {
                 let px = dpi_px(WS_ICON_PX, monitor_dpi(m.hmon));
+                let want = (mgr.cfg.bar_workspace_apps as usize).min(config::MAX_WS_APPS as usize);
                 slots
                     .iter()
                     .map(|&local| {
-                        let mut icons: Vec<isize> = Vec::with_capacity(3);
+                        let mut icons: Vec<isize> = Vec::with_capacity(want);
                         let wins = m
                             .workspaces
                             .get(local)
                             .map_or(&[][..], |ws| &ws.windows[..]);
                         for &h in wins {
-                            if icons.len() == 3 {
+                            if icons.len() >= want {
                                 break;
                             }
                             if IsWindow(hwnd_from(h)).as_bool() {
@@ -15251,7 +15253,7 @@ fn bar_data_from(cfg: &Config, light: bool, tiling: bool, mons: Vec<MonBar>) -> 
         uptime_format: cfg.bar_uptime_format.clone(),
         custom_format: cfg.bar_custom_format.clone(),
         icon_font,
-        ws_fit: cfg.bar_workspace_label != "auto" || cfg.bar_workspace_apps,
+        ws_fit: cfg.bar_workspace_label != "auto" || cfg.bar_workspace_apps > 0,
         tiling,
         left,
         center,
@@ -15764,7 +15766,7 @@ unsafe fn media_button_w(hdc: HDC, fonts: [HGDIOBJ; 3]) -> i32 {
 }
 
 /// Each workspace mark's width. `cell` for all of them, as always, unless
-/// `workspace_label` is not auto or `workspace_apps` is on: then a mark
+/// `workspace_label` is not auto or `workspace_apps` is above 0: then a mark
 /// widens to its label and icons, never narrower than `cell`. Gated so a
 /// bar without those keys keeps uniform cells (and its long auto names stay
 /// clipped). `dot` draws no labels, so its marks stay `cell`.
@@ -27609,9 +27611,13 @@ mod tests {
                         })
                         .collect();
                 }
-                if cfg.bar_workspace_apps {
+                if cfg.bar_workspace_apps > 0 {
+                    let cap = (cfg.bar_workspace_apps as usize).min(config::MAX_WS_APPS as usize);
                     m.ws_icons = (0..8)
-                        .map(|i| vec![0; (m.occupied >> i & 1) as usize * (1 + i % 3)])
+                        .map(|i| {
+                            let n = (m.occupied >> i & 1) as usize * (1 + i % 3);
+                            vec![0; n.min(cap)]
+                        })
                         .collect();
                 }
                 if cfg.bar_title_format == "{app}" {

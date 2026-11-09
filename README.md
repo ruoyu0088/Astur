@@ -86,8 +86,8 @@ them.
   `cpu_right_click = launch wt`): out of the box the clock and date open the
   calendar, volume mutes, battery and network open quick settings, CPU and RAM
   open Task Manager, a right-click opens the matching Windows Settings page.
-  Workspace marks can show numbers, names, icons or both, plus the apps open
-  on each (`workspace_label`, `workspace_apps`); an optional hover highlight,
+  Workspace marks can show numbers, names, icons or both, plus up to
+  `workspace_apps` app icons each (0 hides them, the default); an optional hover highlight,
   dot or powerline separators, a bold app-name title (`title_format = {app}`),
   and clock seconds / AM-PM and long date tokens. Shapes: full-width strip,
   **floating rounded bar** (margins + corner radius), **islands** (a rounded
