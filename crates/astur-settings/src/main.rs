@@ -3178,7 +3178,7 @@ const BINDS: [Meta<'static>; 14] = [
     ("Turn tiling on or off", "Off leaves every window floating, as on plain Windows; workspaces keep working.", "key_toggle_tiling"),
     ("Float or tile the window", "Lifts the active window out of the tiling so you can place it yourself, or puts it back.", "key_toggle_float"),
     ("Close the window", "", "key_close_window"),
-    ("Fill the window to the work area", "Puts the active window over the whole work area (the taskbar and the Astur bar stay visible), or back where it was. The same key toggles.", "key_fill_desktop"),
+    ("Fill the workspace", "Takes every window of the workspace over the whole work area, the focused one on top (the taskbar and the Astur bar stay visible). The same key puts the layout back where it was.", "key_fill_desktop"),
     ("Open the power menu", "Lock, sleep, restart and Astur's own actions in one popup. The menu itself is switched on or off on the Power page.", "key_system_menu"),
     ("Cycle column width", "Scrolling: steps the column through its widths. With Shift: the window's height.", "key_cycle_width"),
     ("Centre the column", "Scrolling: puts the active column in the middle of the screen.", "key_center_column"),
@@ -8805,7 +8805,7 @@ fn tips(c: &Config) -> Vec<(String, &'static str)> {
     v.push((float, "Float the window, or tile it again"));
     v.push((
         format!("{m}{}", k(c.key_fill_desktop)),
-        "Fill the window over the whole work area, or back",
+        "Fill the workspace, or back",
     ));
     v.push((format!("{m}{}", k(c.key_close_window)), "Close the window"));
     if c.system_menu_enabled {

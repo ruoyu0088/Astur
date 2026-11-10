@@ -220,7 +220,7 @@ shortcut follow the key you picked.
 | `Alt` + `Shift` + arrows | Move window by direction (across monitors) |
 | `Alt` + `H` / `L` | Shrink / grow master column (`master` layout) |
 | `Alt` + `M` | Promote focused window to master |
-| `Alt` + `E` | Fill the focused window to the whole work area, or back (toggle) |
+| `Alt` + `E` | Fill the whole workspace (the focused window on top), or back (toggle) |
 | `Alt` + `F` | Toggle float for focused window |
 | `Alt` + `W` | Close focused window |
 | `Alt` + `Enter` | Launch terminal |

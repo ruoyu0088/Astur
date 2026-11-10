@@ -19,7 +19,8 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 use std::sync::atomic::{
-    AtomicBool, AtomicI32, AtomicI64, AtomicIsize, AtomicU32, AtomicU64, AtomicU8, Ordering,
+    AtomicBool, AtomicI32, AtomicI64, AtomicIsize, AtomicU32, AtomicU64, AtomicU8, AtomicUsize,
+    Ordering,
 };
 use std::sync::{Condvar, LazyLock, Mutex, OnceLock};
 use std::time::Instant;
@@ -122,10 +123,9 @@ use windows::Win32::UI::Shell::{
 };
 use windows::Win32::UI::WindowsAndMessaging::{
     AppendMenuW, CopyIcon, CreateIconFromResourceEx, CreateIconIndirect, CreatePopupMenu,
-    DestroyIcon, DestroyMenu, DrawIconEx, LoadIconW, PostQuitMessage, TrackPopupMenu, DI_NORMAL,
-    HCURSOR, HICON, ICONINFO, IDC_ARROW, IDI_APPLICATION, LR_DEFAULTCOLOR, LoadCursorW,
-    MF_STRING, SC_KEYMENU, TPM_RETURNCMD,
-    TPM_RIGHTBUTTON, WM_LBUTTONDBLCLK, WM_SYSCOMMAND,
+    DestroyIcon, DestroyMenu, DrawIconEx, LoadCursorW, LoadIconW, PostQuitMessage, TrackPopupMenu,
+    DI_NORMAL, HCURSOR, HICON, ICONINFO, IDC_ARROW, IDI_APPLICATION, LR_DEFAULTCOLOR, MF_STRING,
+    SC_KEYMENU, TPM_RETURNCMD, TPM_RIGHTBUTTON, WM_LBUTTONDBLCLK, WM_SYSCOMMAND,
 };
 use windows::Win32::UI::WindowsAndMessaging::{
     CallNextHookEx, CreateWindowExW, DefWindowProcW, DestroyWindow, DispatchMessageW, GetAncestor,
@@ -134,11 +134,12 @@ use windows::Win32::UI::WindowsAndMessaging::{
     SetWindowsHookExW, ShowWindow, TranslateMessage, UnhookWindowsHookEx, WindowFromPoint, GA_ROOT,
     GA_ROOTOWNER, HC_ACTION, HHOOK, HWND_TOPMOST, KBDLLHOOKSTRUCT, LAYERED_WINDOW_ATTRIBUTES_FLAGS,
     LLKHF_INJECTED, LWA_ALPHA, MSG, MSLLHOOKSTRUCT, SET_WINDOW_POS_FLAGS, SWP_ASYNCWINDOWPOS,
-    SWP_NOACTIVATE, SWP_NOSENDCHANGING, SWP_NOSIZE, SWP_NOZORDER, SWP_SHOWWINDOW, SW_HIDE,
-    SW_RESTORE, SW_SHOWNA, WH_KEYBOARD_LL, WH_MOUSE_LL, WM_KEYDOWN, WM_KEYUP, WM_LBUTTONDOWN,
-    WM_LBUTTONUP, WM_MBUTTONDOWN, WM_MBUTTONUP, WM_MOUSEHWHEEL, WM_MOUSEMOVE, WM_MOUSEWHEEL,
-    WM_RBUTTONDOWN, WM_RBUTTONUP, WM_SYSKEYDOWN, WM_SYSKEYUP, WM_XBUTTONDOWN, WNDCLASSW,
-    WS_EX_LAYERED, WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW, WS_EX_TOPMOST, WS_EX_TRANSPARENT, WS_POPUP,
+    SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSENDCHANGING, SWP_NOSIZE, SWP_NOZORDER, SWP_SHOWWINDOW,
+    SW_HIDE, SW_RESTORE, SW_SHOWNA, WH_KEYBOARD_LL, WH_MOUSE_LL, WM_KEYDOWN, WM_KEYUP,
+    WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MBUTTONDOWN, WM_MBUTTONUP, WM_MOUSEHWHEEL, WM_MOUSEMOVE,
+    WM_MOUSEWHEEL, WM_RBUTTONDOWN, WM_RBUTTONUP, WM_SYSKEYDOWN, WM_SYSKEYUP, WM_XBUTTONDOWN,
+    WNDCLASSW, WS_EX_LAYERED, WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW, WS_EX_TOPMOST, WS_EX_TRANSPARENT,
+    WS_POPUP,
 };
 
 // --- tiling additions -----------------------------------------------------
@@ -5325,15 +5326,37 @@ fn floats_by_default(exe_path: &str) -> bool {
         .is_some_and(|n| n.eq_ignore_ascii_case("astur-settings.exe"))
 }
 
-/// Windows filled to the whole work area by `ToggleFill`, with the rect and
-/// floating state they had before, so the same key restores them.
-static FILLED: Mutex<Option<HashMap<isize, (RECT, bool)>>> = Mutex::new(None);
+/// One window a fill-mode press took over: the rect and the floating state it
+/// had, so the same key can put it back.
+struct FilledWin {
+    h: isize,
+    old: RECT,
+    was_floating: bool,
+}
 
-/// Alt+E: fill the focused window to its monitor's whole work area, or put it
-/// back where it was. In tiling mode a filled window floats (so a re-tile
-/// leaves it alone) and keeps the size and place the tiling gave it until then;
-/// in float mode nothing places windows, so only the rect moves. Both modes
-/// work: the toggle is a shortcut, not a layout feature.
+/// A workspace in fill mode: every window it had when the key was pressed
+/// covers the work area, and focus picks which one shows.
+struct FilledWs {
+    wins: Vec<FilledWin>,
+}
+
+/// Fill mode per (monitor, workspace): each keeps its own state, so filling one
+/// workspace and switching to another does not lose the first one's layout.
+static FILLED: Mutex<Option<HashMap<(usize, usize), FilledWs>>> = Mutex::new(None);
+/// How many workspaces are in fill mode. The manager tail's cheap guard: with
+/// the mode off its focus pass costs one atomic load.
+static FILL_ACTIVE: AtomicUsize = AtomicUsize::new(0);
+/// The hwnd `fill_follow` last placed. The focus pass touches a window only
+/// when focus moves there, so a dialog the app opens over it stays on top.
+static FILL_SEEN: AtomicIsize = AtomicIsize::new(0);
+
+/// Alt+E: take the focused window's workspace over. In tiling mode every window
+/// of it goes over the whole work area (they float, so a re-tile leaves them
+/// alone and the strip keeps its order), and focus chooses which one shows:
+/// switching to another window of that workspace shows it in the same place.
+/// The next Alt+E, from any window of the workspace, puts the layout back
+/// exactly as it was. In float mode there is no layout to take over, so only
+/// the focused window's rect moves.
 unsafe fn toggle_fill(mgr: &mut Manager) {
     let tiling = mgr.tiling;
     let (mi, a, h) = mgr.focused();
@@ -5345,73 +5368,203 @@ unsafe fn toggle_fill(mgr: &mut Manager) {
     if IsIconic(hwnd).as_bool() {
         return;
     }
-    // Never hold FILLED across the Win32 calls below: a placement posts
-    // events this thread handles (a window's rect changed, tracked windows
-    // changed), and those take the lock too.
+    // Never hold FILLED across the Win32 calls below: a placement posts events
+    // this thread handles (a window's rect changed, tracked windows changed),
+    // and those take the lock too.
     let prev = {
         let mut guard = FILLED.lock().unwrap();
-        guard.get_or_insert_with(HashMap::new).remove(&h)
+        let map = guard.get_or_insert_with(HashMap::new);
+        let out = map.remove(&(mi, a));
+        FILL_ACTIVE.store(map.len(), Ordering::Relaxed);
+        out
     };
-    if let Some((old, was_floating)) = prev {
-        // A window the user maximised since filling ignores placement: take
-        // the maximise off first, so the old rect (or the old tile) takes.
-        if IsZoomed(hwnd).as_bool() {
-            let _ = ShowWindow(hwnd, SW_RESTORE);
-        }
-        // Back to the tile it left (or the floating rect it had).
-        if was_floating || !tiling {
-            set_pos_raw(h, old);
-        } else {
-            {
-                let ws = &mut mgr.monitors[mi].workspaces[a];
-                ws.floating.retain(|&x| x != h);
-                ws.focused = h;
+    if let Some(fw) = prev {
+        // Back to what each window had: a floating one to its own rect, a tiled
+        // one into the strip (its order never changed).
+        let mut unfloat = false;
+        for w in &fw.wins {
+            if !IsWindow(hwnd_from(w.h)).as_bool() {
+                continue;
             }
-            // Un-floated, it re-enters the strip at its old slot, which can
-            // lie off the view: scroll to it, or it parks while focused.
+            let ww = hwnd_from(w.h);
+            // A window the user maximised since filling ignores placement:
+            // take the maximise off first, so the old rect (or tile) takes.
+            if IsZoomed(ww).as_bool() {
+                let _ = ShowWindow(ww, SW_RESTORE);
+            }
+            // Leave the strip list as it was found even in float mode: the
+            // entry we added would otherwise keep the window floating if
+            // tiling came back on later.
+            if !w.was_floating {
+                mgr.monitors[mi].workspaces[a]
+                    .floating
+                    .retain(|&x| x != w.h);
+                unfloat = true;
+            }
+            if w.was_floating || !tiling {
+                if !IsIconic(ww).as_bool() {
+                    set_pos_raw(w.h, w.old);
+                }
+            }
+        }
+        if tiling && unfloat {
+            mgr.monitors[mi].workspaces[a].focused = h;
+            // The un-floated windows re-enter the strip at their old slots,
+            // which can lie off the view: scroll to it, or they park focused.
             ensure_visible(mgr, mi, a);
             retile_monitor(mgr, mi);
         }
+        FILL_SEEN.store(0, Ordering::Relaxed);
         focus_window(h);
         return;
     }
-    // A maximised window already covers the work area (a tiled one is never
-    // maximised): filling it would only drop the maximised state for the same
-    // picture, and the maximised rect is no rect to go back to.
+    // A maximised window already covers the work area: filling it would only
+    // drop the maximised state for the same picture.
     if IsZoomed(hwnd).as_bool() {
         return;
     }
-    let mut r = RECT::default();
-    if GetWindowRect(hwnd, &mut r).is_err() {
+    let wa = mgr.monitors[mi].work_area;
+    if !tiling {
+        // No layout to take over: fill just this window, and restore its rect.
+        let mut r = RECT::default();
+        if GetWindowRect(hwnd, &mut r).is_err() {
+            return;
+        }
+        FILLED
+            .lock()
+            .unwrap()
+            .get_or_insert_with(HashMap::new)
+            .insert(
+                (mi, a),
+                FilledWs {
+                    wins: vec![FilledWin {
+                        h,
+                        old: r,
+                        // Restored by rect: nothing placed it but us.
+                        was_floating: true,
+                    }],
+                },
+            );
+        FILL_ACTIVE.store(1, Ordering::Relaxed);
+        set_pos_raw(h, adjust_for_border(hwnd, wa));
+        FILL_SEEN.store(0, Ordering::Relaxed);
+        focus_window(h);
         return;
     }
-    let was_floating = tiling && mgr.monitors[mi].workspaces[a].floating.contains(&h);
+    // Tiling: every window of the workspace goes over the work area and floats,
+    // so a re-tile leaves it alone. ws.windows keeps its order, which is all the
+    // strip needs to restore the layout on the way out.
+    let members: Vec<isize> = mgr.monitors[mi].workspaces[a].windows.clone();
+    let mut wins: Vec<FilledWin> = Vec::with_capacity(members.len());
+    {
+        let ws = &mut mgr.monitors[mi].workspaces[a];
+        for &w in &members {
+            if w == 0 || scratch_hidden(w) || !IsWindow(hwnd_from(w)).as_bool() {
+                continue;
+            }
+            let ww = hwnd_from(w);
+            if IsIconic(ww).as_bool() {
+                continue;
+            }
+            let mut wr = RECT::default();
+            if GetWindowRect(ww, &mut wr).is_err() {
+                continue;
+            }
+            let was_floating = ws.floating.contains(&w);
+            if !was_floating {
+                ws.floating.push(w);
+            }
+            wins.push(FilledWin {
+                h: w,
+                old: wr,
+                was_floating,
+            });
+        }
+        ws.focused = h;
+    }
+    if wins.is_empty() {
+        return;
+    }
+    // Floating windows are never placed: a parked one would fill off screen,
+    // and it leaves its slot for good now.
+    for w in &wins {
+        unpark_tracked(w.h);
+        slot_forget(w.h);
+    }
+    for w in &wins {
+        set_pos_raw(w.h, adjust_for_border(hwnd_from(w.h), wa));
+    }
     FILLED
         .lock()
         .unwrap()
         .get_or_insert_with(HashMap::new)
-        .insert(h, (r, was_floating));
-    if tiling {
+        .insert((mi, a), FilledWs { wins });
+    FILL_ACTIVE.store(
         {
-            let ws = &mut mgr.monitors[mi].workspaces[a];
-            if !was_floating {
-                ws.floating.push(h);
-            }
-            ws.focused = h;
-        }
-        // Floating windows are never placed: a parked one would fill off
-        // screen, and it leaves its slot for good now.
-        unpark_tracked(h);
-        slot_forget(h);
+            let guard = FILLED.lock().unwrap();
+            guard.as_ref().map_or(0, HashMap::len)
+        },
+        Ordering::Relaxed,
+    );
+    // The strip lost every tiled window: close the old slots (the filled ones
+    // float, so this leaves them alone).
+    retile_monitor(mgr, mi);
+    // Focus picks which of them shows; put that one on top now, rather than
+    // waiting for the next command's tail pass.
+    let _ = SetWindowPos(
+        hwnd,
+        HWND_TOP,
+        0,
+        0,
+        0,
+        0,
+        SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE,
+    );
+    FILL_SEEN.store(h, Ordering::Relaxed);
+    focus_window(h);
+}
+
+/// Fill mode's focus side: whichever filled window has focus covers the work
+/// area and sits on top, so moving around a filled workspace behaves like
+/// moving around maximised windows. Runs in the manager tail (after a command,
+/// never on a hook), which is where a focus key, a click and Windows' own pick
+/// all end up.
+unsafe fn fill_follow(mgr: &Manager) {
+    if FILL_ACTIVE.load(Ordering::Relaxed) == 0 {
+        FILL_SEEN.store(0, Ordering::Relaxed);
+        return;
+    }
+    let (mi, a, h) = mgr.focused();
+    if h == 0 || FILL_SEEN.load(Ordering::Relaxed) == h {
+        return;
+    }
+    let filled = {
+        let guard = FILLED.lock().unwrap();
+        guard
+            .as_ref()
+            .and_then(|m| m.get(&(mi, a)))
+            .is_some_and(|fw| fw.wins.iter().any(|w| w.h == h))
+    };
+    if !filled {
+        return;
+    }
+    FILL_SEEN.store(h, Ordering::Relaxed);
+    let hwnd = hwnd_from(h);
+    // A minimised or user-maximised window is not ours to place right now.
+    if IsIconic(hwnd).as_bool() || IsZoomed(hwnd).as_bool() {
+        return;
     }
     let wa = mgr.monitors[mi].work_area;
     set_pos_raw(h, adjust_for_border(hwnd, wa));
-    if tiling && !was_floating {
-        // The freed slot closes; the filled window is floating, so this
-        // leaves it alone.
-        retile_monitor(mgr, mi);
-    }
-    focus_window(h);
+    let _ = SetWindowPos(
+        hwnd,
+        HWND_TOP,
+        0,
+        0,
+        0,
+        0,
+        SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE,
+    );
 }
 
 /// Compute the visible-frame correction: Win32 GetWindowRect includes an
@@ -12355,8 +12508,12 @@ unsafe fn untrack_window(mgr: &mut Manager, h: isize) {
         SCRATCHPAD_HIDDEN.store(false, Ordering::Relaxed);
     }
     unmark_hidden_by_us(h); // untracked -> marker would only go stale
-    if let Some(m) = FILLED.lock().unwrap().as_mut() {
-        m.remove(&h);
+    if let Some(map) = FILLED.lock().unwrap().as_mut() {
+        for fw in map.values_mut() {
+            fw.wins.retain(|w| w.h != h);
+        }
+        map.retain(|_, fw| !fw.wins.is_empty());
+        FILL_ACTIVE.store(map.len(), Ordering::Relaxed);
     }
     let was_focus = mgr.focused().2 == h;
     if let Some((mi, wi, _)) = mgr.detach_window(h) {
@@ -14622,7 +14779,11 @@ unsafe fn media_poll() {
             continue;
         }
         let mut title = window_title(hwnd);
-        for suffix in [" - VLC media player", " - Windows Media Player", " - MusicPlayer2"] {
+        for suffix in [
+            " - VLC media player",
+            " - Windows Media Player",
+            " - MusicPlayer2",
+        ] {
             if let Some(value) = title.strip_suffix(suffix) {
                 title = value.to_string();
             }
@@ -18611,6 +18772,7 @@ fn manager_loop(cfg: Config) {
         let t1 = probe.map(|_| Instant::now());
         strip_after_command(&mut mgr);
         unsafe {
+            fill_follow(&mgr);
             claim_empty_focus(&mgr, focus_before);
             // The focus moved with no retile (a focus key off scrolling,
             // FocusMouse, Windows' own pick after a close) while a motion
@@ -18710,7 +18872,11 @@ fn sync_managed(mgr: &Manager) {
         warm.retain(|h| map.contains_key(h));
     }
     if let Some(filled) = FILLED.lock().unwrap().as_mut() {
-        filled.retain(|h, _| map.contains_key(h));
+        for fw in filled.values_mut() {
+            fw.wins.retain(|w| map.contains_key(&w.h));
+        }
+        filled.retain(|_, fw| !fw.wins.is_empty());
+        FILL_ACTIVE.store(filled.len(), Ordering::Relaxed);
     }
     if let Some(exe) = EXE_CACHE.lock().unwrap().as_mut() {
         exe.retain(|h, _| map.contains_key(h));
@@ -24948,7 +25114,7 @@ fn main() {
         println!("  Alt+H / Alt+L  = shrink / grow the master area");
         println!("  Alt+F          = toggle float for focused window");
         println!("  Alt+W          = close focused window");
-        println!("  Alt+E          = fill the focused window to the work area (or back)");
+        println!("  Alt+E          = fill the workspace (focused window on top, or back)");
         println!("  Alt+Space      = app launcher (type to filter, Enter to run)");
         println!("  Alt+Enter      = launch terminal");
         println!("  Alt+Shift+Enter= launch default browser");

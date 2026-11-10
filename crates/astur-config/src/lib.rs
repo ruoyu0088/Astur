@@ -210,7 +210,7 @@ pub struct Config {
     pub key_center_column: u32,  // Alt+<key> scrolling: centre focused column (default C)
     pub key_consume_left: u32,   // Alt+<key> scrolling: consume/expel left (default [)
     pub key_consume_right: u32,  // Alt+<key> scrolling: consume/expel right (default ])
-    pub key_fill_desktop: u32,   // Alt+<key> fill the focused window to the work area (default E)
+    pub key_fill_desktop: u32,   // Alt+<key> fill the workspace, focused on top (default E)
     pub key_system_menu: u32,    // Alt+<key> open the power menu (default .)
     pub theme: String,           // popup palette: dark | light | auto (follows Windows)
     pub acrylic: bool,           // experimental acrylic blur behind the popups
@@ -1851,7 +1851,7 @@ main_key = lalt
 #   Alt+arrows           focus window by direction (cursor follows)
 #   Alt+Shift+arrows     move window by direction (across monitors)
 #   Alt+M                promote focused window to master
-#   Alt+E                fill the focused window to the whole work area (toggle)
+#   Alt+E                fill the workspace (the focused window on top), and back
 #   Alt+.                open the power menu (lock, sleep, restart ...)
 #   Alt+H / Alt+L        master layout: shrink / grow the master column;
 #                        dwindle layout: shrink / grow the focused window's split
@@ -4026,7 +4026,7 @@ impl Action {
             MoveUp => "Move the window up",
             MoveRight => "Move the window right",
             MoveDown => "Move the window down",
-            FillDesktop => "Fill the focused window to the work area",
+            FillDesktop => "Fill the workspace, focused window on top",
             SwitchWorkspace => "Go to a workspace",
             MoveToWorkspace => "Move the window to a workspace",
             Extra => "Custom shortcut",
