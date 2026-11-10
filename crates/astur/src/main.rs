@@ -17751,7 +17751,7 @@ unsafe fn tab_bars_build(mgr: &Manager) -> Vec<TabBarData> {
         let Some(ws) = m
             .workspaces
             .get(m.active)
-            .filter(|ws| m.layout == "scrolling" && ws.strip.cols.values().any(|c| c.tabbed))
+            .filter(|ws| mgr.is_scrolling(mi, m.active) && ws.strip.cols.values().any(|c| c.tabbed))
         else {
             continue;
         };
