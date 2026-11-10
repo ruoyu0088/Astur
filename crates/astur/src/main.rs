@@ -14601,6 +14601,7 @@ unsafe fn media_poll() {
         "wmplayer.exe",
         "foobar2000.exe",
         "musicbee.exe",
+        "MusicPlayer2.exe",
     ];
     let handles = MANAGED.lock().unwrap().clone();
     let mut found = String::new();
@@ -14620,7 +14621,7 @@ unsafe fn media_poll() {
             continue;
         }
         let mut title = window_title(hwnd);
-        for suffix in [" - VLC media player", " - Windows Media Player"] {
+        for suffix in [" - VLC media player", " - Windows Media Player", " - MusicPlayer2"] {
             if let Some(value) = title.strip_suffix(suffix) {
                 title = value.to_string();
             }
