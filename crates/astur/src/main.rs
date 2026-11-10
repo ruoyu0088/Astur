@@ -2832,6 +2832,7 @@ static STAT_VOL: AtomicIsize = AtomicIsize::new(-1);
 static STAT_MUTE: AtomicBool = AtomicBool::new(false);
 static MEDIA_TEXT: Mutex<String> = Mutex::new(String::new());
 static MEDIA_ON: AtomicBool = AtomicBool::new(false);
+static MEDIA_PRESENT: AtomicBool = AtomicBool::new(false);
 // The disk and custom widgets' values, filled by slow_worker (its own thread:
 // a dead network share can block GetDiskFreeSpaceExW and a command can run
 // for seconds, neither of which may stall the stats worker's volume
@@ -14763,6 +14764,7 @@ unsafe fn media_poll() {
     ];
     let handles = MANAGED.lock().unwrap().clone();
     let mut found = String::new();
+    let mut present = false;
     for h in handles {
         let hwnd = hwnd_from(h);
         let Some(exe) = window_exe(hwnd) else {
@@ -14778,6 +14780,7 @@ unsafe fn media_poll() {
         {
             continue;
         }
+        present = true;
         let mut title = window_title(hwnd);
         for suffix in [
             " - VLC media player",
@@ -14796,6 +14799,7 @@ unsafe fn media_poll() {
             break;
         }
     }
+    MEDIA_PRESENT.store(present, Ordering::Relaxed);
     *MEDIA_TEXT.lock().unwrap() = found;
 }
 
@@ -14908,6 +14912,7 @@ fn stats_worker() {
                 media_poll();
             } else {
                 MEDIA_TEXT.lock().unwrap().clear();
+                MEDIA_PRESENT.store(false, Ordering::Relaxed);
             }
         }
         next_poll = Instant::now() + std::time::Duration::from_millis(2000);
@@ -15900,7 +15905,13 @@ unsafe fn bar_measure(
             SepStyle::Dot => sep_dot(cv.h).ceil() as i32,
             SepStyle::Powerline => (cv.h as f32 * 0.3).round() as i32,
         },
-        BarWidget::MediaControls => 3 * media_button_w(hdc, fonts),
+        BarWidget::MediaControls => {
+            if MEDIA_PRESENT.load(Ordering::Relaxed) {
+                3 * media_button_w(hdc, fonts)
+            } else {
+                0
+            }
+        }
         BarWidget::Logo => logo_dims(cv.h).0,
         _ => {
             let Some((s, tone, glyph)) = bar_widget_text(wgt, data, mb) else {
@@ -16525,6 +16536,7 @@ unsafe fn bar_tick_changed(h: HWND) -> bool {
         flag.load(Ordering::Relaxed).hash(&mut hasher);
     }
     MEDIA_TEXT.lock().unwrap().hash(&mut hasher);
+    MEDIA_PRESENT.load(Ordering::Relaxed).hash(&mut hasher);
     // The newer widgets: a Win+Space switch shows within a second, the
     // uptime by the minute.
     kbd_langid().hash(&mut hasher);
@@ -18251,16 +18263,22 @@ fn apply_bar_statics(cfg: &Config) {
     BAR_WHEEL_WS.store(cfg.bar_wheel_ws, Ordering::Relaxed);
     NET_ON.store(cfg.bar_show_net, Ordering::Relaxed);
     VOL_ON.store(cfg.bar_show_volume, Ordering::Relaxed);
-    MEDIA_ON.store(cfg.media_enabled && cfg.bar_show_media, Ordering::Relaxed);
+    let want_media = cfg.media_enabled
+        && (cfg.bar_show_media || bar_shows(cfg, "media_controls"));
+    MEDIA_ON.store(want_media, Ordering::Relaxed);
     STATS_ON.store(
         cfg.bar_show_cpu
             || cfg.bar_show_mem
             || cfg.bar_show_battery
             || cfg.bar_show_net
             || cfg.bar_show_volume
-            || (cfg.media_enabled && cfg.bar_show_media),
+            || want_media,
         Ordering::Relaxed,
     );
+    if !want_media {
+        MEDIA_TEXT.lock().unwrap().clear();
+        MEDIA_PRESENT.store(false, Ordering::Relaxed);
+    }
     let listed = |w: &str| bar_shows(cfg, w);
     DISK_ON.store(listed("disk"), Ordering::Relaxed);
     *DISK_ROOT.lock().unwrap() = cfg.bar_disk_drive.clone();
