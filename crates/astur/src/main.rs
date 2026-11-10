@@ -123,7 +123,8 @@ use windows::Win32::UI::Shell::{
 use windows::Win32::UI::WindowsAndMessaging::{
     AppendMenuW, CopyIcon, CreateIconFromResourceEx, CreateIconIndirect, CreatePopupMenu,
     DestroyIcon, DestroyMenu, DrawIconEx, LoadIconW, PostQuitMessage, TrackPopupMenu, DI_NORMAL,
-    HICON, ICONINFO, IDI_APPLICATION, LR_DEFAULTCOLOR, MF_STRING, SC_KEYMENU, TPM_RETURNCMD,
+    HCURSOR, HICON, ICONINFO, IDC_ARROW, IDI_APPLICATION, LR_DEFAULTCOLOR, LoadCursorW,
+    MF_STRING, SC_KEYMENU, TPM_RETURNCMD,
     TPM_RIGHTBUTTON, WM_LBUTTONDBLCLK, WM_SYSCOMMAND,
 };
 use windows::Win32::UI::WindowsAndMessaging::{
@@ -22978,6 +22979,7 @@ fn launcher_thread() {
             hInstance: hinst,
             hbrBackground: CreateSolidBrush(COLORREF(LAUNCHER_BG)),
             lpszClassName: w!("astur_launcher"),
+            hCursor: arrow_cursor(),
             ..Default::default()
         };
         RegisterClassW(&wc);
@@ -23854,6 +23856,7 @@ fn sysmenu_thread() {
             hInstance: hinst,
             hbrBackground: CreateSolidBrush(COLORREF(LAUNCHER_BG)),
             lpszClassName: w!("astur_sysmenu"),
+            hCursor: arrow_cursor(),
             ..Default::default()
         };
         RegisterClassW(&wc);
@@ -23913,6 +23916,7 @@ fn focus_sink_thread() {
             lpfnWndProc: Some(sink_wndproc),
             hInstance: hinst,
             lpszClassName: w!("astur_sink"),
+            hCursor: arrow_cursor(),
             ..Default::default()
         };
         RegisterClassW(&wc);
@@ -24087,6 +24091,7 @@ unsafe fn setup_tray(hinst: HINSTANCE) -> Option<HWND> {
         lpfnWndProc: Some(tray_wndproc),
         hInstance: hinst,
         lpszClassName: w!("astur_tray"),
+        hCursor: arrow_cursor(),
         ..Default::default()
     };
     RegisterClassW(&wc);
@@ -24166,6 +24171,19 @@ unsafe fn message_box(message: &str) {
         w!("Astur"),
         MB_OK | MB_ICONERROR,
     );
+}
+
+/// The standard arrow, for every Astur window class. A class registered with
+/// `hCursor = NULL` leaves `WM_SETCURSOR` unanswered: DefWindowProc returns
+/// FALSE without calling SetCursor, so the cursor keeps whatever it was when
+/// the pointer entered the window — a wait cursor the system set for some
+/// earlier operation then sits over the bar and reads as "Astur is not
+/// responding" even though every message is answered at once. Windows only
+/// resets it when a class names a cursor, so every Astur window class names
+/// this one.
+fn arrow_cursor() -> HCURSOR {
+    // SAFETY: LoadCursorW only reads; a NULL instance asks for a system cursor.
+    unsafe { LoadCursorW(None, IDC_ARROW).unwrap_or_default() }
 }
 
 // =========================================================================
@@ -24702,6 +24720,7 @@ fn main() {
             hInstance: hinst,
             hbrBackground: brush,
             lpszClassName: w!("astur_marker"),
+            hCursor: arrow_cursor(),
             ..Default::default()
         };
         RegisterClassW(&wc);
@@ -24713,6 +24732,7 @@ fn main() {
             hInstance: hinst,
             hbrBackground: CreateSolidBrush(COLORREF(0)),
             lpszClassName: SLIDE_CLASS,
+            hCursor: arrow_cursor(),
             ..Default::default()
         };
         RegisterClassW(&slide_wc);
@@ -24725,6 +24745,7 @@ fn main() {
             lpfnWndProc: Some(tab_wndproc),
             hInstance: hinst,
             lpszClassName: w!("astur_tabs"),
+            hCursor: arrow_cursor(),
             ..Default::default()
         };
         RegisterClassW(&tabs_wc);
@@ -24771,6 +24792,7 @@ fn main() {
                 hInstance: hinst,
                 hbrBackground: bar_brush,
                 lpszClassName: w!("astur_bar"),
+                hCursor: arrow_cursor(),
                 ..Default::default()
             };
             RegisterClassW(&bwc);
@@ -25326,6 +25348,7 @@ mod tests {
                 lpfnWndProc: Some(wndproc),
                 hInstance: hinst,
                 lpszClassName: class,
+                hCursor: arrow_cursor(),
                 ..Default::default()
             };
             assert_ne!(RegisterClassW(&wc), 0);
