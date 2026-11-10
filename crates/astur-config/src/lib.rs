@@ -55,6 +55,7 @@ pub struct Config {
     pub workspace_icons: Vec<String>, // optional short labels/icons, in workspace order
     pub layout: String,           // default layout: one of LAYOUTS
     pub monitor_layouts: Vec<String>, // per monitor (1st entry = monitor 1); "" = `layout`
+    pub workspace_layouts: Vec<String>, // per workspace (1st entry = ws 1); "" = its monitor's layout
     pub scroll_default_width: f32, // scrolling: new column width, fraction of the view
     pub scroll_width_presets: Vec<f32>, // scrolling: column widths Alt+R cycles
     pub scroll_height_presets: Vec<f32>, // scrolling: tile heights Alt+Shift+R cycles
@@ -1156,6 +1157,7 @@ impl Config {
             workspace_icons: Vec::new(),
             layout: "dwindle".to_string(),
             monitor_layouts: Vec::new(),
+            workspace_layouts: Vec::new(),
             scroll_default_width: 0.5,
             scroll_width_presets: SCROLL_WIDTHS.to_vec(),
             scroll_height_presets: SCROLL_HEIGHTS.to_vec(),
@@ -1418,6 +1420,16 @@ impl Config {
         }
     }
 
+    /// The layout workspace `index` uses (0-based: ws 1 is index 0) when
+    /// the config sets one; None when the workspace inherits its monitor's
+    /// layout. The WM resolves the fallback (`monitor_layouts` or `layout`).
+    pub fn layout_for_workspace(&self, index: usize) -> Option<&str> {
+        match self.workspace_layouts.get(index) {
+            Some(l) if !l.is_empty() => Some(l),
+            _ => None,
+        }
+    }
+
     /// What clicking `widget` with `button` (0 left, 1 right, 2 middle)
     /// does, as (action, argument): its `_click` line, else the
     /// BAR_CLICK_DEFAULTS entry, else ("none", ""). No allocation: the bar
@@ -1553,6 +1565,12 @@ layout = dwindle
 # Empty or 'default' = use layout above. Example: scrolling on monitor 1 and
 # master on monitor 3:  monitor_layouts = scrolling, , master
 monitor_layouts =
+
+# Per-workspace layout, by workspace number (1 = the first). Empty or
+# 'default' = use the workspace's monitor's layout. Example: scrolling on
+# ws1, the monitor layout for ws2, master on ws3:
+#   workspace_layouts = scrolling, , master
+workspace_layouts =
 
 # Fraction of the width given to the master window (master layout, and the
 # master split that Alt+H / Alt+L adjust).  float 0.10 - 0.90
@@ -2830,6 +2848,27 @@ fn parse_into_from(c: &mut Config, text: &str, source: &str) {
                     l
                 };
             }
+            "workspace_layouts" => {
+                // Positional like `monitor_layouts`: blanks must survive so
+                // "scrolling, , master" still means ws 3. `default` and typos
+                // read as blank (inherit the monitor's layout).
+                let l: Vec<String> = v
+                    .split(',')
+                    .map(|s| {
+                        let s = s.trim().to_ascii_lowercase();
+                        if LAYOUTS.contains(&s.as_str()) {
+                            s
+                        } else {
+                            String::new()
+                        }
+                    })
+                    .collect();
+                c.workspace_layouts = if l.iter().all(String::is_empty) {
+                    Vec::new()
+                } else {
+                    l
+                };
+            }
             "scroll_default_width" => {
                 if let Ok(n) = v.parse::<f32>() {
                     if !n.is_nan() {
@@ -3480,6 +3519,7 @@ pub fn reload_groups(old: &Config, new: &Config) -> ReloadGroups {
         workspace_icons,
         layout,
         monitor_layouts,
+        workspace_layouts,
         scroll_default_width,
         scroll_width_presets,
         scroll_height_presets,
@@ -3668,7 +3708,7 @@ pub fn reload_groups(old: &Config, new: &Config) -> ReloadGroups {
     // Workspace model and tile geometry. The bar keys here feed reserve_bar
     // (the work area the tiles fill), so they re-tile as well as rebuild.
     diff!(wm: per_monitor, workspaces, outer_gap, inner_gap, master_ratio, layout);
-    diff!(wm: monitor_layouts, scroll_default_width, scroll_width_presets);
+    diff!(wm: monitor_layouts, workspace_layouts, scroll_default_width, scroll_width_presets);
     diff!(wm: scroll_height_presets, scroll_center, tab_bar_height);
     diff!(wm: bar_enabled, bar_height, bar_bottom, bar_floating, bar_margin, bar_autohide);
     // `shape` decides floating, which changes the reserved height; `monitors`
@@ -4743,6 +4783,32 @@ outer_gap = 4
             let c = parse_text(&format!("monitor_layouts = {v}"));
             assert!(c.monitor_layouts.is_empty(), "{v:?}");
         }
+    }
+
+    #[test]
+    fn workspace_layouts_are_positional() {
+        let c = parse_text("workspace_layouts = scrolling, , master");
+        assert_eq!(c.workspace_layouts, vec!["scrolling", "", "master"]);
+        // default and typos inherit without shifting later positions.
+        let c = parse_text("workspace_layouts = Default, spiral, GRID");
+        assert_eq!(c.workspace_layouts, vec!["", "", "grid"]);
+        let c = parse_text("workspace_layouts = scrolling, ");
+        assert_eq!(c.workspace_layouts, vec!["scrolling", ""]);
+        for v in ["", "default", " , , ", "bogus"] {
+            let c = parse_text(&format!("workspace_layouts = {v}"));
+            assert!(c.workspace_layouts.is_empty(), "{v:?}");
+        }
+    }
+
+    #[test]
+    fn layout_for_workspace_returns_none_to_inherit() {
+        let c = parse_text("layout = columns\nworkspace_layouts = scrolling, , master");
+        assert_eq!(c.layout_for_workspace(0), Some("scrolling"));
+        assert_eq!(c.layout_for_workspace(1), None);
+        assert_eq!(c.layout_for_workspace(2), Some("master"));
+        assert_eq!(c.layout_for_workspace(3), None);
+        assert_eq!(c.layout_for_workspace(usize::MAX), None);
+        assert_eq!(Config::defaults().layout_for_workspace(0), None);
     }
 
     #[test]

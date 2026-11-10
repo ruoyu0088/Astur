@@ -4760,6 +4760,21 @@ impl Manager {
         }
     }
 
+    /// The layout `(mi, wi)` runs under: its `workspace_layouts` entry when
+    /// the config sets one, else the monitor's own (config- or
+    /// runtime-resolved) `layout`.
+    fn layout_at(&self, mi: usize, wi: usize) -> &str {
+        let global = self.ml_to_global(mi, wi);
+        self.cfg
+            .layout_for_workspace(global)
+            .unwrap_or(&self.monitors[mi].layout)
+    }
+
+    /// Does `(mi, wi)` run the scrolling layout?
+    fn is_scrolling(&self, mi: usize, wi: usize) -> bool {
+        self.layout_at(mi, wi) == "scrolling"
+    }
+
     /// Locate a tracked window as (monitor index, workspace index).
     ///
     /// O(1) via the INDEX snapshot (rebuilt by sync_managed after every command);
@@ -4802,7 +4817,7 @@ impl Manager {
     /// view; the caller retiles.
     fn detach_window(&mut self, h: isize) -> Option<(usize, usize, bool)> {
         let (mi, wi) = self.locate(h)?;
-        let scrolling = self.monitors.get(mi)?.layout == "scrolling";
+        let scrolling = self.is_scrolling(mi, wi);
         let ws = self.monitors.get_mut(mi)?.workspaces.get_mut(wi)?;
         let was_floating = ws.floating.contains(&h);
         // Read before h leaves. h counts as tiled even when it is already
@@ -4871,7 +4886,7 @@ impl Manager {
         at: Option<DropAt>,
         floating: bool,
     ) {
-        let scrolling = !floating && self.monitors[mi].layout == "scrolling";
+        let scrolling = !floating && self.is_scrolling(mi, wi);
         let ws = &mut self.monitors[mi].workspaces[wi];
         if scrolling {
             let tiled = unsafe { tiled_windows(ws) };
@@ -4909,13 +4924,17 @@ impl Manager {
     /// The scrolling monitor whose full rect holds (x, y): the strip an
     /// Alt+wheel there scrolls (Cmd::ScrollWheel).
     fn scroll_mon_at(&self, x: i32, y: i32) -> Option<usize> {
-        self.monitors.iter().position(|m| {
-            m.layout == "scrolling"
-                && x >= m.full.left
-                && x < m.full.right
-                && y >= m.full.top
-                && y < m.full.bottom
-        })
+        self.monitors
+            .iter()
+            .enumerate()
+            .find(|(mi, m)| {
+                self.is_scrolling(*mi, m.active)
+                    && x >= m.full.left
+                    && x < m.full.right
+                    && y >= m.full.top
+                    && y < m.full.bottom
+            })
+            .map(|(mi, _)| mi)
     }
 }
 
@@ -6963,7 +6982,10 @@ struct PlaceMap {
 
 impl PlaceMap {
     unsafe fn new(mgr: &Manager, mi: usize, wi: usize) -> Self {
-        let Some(mon) = mgr.monitors.get(mi).filter(|m| m.layout == "scrolling") else {
+        if !mgr.is_scrolling(mi, wi) {
+            return PlaceMap::default();
+        }
+        let Some(mon) = mgr.monitors.get(mi) else {
             return PlaceMap::default();
         };
         let all: Vec<RECT> = mgr.monitors.iter().map(|m| m.full).collect();
@@ -7032,7 +7054,10 @@ fn park_rect(r: RECT, own: RECT, all: &[RECT]) -> RECT {
 /// Model only: the caller retiles. A no-op off scrolling monitors and when
 /// the focus is not in the strip (floating, minimised, none).
 unsafe fn ensure_visible(mgr: &mut Manager, mi: usize, wi: usize) {
-    let Some(mon) = mgr.monitors.get_mut(mi).filter(|m| m.layout == "scrolling") else {
+    if !mgr.is_scrolling(mi, wi) {
+        return;
+    }
+    let Some(mon) = mgr.monitors.get_mut(mi) else {
         return;
     };
     let view_w = mon.work_area.right - mon.work_area.left;
@@ -7079,7 +7104,7 @@ unsafe fn workspace_layout(mgr: &Manager, mi: usize, wi: usize) -> Vec<(isize, R
     if n == 0 {
         return Vec::new();
     }
-    let rects = match mon.layout.as_str() {
+    let rects = match mgr.layout_at(mi, wi) {
         "master" => master_stack(
             mon.work_area,
             n,
@@ -7999,7 +8024,7 @@ unsafe fn tile_slot(mgr: &Manager, h: isize) -> Option<(RECT, Vis)> {
 /// animated one. A cheap no-op on every other layout.
 unsafe fn strip_reveal(mgr: &mut Manager, h: isize) {
     let Some((mi, wi)) = mgr.locate(h).filter(|&(mi, wi)| {
-        mgr.monitors[mi].layout == "scrolling" && wi == mgr.monitors[mi].active
+        mgr.is_scrolling(mi, wi) && wi == mgr.monitors[mi].active
     }) else {
         return;
     };
@@ -10772,10 +10797,15 @@ fn cold_wanted(sent: RECT, slot: RECT, wa: RECT, fulls: &[RECT]) -> bool {
 /// whatever is no longer a candidate leaves the cache. One condvar poke
 /// however many are queued.
 unsafe fn cold_request(mgr: &Manager) {
-    if !mgr.tiling
-        || !glide_enabled(&mgr.cfg)
-        || !mgr.monitors.iter().any(|m| m.layout == "scrolling")
-    {
+    if !mgr.tiling || !glide_enabled(&mgr.cfg) {
+        return;
+    }
+    let any_scrolling = mgr
+        .monitors
+        .iter()
+        .enumerate()
+        .any(|(mi, m)| mgr.is_scrolling(mi, m.active));
+    if !any_scrolling {
         return;
     }
     let fulls: Vec<RECT> = mgr.monitors.iter().map(|m| m.full).collect();
@@ -10789,7 +10819,9 @@ unsafe fn cold_request(mgr: &Manager) {
         let (Some(slots), Some(sent)) = (slots.as_ref(), sent.as_ref()) else {
             return;
         };
-        for m in mgr.monitors.iter().filter(|m| m.layout == "scrolling") {
+        for (_mi, m) in (mgr.monitors.iter().enumerate())
+            .filter(|(_mi, m)| mgr.is_scrolling(*_mi, m.active))
+        {
             let Some(ws) = m.workspaces.get(m.active) else {
                 continue;
             };
@@ -12383,11 +12415,16 @@ unsafe fn set_monitor_layout(mgr: &mut Manager, mi: usize, layout: String) {
     // retile brings every parked window back; a hidden workspace's parked
     // windows come back when it is next shown. Nothing is parked there to
     // need a cold snapshot.
-    if mgr.monitors[mi].layout == "scrolling" && layout != "scrolling" {
+    // Away from scrolling the new layout's tiles are all on screen, so the
+    // retile brings every parked window back. Checks the ACTIVE workspace's
+    // effective layout (a `workspace_layouts` override counts, not just the
+    // monitor fallback).
+    let a = mgr.monitors[mi].active;
+    let was_scrolling = mgr.is_scrolling(mi, a);
+    mgr.monitors[mi].layout = layout;
+    if was_scrolling && !mgr.is_scrolling(mi, a) {
         cold_clear();
     }
-    mgr.monitors[mi].layout = layout;
-    let a = mgr.monitors[mi].active;
     ensure_visible(mgr, mi, a);
     retile_monitor(mgr, mi);
 }
@@ -12535,7 +12572,7 @@ unsafe fn untrack_window(mgr: &mut Manager, h: isize) {
             // real focus too, not whichever window Windows activates next
             // (plan/scrolling.md "Defaults"). Its stale FOREGROUND event then
             // fails Cmd::Focused's foreground check.
-            if was_focus && mgr.monitors[mi].layout == "scrolling" {
+            if was_focus && mgr.is_scrolling(mi, wi) {
                 let f = mgr.monitors[mi].workspaces[wi].focused;
                 if f != 0 {
                     focus_window(f);
@@ -12817,7 +12854,7 @@ unsafe fn process(mgr: &mut Manager, cmd: Cmd) {
                 // Never scrolls (plan/scrolling.md "Focus"): hovering a
                 // peeking tile does not focus it. Off scrolling every tile
                 // is Full, and the layout check keeps that free.
-                if mgr.monitors[mi].layout == "scrolling"
+                if mgr.is_scrolling(mi, wi)
                     && tile_slot(mgr, h).is_some_and(|(_, v)| v != Vis::Full)
                 {
                     return;
@@ -13266,7 +13303,7 @@ unsafe fn process(mgr: &mut Manager, cmd: Cmd) {
             // Dropped on a scrolling monitor: a drop zone (plan/scrolling.md
             // "Keys"), which part of a window it landed on or which end of
             // the strip; None when it landed back in its own slot.
-            let scrolling = mgr.monitors[to_mi].layout == "scrolling";
+            let scrolling = mgr.is_scrolling(to_mi, mgr.monitors[to_mi].active);
             let zone = if scrolling {
                 let own = (to_mi == from_mi)
                     .then(|| tile_slot(mgr, h))
@@ -13376,7 +13413,7 @@ unsafe fn process(mgr: &mut Manager, cmd: Cmd) {
                 }
             };
             let wa = mgr.monitors[mi].work_area;
-            if mgr.monitors[mi].layout == "scrolling" {
+            if mgr.is_scrolling(mi, wi) {
                 // A horizontal edge sets the column width, a vertical one the
                 // tile's share of its column (plan/scrolling.md "Keys").
                 if let Some((slot, _)) = tile_slot(mgr, h) {
@@ -13553,9 +13590,7 @@ unsafe fn process(mgr: &mut Manager, cmd: Cmd) {
             // (a tab closed meanwhile): anything that no longer resolves is
             // dropped.
             let Some((mi, wi)) = mgr.locate(w).filter(|&(mi, wi)| {
-                mgr.tiling
-                    && mgr.monitors[mi].layout == "scrolling"
-                    && wi == mgr.monitors[mi].active
+                mgr.tiling && mgr.is_scrolling(mi, wi) && wi == mgr.monitors[mi].active
             }) else {
                 return;
             };
@@ -13648,7 +13683,7 @@ unsafe fn process_strip(mgr: &mut Manager, cmd: &Cmd) -> bool {
         return false;
     }
     let (mi, a, h) = mgr.focused();
-    if mgr.monitors[mi].layout != "scrolling" {
+    if !mgr.is_scrolling(mi, a) {
         return false;
     }
     let default = mgr.cfg.scroll_default_width;
@@ -15300,13 +15335,16 @@ unsafe fn update_bar(mgr: &Manager) {
             title,
             apps,
             ws_icons,
-            layout: match m.workspaces.get(m.active) {
-                // `scrolling 2/5`: the focused column of the shown strip.
-                Some(ws) if m.layout == "scrolling" => {
-                    let cols = ws.strip.columns(&tiled_windows(ws));
-                    scroll_label(locate_tile(&cols, ws.focused).map(|p| p.0), cols.len())
+            layout: {
+                let eff = mgr.layout_at(mi, m.active);
+                match m.workspaces.get(m.active) {
+                    // `scrolling 2/5`: the focused column of the shown strip.
+                    Some(ws) if eff == "scrolling" => {
+                        let cols = ws.strip.columns(&tiled_windows(ws));
+                        scroll_label(locate_tile(&cols, ws.focused).map(|p| p.0), cols.len())
+                    }
+                    _ => eff.to_string(),
                 }
-                _ => m.layout.clone(),
             },
         });
     }
@@ -18855,8 +18893,9 @@ fn strip_after_command(mgr: &mut Manager) {
     let rects: Vec<RECT> = mgr
         .monitors
         .iter()
-        .filter(|m| mgr.tiling && m.layout == "scrolling")
-        .map(|m| m.full)
+        .enumerate()
+        .filter(|(mi, m)| mgr.tiling && mgr.is_scrolling(*mi, m.active))
+        .map(|(_, m)| m.full)
         .collect();
     scrollmon_publish(&rects);
     // SAFETY: manager thread; visibility reads of tracked windows only.
@@ -28836,6 +28875,48 @@ mod tests {
         assert_eq!((dst.windows.clone(), dst.focused), (vec![B], B));
         assert!(!dst.strip.col_of.contains_key(&B));
         assert!(!mgr.monitors[0].workspaces[0].strip.col_of.contains_key(&B));
+    }
+
+    #[test]
+    fn per_workspace_layout_overrides_the_monitor_fallback() {
+        // Two monitors, three local workspaces each, shared mode, primary 0:
+        // ml_to_global(0,0)=0 ws1, (1,0)=1 ws2, (0,1)=2 ws3, (1,1)=3 ws4.
+        let mut mgr = test_manager(2, 3);
+        mgr.primary = 0;
+        mgr.cfg.per_monitor = false;
+        mgr.cfg.workspace_layouts = vec![
+            "scrolling".into(), // ws1
+            String::new(),      // ws2: inherit
+            "master".into(),    // ws3
+        ];
+        mgr.monitors[0].layout = "dwindle".into();
+        mgr.monitors[1].layout = "columns".into();
+        assert_eq!(mgr.layout_at(0, 0), "scrolling");
+        assert_eq!(mgr.layout_at(1, 0), "columns");
+        assert_eq!(mgr.layout_at(0, 1), "master");
+        assert_eq!(mgr.layout_at(1, 1), "columns");
+        assert_eq!(mgr.layout_at(1, 5), "columns");
+        assert!(mgr.is_scrolling(0, 0));
+        assert!(!mgr.is_scrolling(0, 1));
+        assert!(!mgr.is_scrolling(1, 0));
+    }
+
+    #[test]
+    fn per_workspace_layout_in_per_monitor_mode_is_per_local_workspace() {
+        let mut mgr = test_manager(2, 3);
+        mgr.cfg.per_monitor = true;
+        mgr.cfg.workspace_layouts = vec!["scrolling".into(), String::new(), "grid".into()];
+        mgr.monitors[0].layout = "dwindle".into();
+        mgr.monitors[1].layout = "master".into();
+        // Local index == override index on every monitor.
+        assert_eq!(mgr.layout_at(0, 0), "scrolling");
+        assert_eq!(mgr.layout_at(1, 0), "scrolling");
+        assert_eq!(mgr.layout_at(0, 1), "dwindle");
+        assert_eq!(mgr.layout_at(1, 1), "master");
+        assert_eq!(mgr.layout_at(0, 2), "grid");
+        assert_eq!(mgr.layout_at(1, 2), "grid");
+        assert!(mgr.is_scrolling(0, 0));
+        assert!(!mgr.is_scrolling(1, 2));
     }
 
     // ---- scrolling keys, mouse, focus, drag (scrolling slice 5) ----
