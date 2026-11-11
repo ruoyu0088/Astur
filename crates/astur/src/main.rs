@@ -1158,19 +1158,30 @@ fn tile_own(h: isize) -> Option<RECT> {
         .and_then(|m| m.get(&h).copied())
 }
 
-/// A window whose next rect `r` reaches past its own monitor goes to the bottom
-/// of the z-order, so the neighbour monitor's windows stay above the overhang
-/// it paints (flat, no content). Called before AND after the move: before, so
-/// the first crossing frame is covered; after, because a resize can raise the
-/// window again. Z-order only: nothing is activated or focused, and a
-/// foreground window is left alone.
-unsafe fn sink_when_spanning(h: isize, r: RECT) {
+/// Windows that need their z-order looked at again shortly, with the instant
+/// they are due. A resize reaches the app's message loop after our call, and
+/// some programs (Chromium shells especially) raise themselves from that
+/// message, so an immediate sink is not the last word.
+static RESINK: Mutex<Option<HashMap<isize, Instant>>> = Mutex::new(None);
+static RESINK_LIVE: AtomicBool = AtomicBool::new(false);
+
+/// Re-check a spanning window this long after a move: later than the app's own
+/// resize handling, far earlier than the once-a-second sweep.
+const RESINK_MS: u64 = 100;
+
+/// Does `r` reach past `own` (the monitor the window belongs to)?
+fn reaches_past(r: RECT, own: RECT) -> bool {
+    r.left < own.left || r.top < own.top || r.right > own.right || r.bottom > own.bottom
+}
+
+/// Put window `h` at the bottom of the z-order if `r` reaches past its own
+/// monitor. Z-order only: nothing is activated or focused, and a foreground
+/// window is left alone.
+unsafe fn sink_now(h: isize, r: RECT) {
     let Some(own) = tile_own(h) else {
         return;
     };
-    let inside =
-        r.left >= own.left && r.top >= own.top && r.right <= own.right && r.bottom <= own.bottom;
-    if inside {
+    if !reaches_past(r, own) {
         return;
     }
     let hwnd = hwnd_from(h);
@@ -1186,6 +1197,65 @@ unsafe fn sink_when_spanning(h: isize, r: RECT) {
         0,
         SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_NOOWNERZORDER,
     );
+}
+
+/// Queue `h` for one more z-order check in RESINK_MS, starting the checker
+/// thread when it is not running. Re-queueing the same handle just moves its
+/// deadline: a window in a slide gets one check after it settles.
+fn schedule_resink(h: isize) {
+    RESINK
+        .lock()
+        .unwrap()
+        .get_or_insert_with(HashMap::new)
+        .insert(
+            h,
+            Instant::now() + std::time::Duration::from_millis(RESINK_MS),
+        );
+    if RESINK_LIVE.swap(true, Ordering::SeqCst) {
+        return;
+    }
+    spawn_named("astur-resink", || loop {
+        std::thread::sleep(std::time::Duration::from_millis(25));
+        let due: Vec<isize> = {
+            let mut guard = RESINK.lock().unwrap();
+            let Some(map) = guard.as_mut() else {
+                break;
+            };
+            let now = Instant::now();
+            let due: Vec<isize> = map
+                .iter()
+                .filter(|(_, &t)| t <= now)
+                .map(|(&h, _)| h)
+                .collect();
+            for h in &due {
+                map.remove(h);
+            }
+            if map.is_empty() {
+                *guard = None;
+            }
+            due
+        };
+        for h in due {
+            let mut got = RECT::default();
+            if unsafe { GetWindowRect(hwnd_from(h), &mut got) }.is_ok() {
+                unsafe { sink_now(h, got) };
+            }
+        }
+        if RESINK.lock().unwrap().is_none() {
+            RESINK_LIVE.store(false, Ordering::SeqCst);
+            break;
+        }
+    });
+}
+
+/// A window whose next rect `r` reaches past its own monitor goes to the bottom
+/// of the z-order: at once (so the first crossing frame is covered), and again
+/// RESINK_MS later (because the app's own resize handling can raise it back).
+unsafe fn sink_when_spanning(h: isize, r: RECT) {
+    sink_now(h, r);
+    if tile_own(h).is_some_and(|own| reaches_past(r, own)) {
+        schedule_resink(h);
+    }
 }
 
 /// Move a window with no activation/zorder side effects (instant tile placement
