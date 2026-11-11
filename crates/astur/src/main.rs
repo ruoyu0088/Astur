@@ -1167,7 +1167,7 @@ static RESINK_LIVE: AtomicBool = AtomicBool::new(false);
 
 /// Re-check a spanning window this long after a move: later than the app's own
 /// resize handling, far earlier than the once-a-second sweep.
-const RESINK_MS: u64 = 100;
+const RESINK_MS: u64 = 1;
 
 /// Does `r` reach past `own` (the monitor the window belongs to)?
 fn reaches_past(r: RECT, own: RECT) -> bool {
