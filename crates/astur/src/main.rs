@@ -1158,17 +1158,6 @@ fn tile_own(h: isize) -> Option<RECT> {
         .and_then(|m| m.get(&h).copied())
 }
 
-/// Windows that need their z-order looked at again shortly, with the instant
-/// they are due. A resize reaches the app's message loop after our call, and
-/// some programs (Chromium shells especially) raise themselves from that
-/// message, so an immediate sink is not the last word.
-static RESINK: Mutex<Option<HashMap<isize, Instant>>> = Mutex::new(None);
-static RESINK_LIVE: AtomicBool = AtomicBool::new(false);
-
-/// Re-check a spanning window this long after a move: later than the app's own
-/// resize handling, far earlier than the once-a-second sweep.
-const RESINK_MS: u64 = 1;
-
 /// Does `r` reach past `own` (the monitor the window belongs to)?
 fn reaches_past(r: RECT, own: RECT) -> bool {
     r.left < own.left || r.top < own.top || r.right > own.right || r.bottom > own.bottom
@@ -1199,9 +1188,23 @@ unsafe fn sink_now(h: isize, r: RECT) {
     );
 }
 
-/// Queue `h` for one more z-order check in RESINK_MS, starting the checker
-/// thread when it is not running. Re-queueing the same handle just moves its
-/// deadline: a window in a slide gets one check after it settles.
+/// Windows that need their z-order looked at again shortly, with the instant
+/// they are due and the stage they are at. A resize reaches the app's message
+/// loop after our call, and some programs (Chromium shells especially) raise
+/// themselves from that message, so an immediate sink is not the last word.
+static RESINK: Mutex<Option<HashMap<isize, (Instant, u8)>>> = Mutex::new(None);
+static RESINK_LIVE: AtomicBool = AtomicBool::new(false);
+
+/// Z-order checks after a move, in ms after the previous one: the first is
+/// almost immediate (the window is already at the bottom, so it only matters
+/// when the app raised it at once), the second lands after the app has handled
+/// its resize and is the one that reliably sticks. Both are far earlier than
+/// the once-a-second sweep.
+const RESINK_STAGES: [u64; 2] = [1, 100];
+
+/// Queue `h` for the z-order checks in RESINK_STAGES, starting the checker
+/// thread when it is not running. Re-queueing the same handle restarts it at
+/// stage 0: a window in a slide gets the checks after it settles.
 fn schedule_resink(h: isize) {
     RESINK
         .lock()
@@ -1209,36 +1212,48 @@ fn schedule_resink(h: isize) {
         .get_or_insert_with(HashMap::new)
         .insert(
             h,
-            Instant::now() + std::time::Duration::from_millis(RESINK_MS),
+            (
+                Instant::now() + std::time::Duration::from_millis(RESINK_STAGES[0]),
+                0,
+            ),
         );
     if RESINK_LIVE.swap(true, Ordering::SeqCst) {
         return;
     }
     spawn_named("astur-resink", || loop {
-        std::thread::sleep(std::time::Duration::from_millis(25));
-        let due: Vec<isize> = {
+        std::thread::sleep(std::time::Duration::from_millis(5));
+        let due: Vec<(isize, u8)> = {
             let mut guard = RESINK.lock().unwrap();
             let Some(map) = guard.as_mut() else {
                 break;
             };
             let now = Instant::now();
-            let due: Vec<isize> = map
+            let due: Vec<(isize, u8)> = map
                 .iter()
-                .filter(|(_, &t)| t <= now)
-                .map(|(&h, _)| h)
+                .filter(|(_, &(t, _))| t <= now)
+                .map(|(&h, &(_, stage))| (h, stage))
                 .collect();
-            for h in &due {
+            for (h, _) in &due {
                 map.remove(h);
-            }
-            if map.is_empty() {
-                *guard = None;
             }
             due
         };
-        for h in due {
+        for (h, stage) in due {
             let mut got = RECT::default();
             if unsafe { GetWindowRect(hwnd_from(h), &mut got) }.is_ok() {
                 unsafe { sink_now(h, got) };
+            }
+            let next = stage as usize + 1;
+            if next < RESINK_STAGES.len() {
+                RESINK
+                    .lock()
+                    .unwrap()
+                    .get_or_insert_with(HashMap::new)
+                    .entry(h)
+                    .or_insert((
+                        Instant::now() + std::time::Duration::from_millis(RESINK_STAGES[next]),
+                        next as u8,
+                    ));
             }
         }
         if RESINK.lock().unwrap().is_none() {
@@ -1250,7 +1265,7 @@ fn schedule_resink(h: isize) {
 
 /// A window whose next rect `r` reaches past its own monitor goes to the bottom
 /// of the z-order: at once (so the first crossing frame is covered), and again
-/// RESINK_MS later (because the app's own resize handling can raise it back).
+/// a breath later (because the app's own resize handling can raise it back).
 unsafe fn sink_when_spanning(h: isize, r: RECT) {
     sink_now(h, r);
     if tile_own(h).is_some_and(|own| reaches_past(r, own)) {
