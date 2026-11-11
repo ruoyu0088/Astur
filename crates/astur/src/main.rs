@@ -6934,26 +6934,36 @@ fn is_warm(h: isize) -> bool {
 /// sent to. A tile is sunk once per rect, not once per frame.
 static SUNK: Mutex<Option<HashMap<isize, RECT>>> = Mutex::new(None);
 
+/// The monitor each placed tile belongs to, kept so the sweep below can tell
+/// when a tile has walked off its own monitor without being placed again
+/// (floating windows, programs that move themselves).
+static TILE_OWN: Mutex<Option<HashMap<isize, RECT>>> = Mutex::new(None);
+
 /// A tile whose rect crosses onto a neighbour monitor is pushed to the bottom
 /// of the z-order, so that monitor's windows cover its overhang instead of
 /// being painted over by it. Z-order only: nothing is activated, nothing is
-/// focused, and the tile keeps its slot. A focused tile is left alone (it is
-/// the one the user is looking at) and is sunk again by its next placement.
+/// focused, and the tile keeps its slot.
+///
+/// It reads the window's real rect, not the slot `to`: a program that refuses
+/// the size Astur gives it (or restores its own) can sit off its slot, and the
+/// slot is then no guide to whether the window actually reaches the neighbour.
 unsafe fn sink_overhang(h: isize, to: RECT, map: &PlaceMap) {
-    let crosses = map
-        .others
-        .iter()
-        .any(|&o| to.left < o.right && o.left < to.right && to.top < o.bottom && o.top < to.bottom);
+    let hwnd = hwnd_from(h);
+    let mut got = RECT::default();
+    let rect = if GetWindowRect(hwnd, &mut got).is_ok() {
+        got
+    } else {
+        to
+    };
+    let crosses = map.others.iter().any(|&o| {
+        rect.left < o.right && o.left < rect.right && rect.top < o.bottom && o.top < rect.bottom
+    });
     let mut guard = SUNK.lock().unwrap();
     let sunk = guard.get_or_insert_with(HashMap::new);
     if !crosses {
         sunk.remove(&h);
         return;
     }
-    if sunk.get(&h) == Some(&to) {
-        return;
-    }
-    let hwnd = hwnd_from(h);
     if IsIconic(hwnd).as_bool() || GetForegroundWindow() == hwnd {
         return;
     }
@@ -6966,7 +6976,45 @@ unsafe fn sink_overhang(h: isize, to: RECT, map: &PlaceMap) {
         0,
         SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_NOOWNERZORDER,
     );
-    sunk.insert(h, to);
+    sunk.insert(h, rect);
+}
+
+/// Sink every placed tile that now reaches past its own monitor, whether or not
+/// it was placed there. Called after a retile and once a second, so a window
+/// that a program moved onto its neighbour ends up under that monitor's windows
+/// too. Only the z-order changes; nothing is activated or focused.
+unsafe fn sink_sweep() {
+    let tiles: Vec<(isize, RECT)> = match TILE_OWN.lock().unwrap().as_ref() {
+        Some(m) => m.iter().map(|(&h, &own)| (h, own)).collect(),
+        None => return,
+    };
+    for (h, own) in tiles {
+        let hwnd = hwnd_from(h);
+        if !IsWindow(hwnd).as_bool() || !IsWindowVisible(hwnd).as_bool() || IsIconic(hwnd).as_bool()
+        {
+            continue;
+        }
+        let mut got = RECT::default();
+        if GetWindowRect(hwnd, &mut got).is_err() {
+            continue;
+        }
+        let inside = got.left >= own.left
+            && got.top >= own.top
+            && got.right <= own.right
+            && got.bottom <= own.bottom;
+        if inside || GetForegroundWindow() == hwnd {
+            continue;
+        }
+        let _ = SetWindowPos(
+            hwnd,
+            HWND_BOTTOM,
+            0,
+            0,
+            0,
+            0,
+            SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_NOOWNERZORDER,
+        );
+    }
 }
 
 /// Send tile `h` to its layout slot `raw` through `map` (call it after any
@@ -6981,6 +7029,13 @@ unsafe fn place_slot(h: isize, raw: RECT, map: &PlaceMap) -> RECT {
         .get_or_insert_with(HashMap::new)
         .insert(h, raw);
     set_pos_raw(h, to);
+    if let Some(own) = map.own {
+        TILE_OWN
+            .lock()
+            .unwrap()
+            .get_or_insert_with(HashMap::new)
+            .insert(h, own);
+    }
     sink_overhang(h, to, map);
     if !map.parks(h, raw) && IsWindowVisible(hwnd_from(h)).as_bool() {
         warm_note(h);
@@ -7262,6 +7317,7 @@ unsafe fn retile_monitor_opts(mgr: &Manager, mi: usize, force_instant: bool) {
     // Under the overlay just raised or re-aimed, or the instant path
     // (animations off, busy elsewhere, no crop, nothing moved).
     place_tiles(rects, &map, &mut probe);
+    sink_sweep();
     // The motion may reveal now (its loop holds a finished segment for this).
     GLIDE_PLACED.store(generation, Ordering::Release);
 }
@@ -12585,6 +12641,11 @@ unsafe fn untrack_window(mgr: &mut Manager, h: isize) {
         SCRATCHPAD_HIDDEN.store(false, Ordering::Relaxed);
     }
     unmark_hidden_by_us(h); // untracked -> marker would only go stale
+    TILE_OWN
+        .lock()
+        .unwrap()
+        .get_or_insert_with(HashMap::new)
+        .remove(&h);
     if let Some(map) = FILLED.lock().unwrap().as_mut() {
         for fw in map.values_mut() {
             fw.wins.retain(|w| w.h != h);
@@ -17510,6 +17571,9 @@ unsafe extern "system" fn bar_wndproc(h: HWND, msg: u32, w: WPARAM, l: LPARAM) -
                 // bar every second to draw the identical pixels — and
                 // `paint_bar` deep-clones the whole BarData each time (review
                 // P-04). Skip when nothing it shows has changed.
+                // A tile a program walked onto its neighbour monitor goes
+                // under that monitor's windows, even when nothing re-placed it.
+                sink_sweep();
                 if !bar_tick_changed(h) {
                     return LRESULT(0);
                 }
