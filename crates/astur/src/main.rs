@@ -28689,9 +28689,9 @@ mod tests {
         assert_eq!(slots(&s, A, vec![], 26), vec![(1, bar, 0)]);
         // The focused tab is the shown one.
         assert_eq!(slots(&s, C, vec![], 26), vec![(1, bar, 1)]);
-        // A monitor on the right: the column would bleed, so it parks, and
-        // its bar goes with it.
-        assert!(slots(&s, A, vec![right], 26).is_empty());
+        // A monitor on the right: EXPERIMENT, the column is left where it is
+        // (Peek), so its bar shows too, at the same place as without one.
+        assert_eq!(slots(&s, A, vec![right], 26), vec![(1, bar, 0)]);
         // Scrolled so the column is fully on screen: back, moved with it.
         s.offset = 100_000;
         let shown = slots(&s, A, vec![right], 26);
@@ -28847,8 +28847,8 @@ mod tests {
             "peek: nothing left of own"
         );
         assert!(
-            map.parks(A, rect(1500, 8, 2400, 1072)),
-            "bleeds onto the right monitor"
+            !map.parks(A, rect(1500, 8, 2400, 1072)),
+            "EXPERIMENT: bleeding onto the right monitor is kept, not parked"
         );
         assert!(map.parks(A, rect(-2000, 8, -1000, 1072)), "fully off");
         assert!(map.parks(B, inside), "inactive tab");
@@ -29492,7 +29492,11 @@ mod tests {
         };
         assert_eq!(map.vis(A, rect(100, 8, 1000, 1072)), Vis::Full);
         assert_eq!(map.vis(A, rect(-500, 8, 400, 1072)), Vis::Peek);
-        assert_eq!(map.vis(A, rect(1500, 8, 2400, 1072)), Vis::Park);
+        assert_eq!(
+            map.vis(A, rect(1500, 8, 2400, 1072)),
+            Vis::Peek,
+            "EXPERIMENT: bleeding onto the right monitor is kept where it is"
+        );
         assert_eq!(
             map.vis(B, rect(100, 8, 1000, 1072)),
             Vis::Park,

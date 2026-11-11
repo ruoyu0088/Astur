@@ -520,49 +520,21 @@ fn intersects(a: RECT, b: RECT) -> bool {
 }
 
 /// Full / Peek / Park for tile rect `r` on monitor `own` (FULL monitor rects;
-/// `others` excludes `own`). Peek only when the part hanging off `own` lands
-/// on no other monitor, so a scrolled strip never bleeds onto a neighbour.
+/// `others` excludes `own`).
+///
+/// EXPERIMENT: a tile hanging onto a neighbour monitor is left where it is
+/// (Peek), not parked, so its overhang's own pixels can be inspected: if the
+/// app really paints them, a span needs no region at all. Only a tile wholly
+/// off its monitor is parked.
 pub(crate) fn classify(r: RECT, own: RECT, others: &[RECT]) -> Vis {
+    let _ = others;
     if r.left >= own.left && r.top >= own.top && r.right <= own.right && r.bottom <= own.bottom {
         return Vis::Full;
     }
     if !intersects(r, own) {
         return Vis::Park;
     }
-    // The part of r outside own as four bands: left and right at full height,
-    // top and bottom between them. A band that does not exist comes out empty
-    // and so intersects nothing.
-    let mid = RECT {
-        left: r.left.max(own.left),
-        right: r.right.min(own.right),
-        ..r
-    };
-    let outside = [
-        RECT {
-            right: r.right.min(own.left),
-            ..r
-        },
-        RECT {
-            left: r.left.max(own.right),
-            ..r
-        },
-        RECT {
-            bottom: r.bottom.min(own.top),
-            ..mid
-        },
-        RECT {
-            top: r.top.max(own.bottom),
-            ..mid
-        },
-    ];
-    if outside
-        .iter()
-        .any(|&p| others.iter().any(|&o| intersects(p, o)))
-    {
-        Vis::Park
-    } else {
-        Vis::Peek
-    }
+    Vis::Peek
 }
 
 /// Squared distance between two rects; 0 when they touch or overlap.
@@ -1070,7 +1042,11 @@ mod tests {
         let own = r(0, 0, 1920, 1080);
         let right = r(1920, 0, 3840, 1080);
         assert_eq!(classify(r(100, 900, 500, 1300), own, &[right]), Vis::Peek);
-        assert_eq!(classify(r(1800, 900, 2100, 1300), own, &[right]), Vis::Park);
+        assert_eq!(
+            classify(r(1800, 900, 2100, 1300), own, &[right]),
+            Vis::Peek,
+            "EXPERIMENT: kept where it is"
+        );
     }
 
     #[test]
@@ -1201,11 +1177,11 @@ mod tests {
         assert_eq!(classify(own, own, &[right]), Vis::Full);
         // Hangs off the left edge, nothing there: the Niri peek.
         assert_eq!(classify(r(-300, 100, 200, 500), own, &[right]), Vis::Peek);
-        // Hangs onto the right-hand monitor: bleed, so park.
-        assert_eq!(classify(r(1700, 100, 2200, 500), own, &[right]), Vis::Park);
-        // Monitor below: bleeding down parks too.
+        // EXPERIMENT: hangs onto the right-hand monitor, kept where it is.
+        assert_eq!(classify(r(1700, 100, 2200, 500), own, &[right]), Vis::Peek);
+        // Monitor below: kept where it is too.
         let below = r(0, 1080, 1920, 2160);
-        assert_eq!(classify(r(100, 900, 500, 1300), own, &[below]), Vis::Park);
+        assert_eq!(classify(r(100, 900, 500, 1300), own, &[below]), Vis::Peek);
         // Fully off own, or only touching its edge.
         assert_eq!(classify(r(2000, 100, 2500, 500), own, &[]), Vis::Park);
         assert_eq!(classify(r(1920, 0, 2400, 500), own, &[]), Vis::Park);
@@ -1220,10 +1196,10 @@ mod tests {
             classify(r(1700, 100, 2200, 500), own, &[lower_right]),
             Vis::Peek
         );
-        // The overhang (y 500..900) lands on it: park.
+        // The overhang (y 500..900) lands on it: kept where it is.
         assert_eq!(
             classify(r(1700, 500, 2200, 900), own, &[lower_right]),
-            Vis::Park
+            Vis::Peek
         );
         // Sharing only an edge (overhang ends at y 600) is not a bleed.
         assert_eq!(
