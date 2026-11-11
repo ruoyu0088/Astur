@@ -1149,6 +1149,45 @@ fn last_sent_forget(h: isize) {
     }
 }
 
+/// The monitor a window was last placed on by Astur, if any.
+fn tile_own(h: isize) -> Option<RECT> {
+    TILE_OWN
+        .lock()
+        .unwrap()
+        .as_ref()
+        .and_then(|m| m.get(&h).copied())
+}
+
+/// A window about to be moved somewhere `r` reaches past its own monitor goes
+/// to the bottom of the z-order BEFORE that move. Doing it here, ahead of the
+/// move, keeps the neighbour monitor's windows above it from the first frame:
+/// the overhang a spanning window paints (flat, no content) is never drawn on
+/// top. Z-order only: nothing is activated or focused, and a foreground window
+/// is left alone.
+unsafe fn sink_before(h: isize, r: RECT) {
+    let Some(own) = tile_own(h) else {
+        return;
+    };
+    let inside =
+        r.left >= own.left && r.top >= own.top && r.right <= own.right && r.bottom <= own.bottom;
+    if inside {
+        return;
+    }
+    let hwnd = hwnd_from(h);
+    if IsIconic(hwnd).as_bool() || GetForegroundWindow() == hwnd {
+        return;
+    }
+    let _ = SetWindowPos(
+        hwnd,
+        HWND_BOTTOM,
+        0,
+        0,
+        0,
+        0,
+        SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_NOOWNERZORDER,
+    );
+}
+
 /// Move a window with no activation/zorder side effects (instant tile placement
 /// and the workspace-slide reveal). Posted when async placement is on. Skipped
 /// when the window is already at `r` (placement_unchanged): each move wakes
@@ -1164,6 +1203,7 @@ unsafe fn set_pos_raw(h: isize, r: RECT) {
     let live = GetWindowRect(hwnd_from(h), &mut live)
         .is_ok()
         .then_some(live);
+    sink_before(h, r);
     {
         let mut sent = LAST_SENT.lock().unwrap();
         let sent = sent.get_or_insert_with(HashMap::new);
@@ -7028,7 +7068,6 @@ unsafe fn place_slot(h: isize, raw: RECT, map: &PlaceMap) -> RECT {
         .unwrap()
         .get_or_insert_with(HashMap::new)
         .insert(h, raw);
-    set_pos_raw(h, to);
     if let Some(own) = map.own {
         TILE_OWN
             .lock()
@@ -7036,6 +7075,7 @@ unsafe fn place_slot(h: isize, raw: RECT, map: &PlaceMap) -> RECT {
             .get_or_insert_with(HashMap::new)
             .insert(h, own);
     }
+    set_pos_raw(h, to);
     sink_overhang(h, to, map);
     if !map.parks(h, raw) && IsWindowVisible(hwnd_from(h)).as_bool() {
         warm_note(h);
