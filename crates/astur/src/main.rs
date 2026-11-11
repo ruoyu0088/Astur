@@ -134,12 +134,12 @@ use windows::Win32::UI::WindowsAndMessaging::{
     SetWindowsHookExW, ShowWindow, TranslateMessage, UnhookWindowsHookEx, WindowFromPoint, GA_ROOT,
     GA_ROOTOWNER, HC_ACTION, HHOOK, HWND_TOPMOST, KBDLLHOOKSTRUCT, LAYERED_WINDOW_ATTRIBUTES_FLAGS,
     LLKHF_INJECTED, LWA_ALPHA, MSG, MSLLHOOKSTRUCT, SET_WINDOW_POS_FLAGS, SWP_ASYNCWINDOWPOS,
-    SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSENDCHANGING, SWP_NOSIZE, SWP_NOZORDER, SWP_SHOWWINDOW,
-    SW_HIDE, SW_RESTORE, SW_SHOWNA, WH_KEYBOARD_LL, WH_MOUSE_LL, WM_KEYDOWN, WM_KEYUP,
-    WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MBUTTONDOWN, WM_MBUTTONUP, WM_MOUSEHWHEEL, WM_MOUSEMOVE,
-    WM_MOUSEWHEEL, WM_RBUTTONDOWN, WM_RBUTTONUP, WM_SYSKEYDOWN, WM_SYSKEYUP, WM_XBUTTONDOWN,
-    WNDCLASSW, WS_EX_LAYERED, WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW, WS_EX_TOPMOST, WS_EX_TRANSPARENT,
-    WS_POPUP,
+    SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOOWNERZORDER, SWP_NOSENDCHANGING, SWP_NOSIZE, SWP_NOZORDER,
+    SWP_SHOWWINDOW, SW_HIDE, SW_RESTORE, SW_SHOWNA, WH_KEYBOARD_LL, WH_MOUSE_LL, WM_KEYDOWN,
+    WM_KEYUP, WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MBUTTONDOWN, WM_MBUTTONUP, WM_MOUSEHWHEEL,
+    WM_MOUSEMOVE, WM_MOUSEWHEEL, WM_RBUTTONDOWN, WM_RBUTTONUP, WM_SYSKEYDOWN, WM_SYSKEYUP,
+    WM_XBUTTONDOWN, WNDCLASSW, WS_EX_LAYERED, WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW, WS_EX_TOPMOST,
+    WS_EX_TRANSPARENT, WS_POPUP,
 };
 
 // --- tiling additions -----------------------------------------------------
@@ -183,8 +183,8 @@ use windows::Win32::UI::WindowsAndMessaging::{
     EVENT_OBJECT_HIDE, EVENT_OBJECT_LOCATIONCHANGE, EVENT_OBJECT_NAMECHANGE, EVENT_OBJECT_SHOW,
     EVENT_OBJECT_UNCLOAKED, EVENT_SYSTEM_FOREGROUND, EVENT_SYSTEM_MINIMIZEEND,
     EVENT_SYSTEM_MINIMIZESTART, EVENT_SYSTEM_MOVESIZEEND, EVENT_SYSTEM_MOVESIZESTART,
-    GWLP_USERDATA, GWL_EXSTYLE, GWL_STYLE, GW_HWNDNEXT, GW_HWNDPREV, GW_OWNER, HWND_TOP,
-    MB_ICONERROR, MB_OK, MSGFLT_ALLOW, OBJID_CURSOR, PM_REMOVE, PW_RENDERFULLCONTENT,
+    GWLP_USERDATA, GWL_EXSTYLE, GWL_STYLE, GW_HWNDNEXT, GW_HWNDPREV, GW_OWNER, HWND_BOTTOM,
+    HWND_TOP, MB_ICONERROR, MB_OK, MSGFLT_ALLOW, OBJID_CURSOR, PM_REMOVE, PW_RENDERFULLCONTENT,
     SMTO_ABORTIFHUNG, SM_CXSCREEN, SM_CYSCREEN, SPIF_SENDCHANGE, SPIF_UPDATEINIFILE,
     SPI_GETFOREGROUNDLOCKTIMEOUT, SPI_GETWORKAREA, SPI_SETDESKWALLPAPER,
     SPI_SETFOREGROUNDLOCKTIMEOUT, SPI_SETWORKAREA, SW_SHOW, SW_SHOWMINNOACTIVE, SW_SHOWNORMAL,
@@ -5421,10 +5421,8 @@ unsafe fn toggle_fill(mgr: &mut Manager) {
                     .retain(|&x| x != w.h);
                 unfloat = true;
             }
-            if w.was_floating || !tiling {
-                if !IsIconic(ww).as_bool() {
-                    set_pos_raw(w.h, w.old);
-                }
+            if (w.was_floating || !tiling) && !IsIconic(ww).as_bool() {
+                set_pos_raw(w.h, w.old);
             }
         }
         if tiling && unfloat {
@@ -6932,6 +6930,45 @@ fn is_warm(h: isize) -> bool {
         .is_some_and(|s| s.contains(&h))
 }
 
+/// Tiles a placement sent onto a neighbour monitor, with the rect they were
+/// sent to. A tile is sunk once per rect, not once per frame.
+static SUNK: Mutex<Option<HashMap<isize, RECT>>> = Mutex::new(None);
+
+/// A tile whose rect crosses onto a neighbour monitor is pushed to the bottom
+/// of the z-order, so that monitor's windows cover its overhang instead of
+/// being painted over by it. Z-order only: nothing is activated, nothing is
+/// focused, and the tile keeps its slot. A focused tile is left alone (it is
+/// the one the user is looking at) and is sunk again by its next placement.
+unsafe fn sink_overhang(h: isize, to: RECT, map: &PlaceMap) {
+    let crosses = map
+        .others
+        .iter()
+        .any(|&o| to.left < o.right && o.left < to.right && to.top < o.bottom && o.top < to.bottom);
+    let mut guard = SUNK.lock().unwrap();
+    let sunk = guard.get_or_insert_with(HashMap::new);
+    if !crosses {
+        sunk.remove(&h);
+        return;
+    }
+    if sunk.get(&h) == Some(&to) {
+        return;
+    }
+    let hwnd = hwnd_from(h);
+    if IsIconic(hwnd).as_bool() || GetForegroundWindow() == hwnd {
+        return;
+    }
+    let _ = SetWindowPos(
+        hwnd,
+        HWND_BOTTOM,
+        0,
+        0,
+        0,
+        0,
+        SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_NOOWNERZORDER,
+    );
+    sunk.insert(h, to);
+}
+
 /// Send tile `h` to its layout slot `raw` through `map` (call it after any
 /// SW_RESTORE, see PlaceMap::target) and remember the slot (LAST_SLOT). The
 /// one placement step of every path that places tiles. Returns the rect sent.
@@ -6944,6 +6981,7 @@ unsafe fn place_slot(h: isize, raw: RECT, map: &PlaceMap) -> RECT {
         .get_or_insert_with(HashMap::new)
         .insert(h, raw);
     set_pos_raw(h, to);
+    sink_overhang(h, to, map);
     if !map.parks(h, raw) && IsWindowVisible(hwnd_from(h)).as_bool() {
         warm_note(h);
     }
@@ -8023,9 +8061,10 @@ unsafe fn tile_slot(mgr: &Manager, h: isize) -> Option<(RECT, Vis)> {
 /// the strip scrolls to it and a hidden tab shows. The retile is the
 /// animated one. A cheap no-op on every other layout.
 unsafe fn strip_reveal(mgr: &mut Manager, h: isize) {
-    let Some((mi, wi)) = mgr.locate(h).filter(|&(mi, wi)| {
-        mgr.is_scrolling(mi, wi) && wi == mgr.monitors[mi].active
-    }) else {
+    let Some((mi, wi)) = mgr
+        .locate(h)
+        .filter(|&(mi, wi)| mgr.is_scrolling(mi, wi) && wi == mgr.monitors[mi].active)
+    else {
         return;
     };
     if tile_slot(mgr, h).is_none_or(|(_, v)| v == Vis::Full) {
@@ -10819,8 +10858,8 @@ unsafe fn cold_request(mgr: &Manager) {
         let (Some(slots), Some(sent)) = (slots.as_ref(), sent.as_ref()) else {
             return;
         };
-        for (_mi, m) in (mgr.monitors.iter().enumerate())
-            .filter(|(_mi, m)| mgr.is_scrolling(*_mi, m.active))
+        for (_mi, m) in
+            (mgr.monitors.iter().enumerate()).filter(|(_mi, m)| mgr.is_scrolling(*_mi, m.active))
         {
             let Some(ws) = m.workspaces.get(m.active) else {
                 continue;
@@ -15897,11 +15936,7 @@ fn sep_dot(h: i32) -> f32 {
 fn keeps_stable_width(wgt: BarWidget) -> bool {
     matches!(
         wgt,
-        BarWidget::Cpu
-            | BarWidget::Mem
-            | BarWidget::Net
-            | BarWidget::Volume
-            | BarWidget::Battery
+        BarWidget::Cpu | BarWidget::Mem | BarWidget::Net | BarWidget::Volume | BarWidget::Battery
     )
 }
 
@@ -17810,11 +17845,9 @@ unsafe fn tab_bars_build(mgr: &Manager) -> Vec<TabBarData> {
     let colors = (r.bg, r.fg, r.accent, r.muted);
     for (mi, m) in mgr.monitors.iter().enumerate() {
         // The no-tabs case (nearly always) costs a scan of the column metadata.
-        let Some(ws) = m
-            .workspaces
-            .get(m.active)
-            .filter(|ws| mgr.is_scrolling(mi, m.active) && ws.strip.cols.values().any(|c| c.tabbed))
-        else {
+        let Some(ws) = m.workspaces.get(m.active).filter(|ws| {
+            mgr.is_scrolling(mi, m.active) && ws.strip.cols.values().any(|c| c.tabbed)
+        }) else {
             continue;
         };
         let tiled = tiled_windows(ws);
@@ -18363,8 +18396,7 @@ fn apply_bar_statics(cfg: &Config) {
     BAR_WHEEL_WS.store(cfg.bar_wheel_ws, Ordering::Relaxed);
     NET_ON.store(cfg.bar_show_net, Ordering::Relaxed);
     VOL_ON.store(cfg.bar_show_volume, Ordering::Relaxed);
-    let want_media = cfg.media_enabled
-        && (cfg.bar_show_media || bar_shows(cfg, "media_controls"));
+    let want_media = cfg.media_enabled && (cfg.bar_show_media || bar_shows(cfg, "media_controls"));
     MEDIA_ON.store(want_media, Ordering::Relaxed);
     STATS_ON.store(
         cfg.bar_show_cpu
