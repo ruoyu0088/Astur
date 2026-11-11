@@ -1158,13 +1158,13 @@ fn tile_own(h: isize) -> Option<RECT> {
         .and_then(|m| m.get(&h).copied())
 }
 
-/// A window about to be moved somewhere `r` reaches past its own monitor goes
-/// to the bottom of the z-order BEFORE that move. Doing it here, ahead of the
-/// move, keeps the neighbour monitor's windows above it from the first frame:
-/// the overhang a spanning window paints (flat, no content) is never drawn on
-/// top. Z-order only: nothing is activated or focused, and a foreground window
-/// is left alone.
-unsafe fn sink_before(h: isize, r: RECT) {
+/// A window whose next rect `r` reaches past its own monitor goes to the bottom
+/// of the z-order, so the neighbour monitor's windows stay above the overhang
+/// it paints (flat, no content). Called before AND after the move: before, so
+/// the first crossing frame is covered; after, because a resize can raise the
+/// window again. Z-order only: nothing is activated or focused, and a
+/// foreground window is left alone.
+unsafe fn sink_when_spanning(h: isize, r: RECT) {
     let Some(own) = tile_own(h) else {
         return;
     };
@@ -1203,7 +1203,7 @@ unsafe fn set_pos_raw(h: isize, r: RECT) {
     let live = GetWindowRect(hwnd_from(h), &mut live)
         .is_ok()
         .then_some(live);
-    sink_before(h, r);
+    sink_when_spanning(h, r);
     {
         let mut sent = LAST_SENT.lock().unwrap();
         let sent = sent.get_or_insert_with(HashMap::new);
@@ -1228,6 +1228,18 @@ unsafe fn set_pos_raw(h: isize, r: RECT) {
             ASYNC_WINDOW_POS.load(Ordering::Relaxed),
         ),
     );
+    // Again AFTER the move, by the rect the window really has now: a resize can
+    // raise the window again, and a program that refuses the size can end up
+    // wider than the slot we asked for. The sink before the move is not the
+    // last word. One extra call, only for a window that reaches past its
+    // monitor.
+    let mut got = RECT::default();
+    let after = if GetWindowRect(hwnd_from(h), &mut got).is_ok() {
+        got
+    } else {
+        r
+    };
+    sink_when_spanning(h, after);
 }
 
 // Set by the keyboard hook while the reserved main key (MAIN_VK: Left Alt or
