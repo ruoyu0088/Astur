@@ -13858,6 +13858,9 @@ unsafe fn bar_fonts_clear() {
             let _ = DeleteObject(HGDIOBJ(f as *mut c_void));
         }
     }
+    // A new font can change every measured width by more than the slack the
+    // stat widgets keep, so drop the widths along with the fonts.
+    *WIDGET_WIDTH_LAST.lock().unwrap() = None;
 }
 
 /// The bar font for one monitor DPI, built on first use. Main thread only.
@@ -15888,9 +15891,64 @@ fn sep_dot(h: i32) -> f32 {
     (h as f32 * 0.14).max(3.0)
 }
 
+/// Widgets whose drawn width must not jitter by a pixel or two, so the zones
+/// beside them (the centred title especially) do not shift on every repaint.
+/// Their value text changes ("9%" -> "10%") without moving what follows it.
+fn keeps_stable_width(wgt: BarWidget) -> bool {
+    matches!(
+        wgt,
+        BarWidget::Cpu
+            | BarWidget::Mem
+            | BarWidget::Net
+            | BarWidget::Volume
+            | BarWidget::Battery
+    )
+}
+
+/// How far a stable widget's freshly measured width may drift from the width
+/// it was last drawn at before the new width is used. Monospace text should
+/// measure the same every time; this absorbs the sub-pixel rounding that is
+/// left and keeps the bar's other zones still.
+const WIDGET_WIDTH_SLACK: i32 = 2;
+
+/// Last width each stable widget was drawn at, per monitor: (hmon, widget).
+/// Written and read only on the bar paint thread (the main thread), which is
+/// also what makes a width carry over from one paint to the next. Cleared
+/// with the fonts (bar_fonts_clear), since a new font re-measures everything.
+static WIDGET_WIDTH_LAST: Mutex<Option<HashMap<(isize, u8), i32>>> = Mutex::new(None);
+
+/// The width to draw `wgt` at on `hmon`: the freshly measured `w`, unless it
+/// is a stable widget (keeps_stable_width) whose last drawn width was within
+/// WIDGET_WIDTH_SLACK px of it. Then that previous width is kept, so a
+/// one-pixel measurement flicker never shifts the zone beside it. `avail`
+/// still caps the result.
+fn stable_widget_width(hmon: isize, wgt: BarWidget, w: i32, avail: i32) -> i32 {
+    if !keeps_stable_width(wgt) || w <= 0 {
+        return w;
+    }
+    let mut guard = WIDGET_WIDTH_LAST.lock().unwrap();
+    let key = (hmon, wgt as u8);
+    let map = guard.get_or_insert_with(HashMap::new);
+    let chosen = match map.get(&key) {
+        // Only a NARROWER new width is absorbed: the text still fits in
+        // the last (wider) width, and keeping that width stops 1-2 px of
+        // measurement noise from nudging the zones beside the widget. A
+        // wider new width is always honoured, or DrawTextW's
+        // DT_END_ELLIPSIS would cut the value down to "...".
+        Some(&last) if last >= w && last - w <= WIDGET_WIDTH_SLACK => last,
+        _ => w,
+    };
+    // Record the width we WANTED, not the `avail`-clamped one, so a later
+    // call still compares against the real figure whatever space the zone
+    // beside the widget had at that moment.
+    map.insert(key, chosen);
+    chosen.min(avail.max(0))
+}
+
 /// Lay out one widget at x = 0: its width (0 = skipped), and its content if
 /// it is a text widget. `avail` caps the text; `fonts` = [text, icon, bold
 /// title], the text font selected on entry and on return.
+#[allow(clippy::too_many_arguments)]
 unsafe fn bar_measure(
     cv: &BarCanvas,
     wgt: BarWidget,
@@ -15898,6 +15956,7 @@ unsafe fn bar_measure(
     mb: Option<&MonBar>,
     cell: i32,
     avail: i32,
+    hmon: isize,
     fonts: [HGDIOBJ; 3],
 ) -> BarItem {
     let hdc = cv.hdc;
@@ -15984,6 +16043,9 @@ unsafe fn bar_measure(
             w.min(avail.max(0))
         }
     };
+    if keeps_stable_width(wgt) && it.w > 0 {
+        it.w = stable_widget_width(hmon, wgt, it.w, avail);
+    }
     it
 }
 
@@ -17228,7 +17290,7 @@ unsafe fn render_bar(
     let mut right: Vec<BarItem> = Vec::with_capacity(data.right.len());
     let mut rx = w - pad - zone_pad;
     for &wgt in data.right.iter().rev() {
-        let mut it = bar_measure(cv, wgt, data, mb, cell, w, fonts);
+        let mut it = bar_measure(cv, wgt, data, mb, cell, w, hmon, fonts);
         if it.w > 0 {
             let p = item_pad(wgt);
             it.x = rx - p - it.w;
@@ -17251,7 +17313,7 @@ unsafe fn render_bar(
     for &wgt in &data.left {
         let p = item_pad(wgt);
         let room = right_start - zone_pad - x - 2 * p;
-        let mut it = bar_measure(cv, wgt, data, mb, cell, room, fonts);
+        let mut it = bar_measure(cv, wgt, data, mb, cell, room, hmon, fonts);
         if it.w > 0 {
             it.x = x + p;
             x += it.w + 2 * p + gap;
@@ -17267,7 +17329,7 @@ unsafe fn render_bar(
         let mut total = 0;
         for &wgt in &data.center {
             let p = item_pad(wgt);
-            let mut it = bar_measure(cv, wgt, data, mb, cell, avail - total - 2 * p, fonts);
+            let mut it = bar_measure(cv, wgt, data, mb, cell, avail - total - 2 * p, hmon, fonts);
             if it.w > 0 {
                 total += it.w + 2 * p + gap;
                 it.zone = 1;
