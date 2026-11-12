@@ -1638,6 +1638,7 @@ fn bind_cmd(action: config::Action, arg: u16) -> Option<Cmd> {
         A::MoveDown => Cmd::MoveGeo(Dir::Down),
         A::SwitchWorkspace => Cmd::Switch(arg as usize),
         A::MoveToWorkspace => Cmd::MoveToWs(arg as usize),
+        A::SwitchMonitorWorkspace => Cmd::SwitchLocal(arg as usize),
         A::Extra => Cmd::Extra(arg as usize),
     })
 }
@@ -2665,6 +2666,7 @@ enum Cmd {
     PromoteMaster,
     ResizeMaster(f32),
     Switch(usize),
+    SwitchLocal(usize),
     YasbFocus(yasb::Focus),
     MoveToWs(usize),
     ToggleTiling,
@@ -2763,6 +2765,7 @@ impl Cmd {
             Cmd::PromoteMaster => "PromoteMaster",
             Cmd::ResizeMaster(_) => "ResizeMaster",
             Cmd::Switch(_) => "Switch",
+            Cmd::SwitchLocal(_) => "SwitchLocal",
             Cmd::YasbFocus(_) => "YasbFocus",
             Cmd::MoveToWs(_) => "MoveToWs",
             Cmd::ToggleTiling => "ToggleTiling",
@@ -13312,6 +13315,15 @@ unsafe fn process(mgr: &mut Manager, cmd: Cmd) {
                 return;
             }
             show_workspace(mgr, mi, local);
+        }
+        Cmd::SwitchLocal(i) => {
+            if mgr.monitors.is_empty() {
+                return;
+            }
+            let mi = mgr.focused_mon.min(mgr.monitors.len() - 1);
+            if i < mgr.monitors[mi].workspaces.len() {
+                show_workspace(mgr, mi, i);
+            }
         }
         Cmd::YasbFocus(focus) => yasb::focus_workspace(mgr, focus),
         Cmd::MoveToWs(i) => {
@@ -25468,6 +25480,8 @@ fn main() {
         println!("  Alt+W          = close focused window");
         println!("  Alt+E          = fill the workspace (focused window on top, or back)");
         println!("  Alt+Space      = app launcher (type to filter, Enter to run)");
+        println!("  Alt+'          = open the power menu");
+        println!("  Alt+, . /      = 1st / 2nd / 3rd workspace of this screen");
         println!("  Alt+Enter      = launch terminal");
         println!("  Alt+Shift+Enter= launch default browser");
         println!("  Alt+1..9,0     = switch workspace (or click a bar pill)");

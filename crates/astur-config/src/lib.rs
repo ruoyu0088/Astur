@@ -212,7 +212,10 @@ pub struct Config {
     pub key_consume_left: u32,   // Alt+<key> scrolling: consume/expel left (default [)
     pub key_consume_right: u32,  // Alt+<key> scrolling: consume/expel right (default ])
     pub key_fill_desktop: u32,   // Alt+<key> fill the workspace, focused on top (default E)
-    pub key_system_menu: u32,    // Alt+<key> open the power menu (default .)
+    pub key_system_menu: u32,    // Alt+<key> open the power menu (default ')
+    pub key_switch_ws_1: u32,    // Alt+<key> go to the focused monitor's 1st workspace (default ,)
+    pub key_switch_ws_2: u32,    // Alt+<key> go to its 2nd workspace (default .)
+    pub key_switch_ws_3: u32,    // Alt+<key> go to its 3rd workspace (default /)
     pub theme: String,           // popup palette: dark | light | auto (follows Windows)
     pub acrylic: bool,           // experimental acrylic blur behind the popups
     pub bar_floating: bool,      // detached rounded bar (margins from the screen edges)
@@ -1310,7 +1313,10 @@ impl Config {
             key_consume_left: 0xDB,   // [ (VK_OEM_4)
             key_consume_right: 0xDD,  // ] (VK_OEM_6)
             key_fill_desktop: 0x45,   // E
-            key_system_menu: 0xBE,    // . (VK_OEM_PERIOD)
+            key_system_menu: 0xDE,    // ' (VK_OEM_7)
+            key_switch_ws_1: 0xBC,    // , (VK_OEM_COMMA)
+            key_switch_ws_2: 0xBE,    // . (VK_OEM_PERIOD)
+            key_switch_ws_3: 0xBF,    // / (VK_OEM_2)
             main_key: MainKey::LAlt,
             theme: "dark".to_string(),
             acrylic: false,
@@ -1870,7 +1876,8 @@ main_key = lalt
 #   Alt+Shift+arrows     move window by direction (across monitors)
 #   Alt+M                promote focused window to master
 #   Alt+E                fill the workspace (the focused window on top), and back
-#   Alt+.                open the power menu (lock, sleep, restart ...)
+#   Alt+'                open the power menu (lock, sleep, restart ...)
+#   Alt+, / Alt+. / Alt+/  go to the 1st / 2nd / 3rd workspace of THIS screen
 #   Alt+H / Alt+L        master layout: shrink / grow the master column;
 #                        dwindle layout: shrink / grow the focused window's split
 #   Alt+F                toggle floating for the focused window
@@ -1906,7 +1913,7 @@ main_key = lalt
 #                        beside it, middle = stack into its column
 #   Alt + right-drag     side edge = column width, top/bottom = window height
 #
-# The keys above (J K H L M T F W E and . for the power menu, and R C [ ] for
+# The keys above (J K H L M T F W E and ' for the power menu, and R C [ ] for
 # scrolling) are rebindable. Each takes a single key name (see the 'keys' type
 # at the top of this file). Arrows, Home, End and Enter are fixed.  key
 key_focus_next = J
@@ -1922,7 +1929,13 @@ key_center_column = C
 key_consume_left = [
 key_consume_right = ]
 key_fill_desktop = E
-key_system_menu = .
+key_system_menu = '
+# Alt+, / Alt+. / Alt+/ go to the 1st / 2nd / 3rd workspace of the focused
+# monitor, in that monitor's own order (a screen holding 2, 4, 6, 8 goes to
+# 2, 4, 6).
+key_switch_ws_1 = ,
+key_switch_ws_2 = .
+key_switch_ws_3 = /
 # ============================================================================
 ";
 
@@ -3163,6 +3176,21 @@ fn parse_into_from(c: &mut Config, text: &str, source: &str) {
                     c.key_system_menu = k;
                 }
             }
+            "key_switch_ws_1" => {
+                if let Some(k) = key_to_vk(v) {
+                    c.key_switch_ws_1 = k;
+                }
+            }
+            "key_switch_ws_2" => {
+                if let Some(k) = key_to_vk(v) {
+                    c.key_switch_ws_2 = k;
+                }
+            }
+            "key_switch_ws_3" => {
+                if let Some(k) = key_to_vk(v) {
+                    c.key_switch_ws_3 = k;
+                }
+            }
             "main_key" | "mod" => {
                 if let Some(k) = MainKey::from_name(v) {
                     c.main_key = k;
@@ -3655,6 +3683,9 @@ pub fn reload_groups(old: &Config, new: &Config) -> ReloadGroups {
         key_consume_right,
         key_fill_desktop,
         key_system_menu,
+        key_switch_ws_1,
+        key_switch_ws_2,
+        key_switch_ws_3,
         main_key,
         theme,
         acrylic,
@@ -3766,6 +3797,7 @@ pub fn reload_groups(old: &Config, new: &Config) -> ReloadGroups {
     diff!(live: key_toggle_tiling, key_toggle_float, key_close_window);
     diff!(live: key_cycle_width, key_center_column, key_consume_left, key_consume_right);
     diff!(live: key_fill_desktop, key_system_menu);
+    diff!(live: key_switch_ws_1, key_switch_ws_2, key_switch_ws_3);
     diff!(live: main_key);
     // Fail-safe: a difference none of the above caught (a field compared in
     // the wrong place, a PartialEq quirk) must still apply, so do it all.
@@ -3978,13 +4010,14 @@ pub enum Action {
     FillDesktop,
     SwitchWorkspace,
     MoveToWorkspace,
+    SwitchMonitorWorkspace,
     Extra,
 }
 
 impl Action {
     /// Every action in declaration order (`ALL[a as usize] == a`), which is
     /// how a table entry stores it.
-    pub const ALL: [Action; 38] = {
+    pub const ALL: [Action; 39] = {
         use Action::*;
         [
             Launcher,
@@ -4024,6 +4057,7 @@ impl Action {
             FillDesktop,
             SwitchWorkspace,
             MoveToWorkspace,
+            SwitchMonitorWorkspace,
             Extra,
         ]
     };
@@ -4069,6 +4103,7 @@ impl Action {
             FillDesktop => "Fill the workspace, focused window on top",
             SwitchWorkspace => "Go to a workspace",
             MoveToWorkspace => "Move the window to a workspace",
+            SwitchMonitorWorkspace => "Go to a workspace of this screen",
             Extra => "Custom shortcut",
         }
     }
@@ -4431,6 +4466,9 @@ pub fn grow_master_key(c: &Config) -> u32 {
         c.key_consume_right,
         c.key_fill_desktop,
         c.key_system_menu,
+        c.key_switch_ws_1,
+        c.key_switch_ws_2,
+        c.key_switch_ws_3,
     ];
     let extra_on_o = c.extra_hotkeys.iter().any(|h| {
         (h.action != "scratchpad" || c.scratchpad_enabled)
@@ -4505,6 +4543,12 @@ pub fn compile_keys(c: &Config) -> Keymap {
         (0x28, FocusDown, Some(MoveDown)),
     ] {
         k.put_builtin(c, vk, plain, shifted);
+    }
+    for (i, &vk) in [c.key_switch_ws_1, c.key_switch_ws_2, c.key_switch_ws_3]
+        .iter()
+        .enumerate()
+    {
+        k.put_loose(c, m, vk, (SwitchMonitorWorkspace, i as u16), false);
     }
     for (i, &vk) in c.workspace_keys.iter().enumerate() {
         k.put_loose(c, m, vk, (SwitchWorkspace, i as u16), false);
@@ -5124,7 +5168,10 @@ outer_gap = 4
         assert_eq!(m[&(MOD_ALT, 0x31)], ws(0));
         assert_eq!(m[&(MOD_ALT, 0x20)], (Action::Launcher, 0));
         assert_eq!(m[&(MOD_ALT, 0x45)], (Action::FillDesktop, 0));
-        assert_eq!(m[&(MOD_ALT, 0xBE)], (Action::SystemMenu, 0));
+        assert_eq!(m[&(MOD_ALT, 0xDE)], (Action::SystemMenu, 0));
+        assert_eq!(m[&(MOD_ALT, 0xBC)], (Action::SwitchMonitorWorkspace, 0));
+        assert_eq!(m[&(MOD_ALT, 0xBE)], (Action::SwitchMonitorWorkspace, 1));
+        assert_eq!(m[&(MOD_ALT, 0xBF)], (Action::SwitchMonitorWorkspace, 2));
         assert!(!m.contains_key(&(MOD_ALT | MOD_SHIFT, 0x20)));
         // Left Alt's old quirks: Ctrl ignored, Shift ignored with no Shift action.
         assert_eq!(m[&(MOD_ALT | MOD_CTRL, 0x31)], ws(0));
@@ -5312,6 +5359,7 @@ outer_gap = 4
             "islands",
             "win",
             "dot",
+            "F2",
         ];
         let base = parse_pair(DEFAULT_CONFIG, DEFAULT_NAVBAR);
         assert!(reload_groups(&base, &base).is_empty());
