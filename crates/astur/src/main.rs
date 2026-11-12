@@ -6963,6 +6963,9 @@ unsafe fn restore_all_windows() {
     while MGR_BUSY.load(Ordering::SeqCst) && Instant::now() < deadline {
         std::thread::sleep(std::time::Duration::from_millis(1));
     }
+    // The layout on disk is the last one the manager saw, before the restore
+    // below unparks and shows windows.
+    flush_window_state();
     let list = MANAGED.lock().unwrap().clone();
     restore_windows(&list);
     // Everything is visible again — nothing left for the crash-rescue pass.
@@ -8566,18 +8569,58 @@ unsafe extern "system" fn enum_proc(hwnd: HWND, lparam: LPARAM) -> BOOL {
     BOOL(1)
 }
 
-/// Add every currently-manageable window to the workspace its rule names, else
-/// the monitor's active workspace. A window a rule parks on a workspace that is
-/// not on screen was visible before Astur started: it is hidden here, and the
-/// switch that shows its workspace reveals it again (restoring a maximised one
-/// as it tiles it).
+/// Add every currently-manageable window to its workspace. A window a previous
+/// session saved (same hwnd, process and class) goes back to its saved monitor
+/// and workspace, in its saved order, and a floating one back to its rect.
+/// Everything else takes the workspace its rule names, else the monitor's
+/// active workspace. A window that lands on a workspace that is not on screen
+/// was visible before Astur started: it is hidden here, and the switch that
+/// shows its workspace reveals it again (restoring a maximised one as it tiles
+/// it).
 unsafe fn assign_existing_windows(mgr: &mut Manager) {
     let mut v: Vec<isize> = Vec::new();
     let _ = EnumWindows(Some(enum_proc), LPARAM(&mut v as *mut Vec<isize> as isize));
-    for h in v {
+    let saved = load_window_state();
+    // (mi, wi, order, hwnd, floating rect): windows a previous session saved.
+    let mut matched: Vec<(usize, usize, usize, isize, Option<RECT>)> = Vec::new();
+    let mut fresh: Vec<isize> = Vec::new();
+    for &h in &v {
         if mgr.locate(h).is_some() {
             continue;
         }
+        match saved_window_for(&saved, h).filter(|_| !mgr.monitors.is_empty()) {
+            Some(s) => {
+                let mi = s.monitor.min(mgr.monitors.len() - 1);
+                let wi = s.ws.min(mgr.monitors[mi].workspaces.len().saturating_sub(1));
+                matched.push((mi, wi, s.order, h, s.floating.then_some(s.rect)));
+            }
+            None => fresh.push(h),
+        }
+    }
+    matched.sort_by_key(|m| (m.0, m.1, m.2));
+    for (mi, wi, _order, h, floating_rect) in matched {
+        let ws = &mut mgr.monitors[mi].workspaces[wi];
+        if ws.windows.contains(&h) {
+            continue;
+        }
+        ws.windows.push(h);
+        if floating_rect.is_some() {
+            ws.floating.push(h);
+        }
+        ws.focused = h;
+        if wi != mgr.monitors[mi].active {
+            // Marked before the hide, as switch_plain does: the async
+            // EVENT_OBJECT_HIDE must find the marker already there.
+            mark_hidden_by_us(h);
+            let _ = ShowWindow(hwnd_from(h), SW_HIDE);
+        }
+        if let Some(r) = floating_rect {
+            // The layout never places a floating window: the saved rect is its
+            // only restore.
+            set_pos_raw(h, r);
+        }
+    }
+    for h in fresh {
         let hwnd = hwnd_from(h);
         let rule = match_window_rule(hwnd);
         let (mi, wi) = rule_target(mgr, hwnd, rule, 0);
@@ -19252,6 +19295,7 @@ fn sync_managed(mgr: &Manager) {
     // takes MANAGED on every SHOW/HIDE/FOREGROUND.
     drop(dead);
     persist_hidden(mgr);
+    persist_window_state(mgr);
 }
 
 // ---- crash rescue -------------------------------------------------------------
@@ -19464,6 +19508,180 @@ unsafe fn rescue_orphans() {
         log_info!("rescued {n} window(s) hidden or parked by a previous session");
     }
 }
+
+// ---- window state persistence ------------------------------------------------
+// A manual quit used to forget every window's workspace and (floating) position,
+// so only Restart Astur kept the layout. Every command now snapshots the tracked
+// windows to a small file, and the next start puts any window it still finds
+// back where it was. A window is matched by hwnd AND process AND class, so a
+// recycled handle or a relaunched app never matches and takes the rules instead.
+
+fn window_state_file() -> std::path::PathBuf {
+    config_path("ASTUR_WINDOW_STATE", "window-state.lst")
+}
+
+struct SavedWindow {
+    hwnd: isize,
+    pid: u32,
+    monitor: usize,
+    ws: usize,
+    order: usize,
+    floating: bool,
+    rect: RECT,
+    class: String,
+}
+
+fn window_state_line(w: &SavedWindow) -> String {
+    format!(
+        "{} {} {} {} {} {} {} {} {} {} {}\n",
+        w.hwnd,
+        w.pid,
+        w.monitor,
+        w.ws,
+        w.order,
+        w.floating as u8,
+        w.rect.left,
+        w.rect.top,
+        w.rect.right,
+        w.rect.bottom,
+        w.class,
+    )
+}
+
+fn parse_window_state_line(line: &str) -> Option<SavedWindow> {
+    let mut it = line.splitn(11, ' ');
+    let hwnd = it.next()?.parse().ok()?;
+    let pid = it.next()?.parse().ok()?;
+    let monitor = it.next()?.parse().ok()?;
+    let ws = it.next()?.parse().ok()?;
+    let order = it.next()?.parse().ok()?;
+    let floating = it.next()? == "1";
+    let left = it.next()?.parse().ok()?;
+    let top = it.next()?.parse().ok()?;
+    let right = it.next()?.parse().ok()?;
+    let bottom = it.next()?.parse().ok()?;
+    let class = it.next().unwrap_or("").to_string();
+    Some(SavedWindow {
+        hwnd,
+        pid,
+        monitor,
+        ws,
+        order,
+        floating,
+        rect: RECT {
+            left,
+            top,
+            right,
+            bottom,
+        },
+        class,
+    })
+}
+
+fn load_window_state() -> Vec<SavedWindow> {
+    let Ok(text) = std::fs::read_to_string(window_state_file()) else {
+        return Vec::new();
+    };
+    text.lines().filter_map(parse_window_state_line).collect()
+}
+
+unsafe fn saved_window_for<'a>(saved: &'a [SavedWindow], h: isize) -> Option<&'a SavedWindow> {
+    let hw = hwnd_from(h);
+    let mut pid = 0u32;
+    GetWindowThreadProcessId(hw, Some(&mut pid));
+    let class = window_class(hw);
+    saved
+        .iter()
+        .find(|s| s.hwnd == h && s.pid == pid && s.class == class)
+}
+
+fn build_window_state(mgr: &Manager) -> String {
+    let mut out = String::new();
+    for (mi, m) in mgr.monitors.iter().enumerate() {
+        for (wi, ws) in m.workspaces.iter().enumerate() {
+            for (order, &h) in ws.windows.iter().enumerate() {
+                let floating = ws.floating.contains(&h);
+                let (pid, class, rect) = unsafe {
+                    let hw = hwnd_from(h);
+                    let mut pid = 0u32;
+                    GetWindowThreadProcessId(hw, Some(&mut pid));
+                    let rect = if floating {
+                        window_rect_of(h)
+                    } else {
+                        RECT::default()
+                    };
+                    (pid, window_class(hw), rect)
+                };
+                out.push_str(&window_state_line(&SavedWindow {
+                    hwnd: h,
+                    pid,
+                    monitor: mi,
+                    ws: wi,
+                    order,
+                    floating,
+                    rect,
+                    class,
+                }));
+            }
+        }
+    }
+    out
+}
+
+static WINDOW_STATE_TEXT: Mutex<String> = Mutex::new(String::new());
+static WINDOW_STATE_IO: Mutex<()> = Mutex::new(());
+static WINDOW_STATE_WAKE: LazyLock<(Mutex<bool>, Condvar)> =
+    LazyLock::new(|| (Mutex::new(false), Condvar::new()));
+
+/// Snapshot the tracked windows and queue a write when it changed. Called from
+/// sync_managed after every command.
+fn persist_window_state(mgr: &Manager) {
+    let text = build_window_state(mgr);
+    let changed = {
+        let mut guard = WINDOW_STATE_TEXT.lock().unwrap();
+        if *guard == text {
+            false
+        } else {
+            *guard = text;
+            true
+        }
+    };
+    if changed {
+        *WINDOW_STATE_WAKE.0.lock().unwrap() = true;
+        WINDOW_STATE_WAKE.1.notify_one();
+    }
+}
+
+fn window_state_write(text: &str) {
+    let _io = WINDOW_STATE_IO.lock().unwrap();
+    let path = window_state_file();
+    if let Some(parent) = path.parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
+    let _ = std::fs::write(path, text);
+}
+
+fn window_state_worker() {
+    loop {
+        {
+            let mut g = WINDOW_STATE_WAKE.0.lock().unwrap();
+            while !*g {
+                g = WINDOW_STATE_WAKE.1.wait(g).unwrap();
+            }
+            *g = false;
+        }
+        let text = WINDOW_STATE_TEXT.lock().unwrap().clone();
+        window_state_write(&text);
+    }
+}
+
+/// The exit's final write, synchronous and before the restore moves anything:
+/// the layout on disk is the one last seen, whatever the worker managed.
+fn flush_window_state() {
+    let text = WINDOW_STATE_TEXT.lock().unwrap().clone();
+    window_state_write(&text);
+}
+
 
 /// Whether the manager tracks `h`. Synced after every command batch, and
 /// updated at once when a window is adopted (Cmd::Add) or untracked
@@ -23621,6 +23839,7 @@ enum SysAct {
     OpenSettings,
     Reload,
     RestartAstur,
+    ExitAstur,
     Screenshot,
     SetWallpaper(String),
     Command(String),
@@ -23677,6 +23896,12 @@ fn builtin_sys_item(id: &str, wallpaper_dir: &str) -> Option<SysItem> {
             "Restart Astur",
             "restart",
             SysAct::RestartAstur,
+            true,
+        )),
+        "exit_astur" | "quit_astur" => Some(sys_action(
+            "Exit Astur",
+            "signout",
+            SysAct::ExitAstur,
             true,
         )),
         "screenshot" => Some(sys_action(
@@ -23944,6 +24169,10 @@ unsafe fn sysmenu_exec(act: SysAct) {
                 restore_all_windows();
                 std::process::exit(0);
             }
+        }
+        SysAct::ExitAstur => {
+            restore_all_windows();
+            std::process::exit(0);
         }
         SysAct::Screenshot => launcher_launch("ms-screenclip:"),
         SysAct::SetWallpaper(path) => queue_wallpaper(&path),
@@ -25410,6 +25639,8 @@ fn main() {
         spawn_named("state", state_worker);
         spawn_named("mru", mru_worker);
         spawn_named("rescue", rescue_worker);
+        // Window-state snapshots for the next start (workspace + floating rects).
+        spawn_named("window-state", window_state_worker);
         // Workspace-slide compositor (owns its overlay + message pump; idle on a
         // condvar until the manager dispatches a slide).
         spawn_named("transition", transition_worker);

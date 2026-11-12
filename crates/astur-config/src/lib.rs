@@ -1229,6 +1229,7 @@ impl Config {
                 "open_config".into(),
                 "reload".into(),
                 "restart_astur".into(),
+                "exit_astur".into(),
                 "screenshot".into(),
                 "wallpapers".into(),
             ],
@@ -1779,9 +1780,9 @@ launcher_entries =
 system_menu_enabled = true
 system_menu_width = 380
 # Built-ins: lock sleep hibernate sign_out restart shutdown settings open_config
-# reload restart_astur screenshot wallpapers. Order controls menu order.
+# reload restart_astur exit_astur screenshot wallpapers. Order controls menu order.
 system_power_items = lock, sleep, hibernate, sign_out, restart, shutdown
-system_setup_items = settings, open_config, reload, restart_astur, screenshot, wallpapers
+system_setup_items = settings, open_config, reload, restart_astur, exit_astur, screenshot, wallpapers
 # Custom: category|label|target|icon|confirm, records separated by ;;
 system_actions =
 
