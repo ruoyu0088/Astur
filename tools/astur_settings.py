@@ -569,6 +569,15 @@ LAYOUTS = [c for c in next(f.choices for f in FIELDS["astur"][0][1]
 # Small widgets
 # --------------------------------------------------------------------------
 
+def centered_geometry(win: tk.Misc, width: int, height: int) -> str:
+    """`WxH+X+Y` placing a WxH window at the centre of its screen."""
+    screen_w = win.winfo_screenwidth()
+    screen_h = win.winfo_screenheight()
+    x = max(0, (screen_w - width) // 2)
+    y = max(0, (screen_h - height) // 2)
+    return f"{width}x{height}+{x}+{y}"
+
+
 def style_init(root: tk.Tk) -> None:
     style = ttk.Style(root)
     style.theme_use("clam")
@@ -703,7 +712,7 @@ class WindowPicker(tk.Toplevel):
         self.configure(bg=BG)
         self.transient(parent.winfo_toplevel())
         self.on_pick = on_pick
-        self.geometry("820x430")
+        self.geometry(centered_geometry(self, 820, 430))
 
         head = tk.Frame(self, bg=PANEL)
         head.pack(fill="x")
@@ -762,8 +771,11 @@ class RecordsDialog(tk.Toplevel):
         self.spec = spec or ["value"]
         self.rows = self._parse(value)
         self.current: int | None = None
-        w = 120 + 130 * min(3, len(self.spec))
-        self.geometry(f"{min(max(w, 560 if is_colors else w), 900)}x470")
+        w = 160 + 160 * min(4, len(self.spec))
+        if is_colors:
+            w = max(w, 560)
+        w = min(w, 1100)
+        self.geometry(centered_geometry(self, w, 560))
 
         head = tk.Frame(self, bg=PANEL)
         head.pack(fill="x")
@@ -1000,7 +1012,7 @@ class App:
         self.search_hits: list[tuple[str, str, str]] = []
 
         root.title("Astur settings")
-        root.geometry("1040x780+70+40")
+        root.geometry(centered_geometry(root, 1040, 780))
         root.minsize(820, 520)
         style_init(root)
 
