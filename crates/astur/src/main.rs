@@ -1639,6 +1639,7 @@ fn bind_cmd(action: config::Action, arg: u16) -> Option<Cmd> {
         A::SwitchWorkspace => Cmd::Switch(arg as usize),
         A::MoveToWorkspace => Cmd::MoveToWs(arg as usize),
         A::SwitchMonitorWorkspace => Cmd::SwitchLocal(arg as usize),
+        A::MoveToMonitorWorkspace => Cmd::MoveToLocalWs(arg as usize),
         A::Extra => Cmd::Extra(arg as usize),
     })
 }
@@ -2669,6 +2670,7 @@ enum Cmd {
     SwitchLocal(usize),
     YasbFocus(yasb::Focus),
     MoveToWs(usize),
+    MoveToLocalWs(usize),
     ToggleTiling,
     ToggleFloat,
     ToggleFill,
@@ -2768,6 +2770,7 @@ impl Cmd {
             Cmd::SwitchLocal(_) => "SwitchLocal",
             Cmd::YasbFocus(_) => "YasbFocus",
             Cmd::MoveToWs(_) => "MoveToWs",
+            Cmd::MoveToLocalWs(_) => "MoveToLocalWs",
             Cmd::ToggleTiling => "ToggleTiling",
             Cmd::ToggleFloat => "ToggleFloat",
             Cmd::ToggleFill => "ToggleFill",
@@ -13447,6 +13450,39 @@ unsafe fn process(mgr: &mut Manager, cmd: Cmd) {
                 // the tile's old occupant, and the hover poll would focus it.
                 bump_follow_settle();
             }
+        }
+        Cmd::MoveToLocalWs(i) => {
+            // Alt+Shift+, / . / /: move the focused window to the Nth
+            // workspace of the focused monitor (the local counterpart of
+            // MoveToWs, which takes a global workspace number).
+            if !mgr.tiling || mgr.monitors.is_empty() {
+                return;
+            }
+            let mi = mgr.focused_mon.min(mgr.monitors.len() - 1);
+            if i >= mgr.monitors[mi].workspaces.len() {
+                return;
+            }
+            let from_a = mgr.monitors[mi].active;
+            if i == from_a {
+                return;
+            }
+            let h = mgr.monitors[mi].workspaces[from_a].focused;
+            if h == 0 {
+                return;
+            }
+            // Carries the floating flag (review B-07).
+            if !mgr.move_window(h, mi, i, None) {
+                return;
+            }
+            // Same monitor, so the source stays hidden underneath the
+            // slide: switch straight to the destination.
+            mgr.focused_mon = mi;
+            switch_monitor_workspace(mgr, mi, i);
+            // The switch just captured `from_a` with h still in its old
+            // slot: never slide that frame in. Lay out what is left while
+            // it is hidden.
+            snap_remove(mgr.monitors[mi].hmon, from_a);
+            place_hidden_workspace(mgr, mi, from_a);
         }
         Cmd::ToggleTiling => {
             // Flip tiling only. Workspaces stay intact so Alt+1..9 keeps working
@@ -25800,6 +25836,7 @@ fn main() {
         println!("  Alt+Space      = app launcher (type to filter, Enter to run)");
         println!("  Alt+'          = open the power menu");
         println!("  Alt+, . /      = 1st / 2nd / 3rd workspace of this screen");
+        println!("  Alt+Shift+, . / = move focused window to that workspace");
         println!("  Alt+Enter      = launch terminal");
         println!("  Alt+Shift+Enter= launch default browser");
         println!("  Alt+1..9,0     = switch workspace (or click a bar pill)");
@@ -29593,7 +29630,8 @@ mod tests {
                 format!("{} {n}", c.name())
             }
             Cmd::ResizeMaster(d) | Cmd::ResizeTile(d) => format!("{} {d}", c.name()),
-            Cmd::Switch(i) | Cmd::MoveToWs(i) | Cmd::Extra(i) => format!("{} {i}", c.name()),
+            Cmd::Switch(i) | Cmd::MoveToWs(i) | Cmd::SwitchLocal(i) | Cmd::MoveToLocalWs(i)
+        | Cmd::Extra(i) => format!("{} {i}", c.name()),
             Cmd::FocusGeo(d) | Cmd::MoveGeo(d) => format!("{} {}", c.name(), *d as u8),
             Cmd::ColumnEdge { last, carry } => format!("{} {last} {carry}", c.name()),
             c => c.name().to_string(),
@@ -29690,19 +29728,22 @@ mod tests {
             0x28 => return pick(Cmd::FocusGeo(Dir::Down), Cmd::MoveGeo(Dir::Down)),
             _ => {}
         }
-        // Workspace keys win over the monitor keys when both claim a key
-        // (compile_keys binds the monitor keys first), and the monitor keys
-        // have no Shift meaning, unlike the workspace keys.
+        // This lookup checks the workspace keys before the monitor keys,
+        // as the pre-table code did; compile_keys binds the monitor keys
+        // first, so a key claimed by both would differ between the two, but
+        // no shipped config overlaps them. Both take Shift now: a plain key
+        // switches, Shift+key moves the focused window.
         if let Some(i) = c.workspace_keys.iter().position(|&k| k == vk) {
             return pick(Cmd::Switch(i), Cmd::MoveToWs(i));
         }
         let monitor = [c.key_switch_ws_1, c.key_switch_ws_2, c.key_switch_ws_3]
             .iter()
             .position(|&k| k == vk)?;
-        if shift {
-            return None;
-        }
-        one(Cmd::SwitchLocal(monitor))
+        one(if shift {
+            Cmd::MoveToLocalWs(monitor)
+        } else {
+            Cmd::SwitchLocal(monitor)
+        })
     }
 
     #[test]

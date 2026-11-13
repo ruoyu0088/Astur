@@ -1886,6 +1886,7 @@ main_key = ralt
 #   Alt+E                fill the workspace (the focused window on top), and back
 #   Alt+'                open the power menu (lock, sleep, restart ...)
 #   Alt+, / Alt+. / Alt+/  go to the 1st / 2nd / 3rd workspace of THIS screen
+#   Alt+Shift+, / . / /    move the focused window to that workspace
 #   Alt+Z / Alt+C        master layout: shrink / grow the master column;
 #                        dwindle layout: shrink / grow the focused window's split
 #   Alt+F                toggle floating for the focused window
@@ -1940,7 +1941,7 @@ key_fill_desktop = E
 key_system_menu = '
 # Alt+, / Alt+. / Alt+/ go to the 1st / 2nd / 3rd workspace of the focused
 # monitor, in that monitor's own order (a screen holding 2, 4, 6, 8 goes to
-# 2, 4, 6).
+# 2, 4, 6). Add Shift to move the focused window to that workspace.
 key_switch_ws_1 = ,
 key_switch_ws_2 = .
 key_switch_ws_3 = /
@@ -4023,13 +4024,14 @@ pub enum Action {
     SwitchWorkspace,
     MoveToWorkspace,
     SwitchMonitorWorkspace,
+    MoveToMonitorWorkspace,
     Extra,
 }
 
 impl Action {
     /// Every action in declaration order (`ALL[a as usize] == a`), which is
     /// how a table entry stores it.
-    pub const ALL: [Action; 39] = {
+    pub const ALL: [Action; 40] = {
         use Action::*;
         [
             Launcher,
@@ -4070,6 +4072,7 @@ impl Action {
             SwitchWorkspace,
             MoveToWorkspace,
             SwitchMonitorWorkspace,
+            MoveToMonitorWorkspace,
             Extra,
         ]
     };
@@ -4116,6 +4119,7 @@ impl Action {
             SwitchWorkspace => "Go to a workspace",
             MoveToWorkspace => "Move the window to a workspace",
             SwitchMonitorWorkspace => "Go to a workspace of this screen",
+            MoveToMonitorWorkspace => "Move the window to a workspace of this screen",
             Extra => "Custom shortcut",
         }
     }
@@ -4508,6 +4512,7 @@ pub fn compile_keys(c: &Config) -> Keymap {
         .enumerate()
     {
         k.put_loose(c, m, vk, (SwitchMonitorWorkspace, i as u16), false);
+        k.put_loose(c, m | MOD_SHIFT, vk, (MoveToMonitorWorkspace, i as u16), false);
     }
     for (i, &vk) in c.workspace_keys.iter().enumerate() {
         k.put_loose(c, m, vk, (SwitchWorkspace, i as u16), false);
@@ -5136,6 +5141,18 @@ outer_gap = 4
         assert_eq!(m[&(MOD_ALT, 0xBC)], (Action::SwitchMonitorWorkspace, 0));
         assert_eq!(m[&(MOD_ALT, 0xBE)], (Action::SwitchMonitorWorkspace, 1));
         assert_eq!(m[&(MOD_ALT, 0xBF)], (Action::SwitchMonitorWorkspace, 2));
+        assert_eq!(
+            m[&(MOD_ALT | MOD_SHIFT, 0xBC)],
+            (Action::MoveToMonitorWorkspace, 0)
+        );
+        assert_eq!(
+            m[&(MOD_ALT | MOD_SHIFT, 0xBE)],
+            (Action::MoveToMonitorWorkspace, 1)
+        );
+        assert_eq!(
+            m[&(MOD_ALT | MOD_SHIFT, 0xBF)],
+            (Action::MoveToMonitorWorkspace, 2)
+        );
         assert!(!m.contains_key(&(MOD_ALT | MOD_SHIFT, 0x20)));
         // Left Alt's old quirks: Ctrl ignored, Shift ignored with no Shift action.
         assert_eq!(m[&(MOD_ALT | MOD_CTRL, 0x31)], ws(0));
