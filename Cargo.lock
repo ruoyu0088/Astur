@@ -4,7 +4,7 @@ version = 4
 
 [[package]]
 name = "astur"
-version = "2.5.0"
+version = "2.6.0"
 dependencies = [
  "astur-config",
  "embed-resource",
@@ -15,7 +15,7 @@ dependencies = [
 
 [[package]]
 name = "astur-config"
-version = "2.5.0"
+version = "2.6.0"
 
 [[package]]
 name = "block-buffer"

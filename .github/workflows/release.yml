@@ -43,14 +43,19 @@ jobs:
         shell: pwsh
         run: |
           $files = @((Resolve-Path astur-windows-x64.zip).Path)
-          $notes = "**Astur $env:GITHUB_REF_NAME** - tiling window manager for Windows 10/11.`n`n" +
-                   "``astur-windows-x64.zip`` holds ``astur.exe`` and ``astur_settings.py``.`n`n" +
-                   "Unpack it anywhere and run ``astur.exe``. The settings editor (``Astur Settings`` in the tray menu) " +
-                   "needs Python 3 on PATH; if Python lives somewhere else, set ``settings_python`` in " +
-                   "``%USERPROFILE%\.astur\astur.conf`` to the full path of python.exe.`n`n" +
-                   "See the release commit for the full changelog."
-          $ghArgs = @('release','create',$env:GITHUB_REF_NAME) + $files +
-                    @('--title',"Astur $env:GITHUB_REF_NAME",'--notes',$notes)
+          $notesFile = ".github/release-notes/$env:GITHUB_REF_NAME.md"
+          if (Test-Path $notesFile) {
+            $notesArg = @('--notes-file', $notesFile)
+          } else {
+            $notes = "**Astur $env:GITHUB_REF_NAME** - tiling window manager for Windows 10/11.`n`n" +
+                     "``astur-windows-x64.zip`` holds ``astur.exe`` and ``astur_settings.py``.`n`n" +
+                     "Unpack it anywhere and run ``astur.exe``. The settings editor (``Astur Settings`` in the tray menu) " +
+                     "needs Python 3 on PATH; if Python lives somewhere else, set ``settings_python`` in " +
+                     "``%USERPROFILE%\.astur\astur.conf`` to the full path of python.exe."
+            $notesArg = @('--notes', $notes)
+          }
+          $ghArgs = @('release','create',$env:GITHUB_REF_NAME) + $files + $notesArg +
+                    @('--title',"Astur $env:GITHUB_REF_NAME")
           # Hyphenated semver tags (v2.0.0-alpha.1, -beta, -rc) publish as pre-releases.
           if ($env:GITHUB_REF_NAME -match '-') { $ghArgs += '--prerelease' }
           gh @ghArgs
