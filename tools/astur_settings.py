@@ -578,6 +578,48 @@ def centered_geometry(win: tk.Misc, width: int, height: int) -> str:
     return f"{width}x{height}+{x}+{y}"
 
 
+def bring_to_front(win: tk.Misc, hold_ms: int = 400) -> None:
+    """Bring a freshly opened window to the front.
+
+    Astur's bar and other always-on-top tools would otherwise sit over
+    a settings window the moment it appears. Topmost only for `hold_ms`,
+    so the window rises above them, then normal again so it never stays
+    pinned over the user's other windows.
+    """
+    try:
+        win.update_idletasks()
+        win.deiconify()
+        win.lift()
+        win.attributes("-topmost", True)
+        win.update_idletasks()
+        win.focus_force()
+    except tk.TclError:
+        return
+    # Best effort on top of focus_force: Windows may have refused the
+    # foreground claim, and the wrapper HWND is the one SetForegroundWindow
+    # wants (Tk hands out the inner client window).
+    try:
+        _user32.GetParent.argtypes = [wintypes.HWND]
+        _user32.GetParent.restype = wintypes.HWND
+        _user32.SetForegroundWindow.argtypes = [wintypes.HWND]
+        _user32.SetForegroundWindow.restype = wintypes.BOOL
+        inner = wintypes.HWND(win.winfo_id())
+        outer = _user32.GetParent(inner)
+        _user32.SetForegroundWindow(outer if outer else inner)
+    except Exception:
+        pass
+    win.after(hold_ms, lambda: _drop_topmost(win))
+
+
+def _drop_topmost(win: tk.Misc) -> None:
+    """`bring_to_front`'s second half: back to a normal window."""
+    try:
+        if win.winfo_exists():
+            win.attributes("-topmost", False)
+    except tk.TclError:
+        pass
+
+
 def style_init(root: tk.Tk) -> None:
     style = ttk.Style(root)
     style.theme_use("clam")
@@ -735,6 +777,7 @@ class WindowPicker(tk.Toplevel):
         kids = self.tree.get_children()
         if kids:
             self.tree.selection_set(kids[0])
+        bring_to_front(self)
 
         buttons = tk.Frame(self, bg=BG)
         buttons.pack(fill="x", padx=10, pady=(0, 10))
@@ -844,6 +887,7 @@ class RecordsDialog(tk.Toplevel):
         if self.rows:
             self.tree.selection_set(self.tree.get_children()[0])
             self.select_row()
+        bring_to_front(self)
 
     # -- data ---------------------------------------------------------
     def _parse(self, value: str) -> list[list[str]]:
@@ -1025,6 +1069,7 @@ class App:
         self.fill_nav()
         self.select_section(self.section)
         self.bind_keys()
+        bring_to_front(root)
         self.root.after(2000, self.watch_disk)
 
     # -- chrome -------------------------------------------------------
