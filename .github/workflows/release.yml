@@ -19,22 +19,20 @@ jobs:
       - name: Install Rust stable
         uses: dtolnay/rust-toolchain@stable
 
-      # Builds the whole workspace: astur.exe (window manager) + astur-settings.exe
-      # (settings GUI). The installer bundles both; the portable exe is astur.exe.
-      - name: Build release binaries
-        run: cargo build --release
+      # astur.exe is the only binary: the settings editor is a Python script
+      # (tools/astur_settings.py) that astur.exe starts with `python`.
+      - name: Build release binary
+        run: cargo build --release -p astur
 
-      - name: Stage portable artifact
-        run: Copy-Item target\release\astur.exe astur-windows-x64.exe
-
-      # Inno Setup is not preinstalled on the runner; Chocolatey is.
-      - name: Install Inno Setup
-        run: choco install innosetup --no-progress -y
-
-      # astur.iss reads its own version and emits dist\Astur-Setup-<version>.exe.
-      # Needs the prior cargo build so target\release\*.exe exist.
-      - name: Build installer
-        run: '& "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" packaging\astur.iss'
+      # astur.exe looks for astur_settings.py next to itself, so both files
+      # sit at the root of the zip.
+      - name: Package the portable zip
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force dist | Out-Null
+          Copy-Item target\release\astur.exe dist\
+          Copy-Item tools\astur_settings.py dist\
+          Compress-Archive -Path dist\astur.exe, dist\astur_settings.py -DestinationPath astur-windows-x64.zip -Force
 
       # Publish via the official gh CLI (preinstalled on the runner). softprops/
       # action-gh-release was repeatedly getting a GitHub 500 ("Unicorn" HTML page)
@@ -44,11 +42,12 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         shell: pwsh
         run: |
-          $files = @((Resolve-Path astur-windows-x64.exe).Path)
-          $files += (Get-ChildItem dist/Astur-Setup-*.exe).FullName
-          $notes = "**Astur $env:GITHUB_REF_NAME** - portable tiling window manager for Windows 10/11.`n`n" +
-                   "- ``astur-windows-x64.exe`` - portable window manager, single exe, no installer.`n" +
-                   "- ``Astur-Setup-*.exe`` - installer bundling the window manager + Settings GUI.`n`n" +
+          $files = @((Resolve-Path astur-windows-x64.zip).Path)
+          $notes = "**Astur $env:GITHUB_REF_NAME** - tiling window manager for Windows 10/11.`n`n" +
+                   "``astur-windows-x64.zip`` holds ``astur.exe`` and ``astur_settings.py``.`n`n" +
+                   "Unpack it anywhere and run ``astur.exe``. The settings editor (``Astur Settings`` in the tray menu) " +
+                   "needs Python 3 on PATH; if Python lives somewhere else, set ``settings_python`` in " +
+                   "``%USERPROFILE%\.astur\astur.conf`` to the full path of python.exe.`n`n" +
                    "See the release commit for the full changelog."
           $ghArgs = @('release','create',$env:GITHUB_REF_NAME) + $files +
                     @('--title',"Astur $env:GITHUB_REF_NAME",'--notes',$notes)

@@ -2867,6 +2867,9 @@ static LAST_FG_MS: AtomicU64 = AtomicU64::new(0);
 static IGNORE_CLASSES: Mutex<Vec<String>> = Mutex::new(Vec::new());
 static FLOAT_CLASSES: Mutex<Vec<String>> = Mutex::new(Vec::new());
 static WINDOW_RULES: Mutex<Vec<WindowRule>> = Mutex::new(Vec::new());
+/// `settings_python`: the interpreter that runs the settings editor. Empty means
+/// `python` from PATH. Kept here because the tray runs on its own thread.
+static SETTINGS_PYTHON: Mutex<String> = Mutex::new(String::new());
 static SCRATCHPAD_HWND: AtomicIsize = AtomicIsize::new(0);
 static SCRATCHPAD_PENDING_AT: AtomicU64 = AtomicU64::new(0);
 static SCRATCHPAD_HIDDEN: AtomicBool = AtomicBool::new(false);
@@ -2905,6 +2908,7 @@ fn apply_hook_config(cfg: &Config) {
     *IGNORE_CLASSES.lock().unwrap() = cfg.ignore_classes.clone();
     *FLOAT_CLASSES.lock().unwrap() = cfg.float_classes.clone();
     *WINDOW_RULES.lock().unwrap() = cfg.window_rules.clone();
+    *SETTINGS_PYTHON.lock().unwrap() = cfg.settings_python.clone();
     // Hotkeys: a shortcut that does nothing or costs something is a setting
     // the user believes is in effect, so errors and warnings log at ERROR
     // (the default level); a replaced Windows shortcut is only INFO.
@@ -5462,7 +5466,7 @@ unsafe fn request_bar_mode_refresh() {
 
 /// Should a freshly-managed window start floating? Rich rules take precedence
 /// over legacy class-only lists, so a tile rule can override a broad float list.
-/// Then the built-in floats (`floats_by_default`).
+/// Then the settings editor, which must not be re-tiled while it applies edits.
 unsafe fn should_float(hwnd: HWND, rule: Option<RulePlacement>) -> bool {
     if let Some(rule) = rule {
         return rule.action == RuleAction::Float;
@@ -5473,17 +5477,31 @@ unsafe fn should_float(hwnd: HWND, rule: Option<RulePlacement>) -> bool {
         .unwrap()
         .iter()
         .any(|c| c.eq_ignore_ascii_case(&class))
-        || window_exe(hwnd).is_some_and(|exe| floats_by_default(&exe))
+        || is_settings_editor(hwnd)
 }
 
-/// Apps that float unless a window rule says otherwise. Astur's own
-/// settings window: tiled, every gap or bar edit it applies live re-tiles
-/// it under the cursor.
-fn floats_by_default(exe_path: &str) -> bool {
-    std::path::Path::new(exe_path)
+/// The settings editor is a Python/Tk script, not an exe of its own: float
+/// python's Tk windows. Tiled, every gap or bar edit it applies live re-tiles
+/// it under the cursor. `astur-settings.exe` is the name it had before the
+/// editor moved to Python; windows already open from an old build still float.
+unsafe fn is_settings_editor(hwnd: HWND) -> bool {
+    let Some(exe) = window_exe(hwnd) else {
+        return false;
+    };
+    is_settings_process(&exe, &window_class(hwnd))
+}
+
+/// `is_settings_editor` without the window, so it can be tested.
+fn is_settings_process(exe_path: &str, class: &str) -> bool {
+    let name = std::path::Path::new(exe_path)
         .file_name()
         .and_then(|n| n.to_str())
-        .is_some_and(|n| n.eq_ignore_ascii_case("astur-settings.exe"))
+        .unwrap_or_default();
+    if name.eq_ignore_ascii_case("astur-settings.exe") {
+        return true;
+    }
+    (name.eq_ignore_ascii_case("python.exe") || name.eq_ignore_ascii_case("pythonw.exe"))
+        && class.eq_ignore_ascii_case("TkTopLevel")
 }
 
 /// One window a fill-mode press took over: the rect and the floating state it
@@ -8591,7 +8609,8 @@ unsafe fn assign_existing_windows(mgr: &mut Manager) {
         match saved_window_for(&saved, h).filter(|_| !mgr.monitors.is_empty()) {
             Some(s) => {
                 let mi = s.monitor.min(mgr.monitors.len() - 1);
-                let wi = s.ws.min(mgr.monitors[mi].workspaces.len().saturating_sub(1));
+                let wi =
+                    s.ws.min(mgr.monitors[mi].workspaces.len().saturating_sub(1));
                 matched.push((mi, wi, s.order, h, s.floating.then_some(s.rect)));
             }
             None => fresh.push(h),
@@ -19585,7 +19604,7 @@ fn load_window_state() -> Vec<SavedWindow> {
     text.lines().filter_map(parse_window_state_line).collect()
 }
 
-unsafe fn saved_window_for<'a>(saved: &'a [SavedWindow], h: isize) -> Option<&'a SavedWindow> {
+unsafe fn saved_window_for(saved: &[SavedWindow], h: isize) -> Option<&SavedWindow> {
     let hw = hwnd_from(h);
     let mut pid = 0u32;
     GetWindowThreadProcessId(hw, Some(&mut pid));
@@ -19681,7 +19700,6 @@ fn flush_window_state() {
     let text = WINDOW_STATE_TEXT.lock().unwrap().clone();
     window_state_write(&text);
 }
-
 
 /// Whether the manager tracks `h`. Synced after every command batch, and
 /// updated at once when a window is adopted (Cmd::Add) or untracked
@@ -23898,12 +23916,9 @@ fn builtin_sys_item(id: &str, wallpaper_dir: &str) -> Option<SysItem> {
             SysAct::RestartAstur,
             true,
         )),
-        "exit_astur" | "quit_astur" => Some(sys_action(
-            "Exit Astur",
-            "signout",
-            SysAct::ExitAstur,
-            true,
-        )),
+        "exit_astur" | "quit_astur" => {
+            Some(sys_action("Exit Astur", "signout", SysAct::ExitAstur, true))
+        }
         "screenshot" => Some(sys_action(
             "Screenshot",
             "screenshot",
@@ -24753,16 +24768,56 @@ unsafe fn tray_remove(hwnd: HWND) {
     let _ = Shell_NotifyIconW(NIM_DELETE, &nid);
 }
 
-/// Launch the sibling settings GUI (`astur-settings.exe` next to this exe),
-/// or bring the open one forward: a second instance exits on its
-/// single-instance lock with no window, so with Settings on another
-/// workspace, minimised or behind, the click looked dead. ActivateWindow
-/// switches to its workspace, restores and focuses it. The exe check keeps
-/// a same-titled window (FindWindowW ignores case: the "Astur settings"
-/// error box below) from matching.
+/// Where the settings editor lives: next to astur.exe in the release zip, in
+/// `tools/` beside the exe for a portable build, or in the checkout's `tools/`
+/// when running `target/release/astur.exe`.
+fn settings_script(dir: &std::path::Path) -> Option<std::path::PathBuf> {
+    let named = |p: std::path::PathBuf| p.join("astur_settings.py");
+    let mut candidates = vec![named(dir.to_path_buf())];
+    candidates.push(named(dir.join("tools")));
+    // A source checkout runs target/release/astur.exe: the script lives in
+    // <root>/tools, two levels up and one directory across.
+    if let Some(up) = dir.parent().and_then(std::path::Path::parent) {
+        candidates.push(named(up.join("tools")));
+    }
+    candidates.into_iter().find(|p| p.is_file())
+}
+
+/// The python that runs the editor when `settings_python` is empty: the first of
+/// python / python3 / py that answers `--version`. The Windows Store stub in
+/// %LOCALAPPDATA%\Microsoft\WindowsApps\python.exe is not python (it prints
+/// "Python was not found" and exits), and spawning it would look like a dead
+/// menu item instead of an error.
+fn find_python() -> Option<String> {
+    use std::os::windows::process::CommandExt;
+    for name in ["python", "python3", "py"] {
+        let Ok(out) = std::process::Command::new(name)
+            .arg("--version")
+            .creation_flags(0x0800_0000)
+            .output()
+        else {
+            continue;
+        };
+        if !out.status.success() {
+            continue;
+        }
+        let mut text = String::from_utf8_lossy(&out.stdout).to_lowercase();
+        text.push_str(&String::from_utf8_lossy(&out.stderr).to_lowercase());
+        if text.contains("python") && !text.contains("was not found") {
+            return Some(name.to_string());
+        }
+    }
+    None
+}
+
+/// Launch the settings editor, or bring the open one forward: a second instance
+/// just opens a second window, so with Settings on another workspace, minimised
+/// or behind, the click looked dead. ActivateWindow switches to its workspace,
+/// restores and focuses it. `is_settings_editor` keeps a same-titled window
+/// (FindWindowW ignores case: the "Astur settings" error box below) out.
 unsafe fn tray_open_settings() {
     let open = FindWindowW(PCWSTR::null(), w!("Astur Settings")).unwrap_or_default();
-    if !open.0.is_null() && window_exe(open).is_some_and(|e| floats_by_default(&e)) {
+    if !open.0.is_null() && is_settings_editor(open) {
         push_cmd(Cmd::ActivateWindow(open.0 as isize));
         return;
     }
@@ -24770,14 +24825,46 @@ unsafe fn tray_open_settings() {
         return;
     };
     let Some(dir) = exe.parent() else { return };
-    let path = dir.join("astur-settings.exe");
-    let Err(error) = std::process::Command::new(&path).spawn() else {
-        return;
+    let script = settings_script(dir);
+    let configured = SETTINGS_PYTHON.lock().unwrap().trim().to_string();
+    let python = if configured.is_empty() {
+        find_python()
+    } else {
+        Some(configured)
+    };
+    let mut error = None;
+    if let (Some(script), Some(python)) = (&script, &python) {
+        use std::os::windows::process::CommandExt;
+        // CREATE_NO_WINDOW: python.exe is a console program, and a console
+        // flashing up behind the editor is not what "Settings" means.
+        let spawned = std::process::Command::new(python)
+            .arg(script)
+            .creation_flags(0x0800_0000)
+            .spawn();
+        match spawned {
+            Ok(_) => return,
+            Err(e) => error = Some(e),
+        }
+    }
+    let ran = match (&python, &script) {
+        (Some(p), Some(s)) => format!("{} {}", p, s.display()),
+        (Some(p), None) => format!("{p} <astur_settings.py>"),
+        (None, Some(s)) => format!("python {} (no python on PATH)", s.display()),
+        (None, None) => "python <astur_settings.py> (no python on PATH)".to_string(),
+    };
+    let missing = if script.is_none() {
+        "\r\n\r\nastur_settings.py was not found next to astur.exe (or in tools\\)."
+    } else {
+        ""
+    };
+    let detail = match error {
+        Some(e) => format!("\r\n\r\n{e}"),
+        None => String::new(),
     };
     let message = format!(
-        "Could not open settings GUI.\r\n\r\nExpected:\r\n{}\r\n\r\n{}\r\n\r\nSource build:\r\ncargo build --release",
-        path.display(),
-        error
+        "Could not open the settings editor.\r\n\r\nTried:\r\n{ran}{missing}{detail}\r\n\r\n\
+         Settings need Python 3 with Tkinter. Set `settings_python` in astur.conf \
+         to a python.exe path if Python is not on PATH.",
     );
     let text: Vec<u16> = message.encode_utf16().chain(std::iter::once(0)).collect();
     let _ = MessageBoxW(
@@ -27894,12 +27981,48 @@ mod tests {
 
     #[test]
     fn the_settings_window_floats_by_default() {
-        assert!(floats_by_default(
-            r"C:\Program Files\Astur\astur-settings.exe"
+        // The editor as it ships: python running the Tk script.
+        assert!(is_settings_process(
+            r"C:\Python313\python.exe",
+            "TkTopLevel"
         ));
-        assert!(floats_by_default("ASTUR-SETTINGS.EXE"));
-        assert!(!floats_by_default(r"C:\Astur\astur.exe"));
-        assert!(!floats_by_default(r"C:\x\not-astur-settings.exe"));
+        assert!(is_settings_process("pythonw.exe", "tktoplevel"));
+        // Windows from the old astur-settings.exe build still float.
+        assert!(is_settings_process(
+            r"C:\Program Files\Astur\astur-settings.exe",
+            "AsturSettings"
+        ));
+        assert!(is_settings_process("ASTUR-SETTINGS.EXE", ""));
+        // Other python windows, and other exes, keep tiling.
+        assert!(!is_settings_process(
+            r"C:\Python313\python.exe",
+            "ConsoleWindowClass"
+        ));
+        assert!(!is_settings_process(r"C:\Astur\astur.exe", "AsturWm"));
+        assert!(!is_settings_process(
+            r"C:\x\not-astur-settings.exe",
+            "TkTopLevel"
+        ));
+    }
+
+    #[test]
+    fn the_settings_script_is_found_next_to_the_exe_first() {
+        let dir = std::env::temp_dir().join(format!("astur-script-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(dir.join("tools")).unwrap();
+        std::fs::write(dir.join("tools/astur_settings.py"), b"#").unwrap();
+        // A source checkout: the script is two levels up, in tools/.
+        assert_eq!(
+            settings_script(&dir),
+            Some(dir.join("tools/astur_settings.py"))
+        );
+        // A release zip: the script sits next to astur.exe and wins.
+        std::fs::write(dir.join("astur_settings.py"), b"#").unwrap();
+        assert_eq!(settings_script(&dir), Some(dir.join("astur_settings.py")));
+        let _ = std::fs::remove_dir_all(&dir);
+        // The source tree itself has the script two levels above target/release.
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+        assert!(settings_script(&root.join("target/release")).is_some());
     }
 
     #[test]
@@ -29567,8 +29690,19 @@ mod tests {
             0x28 => return pick(Cmd::FocusGeo(Dir::Down), Cmd::MoveGeo(Dir::Down)),
             _ => {}
         }
-        let i = c.workspace_keys.iter().position(|&k| k == vk)?;
-        pick(Cmd::Switch(i), Cmd::MoveToWs(i))
+        // Workspace keys win over the monitor keys when both claim a key
+        // (compile_keys binds the monitor keys first), and the monitor keys
+        // have no Shift meaning, unlike the workspace keys.
+        if let Some(i) = c.workspace_keys.iter().position(|&k| k == vk) {
+            return pick(Cmd::Switch(i), Cmd::MoveToWs(i));
+        }
+        let monitor = [c.key_switch_ws_1, c.key_switch_ws_2, c.key_switch_ws_3]
+            .iter()
+            .position(|&k| k == vk)?;
+        if shift {
+            return None;
+        }
+        one(Cmd::SwitchLocal(monitor))
     }
 
     #[test]

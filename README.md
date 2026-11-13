@@ -50,12 +50,15 @@ menu, tray, and a settings GUI — with the same motion polish and core tiling.
 
 ## Install
 
-- **Astur** — download `Astur-Setup-2.1.2.exe` from the
-  [latest stable release](https://github.com/Page011/Astur/releases/latest) and run it
-  (per-user install, no admin, optional
-  start-on-login), or grab the portable `astur-windows-x64.exe` from the same
-  release. The portable asset contains the full window manager but not the separate
-  `astur-settings.exe` companion; use the installer for the Settings GUI.
+- **Astur** — grab `astur-windows-x64.zip` from the
+  [latest stable release](https://github.com/Page011/Astur/releases/latest) and
+  unzip it anywhere: no install, no admin. The zip holds `astur.exe` and the
+  settings editor, `astur_settings.py`.
+- **Settings editor** — it is a Python 3 script (tkinter, no extra packages), so
+  it needs `python` on PATH. The tray menu's *Astur Settings* starts it with that
+  `python`; if yours lives elsewhere, set `settings_python` in
+  `%USERPROFILE%\.astur\astur.conf` to the full path of `python.exe` (or
+  `pythonw.exe`) and Astur starts that instead.
 - **Astur Lite** — the minimal portable build from the
   [`lite`](https://github.com/Page011/Astur/tree/lite) branch or pinned
   [v1.0.1 release](https://github.com/Page011/Astur/releases/tag/v1.0.1). One
@@ -346,7 +349,9 @@ Save both as UTF-8. The window manager never overwrites a file it cannot read (a
 UTF-16 "Unicode" save, or one locked mid-save): it keeps its current settings
 (built-in defaults at startup), logs the error to `astur.log`, and tries again.
 
-Full Astur ships **`astur-settings.exe`** to edit both files. `.conf` remains source
+Full Astur ships the **settings editor** (`tools/astur_settings.py`, a single-file
+Python 3 + tkinter program: start it from the tray menu or run
+`python astur_settings.py`) to edit both files. `.conf` remains source
 of truth; comments/layout survive saves. Structured records use `;;` between rows
 and `|` between fields. Prefix literal separators with backslash (Settings edits
 these as tables and escapes them for you). Built-in icon names:
@@ -370,15 +375,17 @@ Requires [Rust stable](https://rustup.rs). The repo is a Cargo workspace.
 ```bash
 git clone https://github.com/Page011/Astur
 cd Astur
-cargo build --release
-# binaries: target/release/astur.exe + target/release/astur-settings.exe
+cargo build --release -p astur
+# binary: target/release/astur.exe
 ```
 
-`cargo build --release -p astur` builds core WM only. Settings menu then reports
-missing companion instead of failing silently.
+`astur.exe` looks for the settings editor next to itself: `astur_settings.py`
+first, then `tools/astur_settings.py` (a source checkout). Run the editor itself
+with `python tools/astur_settings.py`; `python tools/gen_schema.py` regenerates
+its field list from the config templates after a config key changes.
 
 `crates/astur` is window manager, `crates/astur-config` shared config parser,
-`crates/astur-settings` settings GUI. Minimal **Astur Lite**
+and `tools/astur_settings.py` the settings editor. Minimal **Astur Lite**
 lives on the [`lite`](https://github.com/Page011/Astur/tree/lite) branch (a single
 crate, no workspace).
 

@@ -2,8 +2,7 @@
 resolver = "2"
 members = [
     "crates/astur",          # the window manager (the binary users run)
-    "crates/astur-config",   # shared config parsing (WM + settings GUI)
-    "crates/astur-settings", # settings GUI (egui) — WIP
+    "crates/astur-config",   # shared config parsing
 ]
 
 # Release profile applies workspace-wide. The WM still ships tiny: LTO, strip,

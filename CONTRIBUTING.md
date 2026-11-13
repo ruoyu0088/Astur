@@ -54,7 +54,7 @@ The main workspace contains:
 | --- | --- |
 | `crates/astur` | Window manager, Windows hooks, layouts, animations, bar, and launcher |
 | `crates/astur-config` | Shared configuration parsing and defaults |
-| `crates/astur-settings` | Settings GUI |
+| `tools/astur_settings.py` | Settings editor (Python 3 + tkinter, single file) |
 
 Read [README.md](README.md) for features and usage, and [AGENTS.md](AGENTS.md) and [CLAUDE.md](CLAUDE.md) for codebase conventions and architectural guidance.
 

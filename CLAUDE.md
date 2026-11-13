@@ -62,13 +62,13 @@ pre-workspace); the workspace below is the evolving full "Astur" (v2). See
   Uses the `RECT` type only; no Win32 calls.
 - `crates/astur-config/src/lib.rs` — pure parsing → `Config`. **No Win32.** Shared by
   the WM and the settings GUI so they never drift; aliased as `config` in the WM.
-- `crates/astur-settings/` — the settings GUI (egui). ~11.5k lines (much of it
-  rustfmt-spread row declarations and tests), 14 pages, instant apply with
-  undo, search, table editors, bar preset gallery; the installer bundles it and
-  the tray launches it. It parses config through `astur-config` so it cannot
-  drift from the WM. `cargo test -p astur-settings -- --ignored render_pages`
-  renders every page to PNGs in %TEMP%\astur-settings-render without opening a
-  window.
+- `tools/astur_settings.py` — the settings editor: one file, Python 3 + tkinter,
+  no third-party packages. It renders `ConfFile` fields from `SCHEMA_DATA`, which
+  `tools/gen_schema.py` generates out of the two config templates in
+  `crates/astur-config/src/lib.rs` (`DEFAULT_CONFIG`, `DEFAULT_NAVBAR`) — rerun
+  the generator after adding or changing a key, or the editor will not show it.
+  Saving keeps the file's comments and line order and leaves a `.bak`. The WM
+  starts it through `settings_python` / `python` (see `tray_open_settings`).
 
 NOTE: plan/ docs written before the workspace say `src/main.rs` / `src/config.rs` —
 those now map to `crates/astur/src/main.rs` / `crates/astur-config/src/lib.rs`.

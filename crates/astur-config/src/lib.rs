@@ -56,25 +56,26 @@ pub struct Config {
     pub layout: String,           // default layout: one of LAYOUTS
     pub monitor_layouts: Vec<String>, // per monitor (1st entry = monitor 1); "" = `layout`
     pub workspace_layouts: Vec<String>, // per workspace (1st entry = ws 1); "" = its monitor's layout
-    pub scroll_default_width: f32, // scrolling: new column width, fraction of the view
+    pub scroll_default_width: f32,      // scrolling: new column width, fraction of the view
     pub scroll_width_presets: Vec<f32>, // scrolling: column widths Alt+R cycles
     pub scroll_height_presets: Vec<f32>, // scrolling: tile heights Alt+Shift+R cycles
-    pub scroll_center: String,    // scrolling viewport: never | always | on-overflow
-    pub tab_bar_height: i32,      // tabbed-column tab bar, logical px
-    pub terminal: String,         // command launched by Alt+Enter
-    pub browser: String,          // Alt+Shift+Enter; empty = default browser
-    pub unfocused_opacity: f32,   // 0.0-1.0 alpha for unfocused windows (1.0 = off)
-    pub border_enabled: bool,     // draw coloured DWM borders (Windows 11)
-    pub focused_border: u32,      // COLORREF for the focused window border
-    pub unfocused_border: u32,    // COLORREF for unfocused window borders
-    pub cursor_follows_focus: bool, // warp the mouse to the focused window
-    pub focus_follows_mouse: bool, // hovering a window focuses it (focus follows mouse)
-    pub animations: bool,         // animate tiling moves + workspace slides
-    pub animation_ms: i32,        // animation duration in ms (0 disables; clamp 0..2000)
-    pub workspace_slide: bool,    // back-compat: false forces workspace_anim = off
-    pub workspace_anim: String,   // workspace-switch style: off | slide | spring | fade
-    pub window_anim: String,      // window move/open/close/resize: off | glide | spring
-    pub animation_easing: String, // cubic | smooth | spring
+    pub scroll_center: String,          // scrolling viewport: never | always | on-overflow
+    pub tab_bar_height: i32,            // tabbed-column tab bar, logical px
+    pub terminal: String,               // command launched by Alt+Enter
+    pub browser: String,                // Alt+Shift+Enter; empty = default browser
+    pub settings_python: String,        // python.exe that runs the settings script; empty = PATH
+    pub unfocused_opacity: f32,         // 0.0-1.0 alpha for unfocused windows (1.0 = off)
+    pub border_enabled: bool,           // draw coloured DWM borders (Windows 11)
+    pub focused_border: u32,            // COLORREF for the focused window border
+    pub unfocused_border: u32,          // COLORREF for unfocused window borders
+    pub cursor_follows_focus: bool,     // warp the mouse to the focused window
+    pub focus_follows_mouse: bool,      // hovering a window focuses it (focus follows mouse)
+    pub animations: bool,               // animate tiling moves + workspace slides
+    pub animation_ms: i32,              // animation duration in ms (0 disables; clamp 0..2000)
+    pub workspace_slide: bool,          // back-compat: false forces workspace_anim = off
+    pub workspace_anim: String,         // workspace-switch style: off | slide | spring | fade
+    pub window_anim: String,            // window move/open/close/resize: off | glide | spring
+    pub animation_easing: String,       // cubic | smooth | spring
     pub popup_font_name: String,
     pub popup_font_size: i32,
     pub popup_font_weight: i32,
@@ -1168,6 +1169,7 @@ impl Config {
             tab_bar_height: 26,
             terminal: "wt.exe".to_string(),
             browser: String::new(),
+            settings_python: String::new(),
             unfocused_opacity: 0.8,
             border_enabled: true,
             focused_border: parse_color("#66AAFF", 0x00FFAA66),
@@ -1747,6 +1749,11 @@ terminal = wt.exe
 # Program launched by Alt+Shift+Enter. Leave EMPTY to open the system default
 # browser.  text
 browser =
+# Python that runs the settings editor (astur_settings.py, shipped next to
+# astur.exe, or tools/astur_settings.py in a source checkout). Leave EMPTY to
+# use `python` from PATH; set a full path to python.exe (or pythonw.exe) when
+# Python is not on PATH or you want a specific install.  text
+settings_python =
 
 # Alt+Space picker. Placement: cursor_monitor | focused_monitor | primary_monitor
 launcher_enabled = true
@@ -2911,6 +2918,7 @@ fn parse_into_from(c: &mut Config, text: &str, source: &str) {
             }
             "terminal" => c.terminal = v.to_string(),
             "browser" => c.browser = v.to_string(),
+            "settings_python" => c.settings_python = v.to_string(),
             "unfocused_opacity" => {
                 if let Ok(n) = v.parse::<f32>() {
                     c.unfocused_opacity = n.clamp(0.1, 1.0);
@@ -3556,6 +3564,7 @@ pub fn reload_groups(old: &Config, new: &Config) -> ReloadGroups {
         tab_bar_height,
         terminal,
         browser,
+        settings_python,
         unfocused_opacity,
         border_enabled,
         focused_border,
@@ -3791,6 +3800,7 @@ pub fn reload_groups(old: &Config, new: &Config) -> ReloadGroups {
     diff!(live: clipboard_history, clipboard_limit, clipboard_prefix, emoji_picker);
     diff!(live: emoji_prefix, wallpaper_dir, workspace_wallpapers, ipc_enabled, ipc_pipe);
     diff!(live: ipc_allow_launch, foreground_lock_disable, async_window_pos);
+    diff!(live: settings_python);
     diff!(live: yasb_enabled, yasb_port);
     diff!(live: persist_state, log_level, unknown_keys, extra_hotkeys, window_rules);
     diff!(live: ignore_classes, float_classes, key_focus_next, key_focus_prev);
