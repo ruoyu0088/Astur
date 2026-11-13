@@ -1,6 +1,10 @@
 # Rust build output
 /target/
 
+# Python caches (tools/)
+__pycache__/
+*.pyc
+
 # Installer output
 /dist/
 
