@@ -35,6 +35,8 @@ OVERRIDES = {
     ("navbar", "workspace_style"): ("enum", "box|pill|underline|dot"),
     ("navbar", "separator_style"): ("enum", "line|dot|powerline"),
     ("navbar", "icon_mode"): ("enum", "icon|text|both|glyph|glyph_only"),
+    ("navbar", "palette"): (
+        "enum", "classic|catppuccin|nord|gruvbox|rosepine|mono|system"),
     ("navbar", "left"): ("list", "widget"),
     ("navbar", "center"): ("list", "widget"),
     ("navbar", "right"): ("list", "widget"),
@@ -44,6 +46,62 @@ OVERRIDES = {
     ("astur", "system_actions"): ("records", "category|label|command"),
     ("astur", "window_rules"): (
         "records", "action|exe|class|title|workspace|monitor"),
+}
+
+# The single-key binds: one key name each, whether it is `J` or `[`.
+KEY_BLINDS = (
+    "key_focus_next", "key_focus_prev", "key_shrink_master", "key_grow_master",
+    "key_promote_master", "key_toggle_tiling", "key_toggle_float",
+    "key_close_window", "key_cycle_width", "key_center_column",
+    "key_consume_left", "key_consume_right", "key_fill_desktop",
+    "key_system_menu", "key_switch_ws_1", "key_switch_ws_2", "key_switch_ws_3",
+)
+for _key in KEY_BLINDS:
+    OVERRIDES[("astur", _key)] = ("key", "")
+
+# Help written here rather than read from the template. The key_* block shares
+# one comment for all of them, so the template cannot say what a single key does.
+HELP_OVERRIDES = {
+    ("astur", "main_key"):
+        "The key held down for every Astur shortcut (Mod in this file): lalt, "
+        "ralt, win, alt, ctrl+win or capslock. Left Alt is reserved, so apps "
+        "never see it; with ralt the right Alt is reserved instead.",
+    ("astur", "key_focus_next"):
+        "Focus the window to the right (Mod + this key). One key name.",
+    ("astur", "key_focus_prev"):
+        "Focus the window to the left (Mod + this key).",
+    ("astur", "key_shrink_master"):
+        "Make the main window smaller; in scrolling, step the column narrower.",
+    ("astur", "key_grow_master"):
+        "Make the main window bigger; in scrolling, step the column wider.",
+    ("astur", "key_promote_master"):
+        "Make the focused window the main one.",
+    ("astur", "key_toggle_tiling"):
+        "Turn tiling on or off. Off leaves every window floating.",
+    ("astur", "key_toggle_float"):
+        "Float the focused window, or put it back into the layout.",
+    ("astur", "key_close_window"):
+        "Close the focused window.",
+    ("astur", "key_cycle_width"):
+        "Step the scrolling column through scroll_width_presets; with Shift, "
+        "the window height.",
+    ("astur", "key_center_column"):
+        "Scroll the focused column to the middle of the screen.",
+    ("astur", "key_consume_left"):
+        "Stack the window on the left into the focused column.",
+    ("astur", "key_consume_right"):
+        "Push the focused window into the column on the right.",
+    ("astur", "key_fill_desktop"):
+        "Fill the whole work area with the focused window, or put everything "
+        "back (the same key toggles).",
+    ("astur", "key_system_menu"):
+        "Open the power menu: lock, sleep, restart and Astur's own actions.",
+    ("astur", "key_switch_ws_1"):
+        "Go to workspace 1; with Shift, move the focused window there.",
+    ("astur", "key_switch_ws_2"):
+        "Go to workspace 2; with Shift, move the focused window there.",
+    ("astur", "key_switch_ws_3"):
+        "Go to workspace 3; with Shift, move the focused window there.",
 }
 
 
@@ -60,8 +118,20 @@ def extract(name: str) -> list[str]:
     return out
 
 
+RULE = re.compile(r"^#\s*(?:-{5,}|={5,})\s*$")
+
+
 def compact(comment: list[str]) -> str:
-    parts = [c.lstrip("#").strip() for c in comment]
+    lines = list(comment)
+    # A banner (`# ====`, a heading, `# ====`) introduces the section, not the
+    # key: main_key's help used to start with a row of '=' and a cut heading.
+    while len(lines) >= 2 and RULE.match(lines[0]):
+        lines.pop(0)
+        if lines and not RULE.match(lines[0]):
+            lines.pop(0)
+            if lines and RULE.match(lines[0]):
+                lines.pop(0)
+    parts = [c.lstrip("#").strip() for c in lines]
     text = re.sub(r"\s+", " ", " ".join(p for p in parts if p)).strip()
     return text if len(text) <= 240 else text[:237].rstrip() + "..."
 
@@ -120,7 +190,7 @@ def kind_of(doc: str, key: str, comment: list[str], value: str) -> tuple[str, st
     return "text", ""
 
 
-HEAD = re.compile(r"^#\s*-{10,}\s*$")
+HEAD = re.compile(r"^#\s*(?:-{10,}|={10,})\s*$")
 
 
 def parse(doc: str, lines: list[str]) -> list[tuple[str, list[tuple]]]:
@@ -134,6 +204,11 @@ def parse(doc: str, lines: list[str]) -> list[tuple[str, list[tuple]]]:
             if (i + 2 < len(lines) and lines[i + 1].startswith("#")
                     and HEAD.match(lines[i + 2])):
                 title = lines[i + 1].lstrip("#").strip()
+                # The templates explain in a bracket after the name; a nav
+                # entry reads better without it.
+                title = re.sub(r"\s*\(.*\)$", "", title).strip() or title
+                if title in ("Astur navbar configuration", "Astur configuration"):
+                    title = "General"
                 i += 3
                 comment = []
                 continue
@@ -145,10 +220,11 @@ def parse(doc: str, lines: list[str]) -> list[tuple[str, list[tuple]]]:
         if m:
             key, value = m.group(1), m.group(2).rstrip()
             kind, extra = kind_of(doc, key, comment, value)
+            help_text = HELP_OVERRIDES.get((doc, key)) or compact(comment)
             if not sections or sections[-1][0] != title:
                 sections.append((title, []))
             sections[-1][1].append(
-                (key, kind, value, extra, compact(comment)))
+                (key, kind, value, extra, help_text))
             comment = []
             i += 1
             continue

@@ -362,24 +362,26 @@ SCHEMA_DATA = {
             ("foreground_lock_disable", "bool", "true", "", "Windows normally refuses to let a background app steal the foreground. Astur disables that timeout so focus changes land reliably. It is a SYSTEM-WIDE setting affecting every application, not just Astur; the previous value is put back wh..."),
             ("async_window_pos", "bool", "true", "", "Place windows without waiting for each app to finish moving (posted SetWindowPos). A re-tile then completes after the slowest app instead of after every app in turn, and a busy app no longer delays the next command that only moves window..."),
             ("extra_hotkeys", "records", "ALT+GRAVE|scratchpad|", "chord|action|argument", "Extra bindings: chord|action|argument ;; chord|action|argument A chord is keys joined by +: MOD (the main key, see main_key below), CTRL, SHIFT, ALT, WIN and one key name. It needs MOD, ALT or WIN. With main_key = lalt, ALT is Left Alt,..."),
-            ("main_key", "key", "lalt", "", "============================================================================ Hotkeys (the main key, Left Alt unless main_key says otherwise) ============================================================================ The main key is hel..."),
-            ("key_focus_next", "key", "J", "", "Alt + left-drag move window under cursor (drops back into the tiling) Alt + right-drag resize nearest corner (red bracket marker) Alt+T toggle tiling on/off (floating mode; workspaces kept) Alt+J / Alt+K focus next / previous window in t..."),
-            ("key_focus_prev", "text", "K", "", ""),
-            ("key_shrink_master", "text", "H", "", ""),
-            ("key_grow_master", "text", "L", "", ""),
-            ("key_promote_master", "text", "M", "", ""),
-            ("key_toggle_tiling", "text", "T", "", ""),
-            ("key_toggle_float", "text", "F", "", ""),
-            ("key_close_window", "text", "W", "", ""),
-            ("key_cycle_width", "text", "R", "", ""),
-            ("key_center_column", "text", "C", "", ""),
-            ("key_consume_left", "text", "[", "", ""),
-            ("key_consume_right", "text", "]", "", ""),
-            ("key_fill_desktop", "text", "E", "", ""),
-            ("key_system_menu", "text", "'", "", ""),
-            ("key_switch_ws_1", "list", ",", "", "Alt+, / Alt+. / Alt+/ go to the 1st / 2nd / 3rd workspace of the focused monitor, in that monitor's own order (a screen holding 2, 4, 6, 8 goes to 2, 4, 6)."),
-            ("key_switch_ws_2", "text", ".", "", ""),
-            ("key_switch_ws_3", "text", "/", "", ""),
+        ]),
+        ("Hotkeys", [
+            ("main_key", "key", "lalt", "", "The key held down for every Astur shortcut (Mod in this file): lalt, ralt, win, alt, ctrl+win or capslock. Left Alt is reserved, so apps never see it; with ralt the right Alt is reserved instead."),
+            ("key_focus_next", "key", "J", "", "Focus the window to the right (Mod + this key). One key name."),
+            ("key_focus_prev", "key", "K", "", "Focus the window to the left (Mod + this key)."),
+            ("key_shrink_master", "key", "H", "", "Make the main window smaller; in scrolling, step the column narrower."),
+            ("key_grow_master", "key", "L", "", "Make the main window bigger; in scrolling, step the column wider."),
+            ("key_promote_master", "key", "M", "", "Make the focused window the main one."),
+            ("key_toggle_tiling", "key", "T", "", "Turn tiling on or off. Off leaves every window floating."),
+            ("key_toggle_float", "key", "F", "", "Float the focused window, or put it back into the layout."),
+            ("key_close_window", "key", "W", "", "Close the focused window."),
+            ("key_cycle_width", "key", "R", "", "Step the scrolling column through scroll_width_presets; with Shift, the window height."),
+            ("key_center_column", "key", "C", "", "Scroll the focused column to the middle of the screen."),
+            ("key_consume_left", "key", "[", "", "Stack the window on the left into the focused column."),
+            ("key_consume_right", "key", "]", "", "Push the focused window into the column on the right."),
+            ("key_fill_desktop", "key", "E", "", "Fill the whole work area with the focused window, or put everything back (the same key toggles)."),
+            ("key_system_menu", "key", "'", "", "Open the power menu: lock, sleep, restart and Astur's own actions."),
+            ("key_switch_ws_1", "key", ",", "", "Go to workspace 1; with Shift, move the focused window there."),
+            ("key_switch_ws_2", "key", ".", "", "Go to workspace 2; with Shift, move the focused window there."),
+            ("key_switch_ws_3", "key", "/", "", "Go to workspace 3; with Shift, move the focused window there."),
         ]),
     ],
     "navbar": [
@@ -405,7 +407,7 @@ SCHEMA_DATA = {
             ("hover", "bool", "false", "", "Highlight the clickable item under the mouse pointer. bool"),
             ("title_bold", "bool", "false", "", "Draw the window title in bold. bool"),
             ("autohide", "bool", "false", "", "Auto-hide: the bar slides away and stops reserving screen space; move the mouse to the bar's screen edge to reveal it. bool"),
-            ("left", "list", "workspaces apps", "widget", "--------------------------------------------------------------------------- Layout: three zones. List widget names per zone (space separated, drawn in order). Available widgets: workspaces the workspace pills (click to switch) apps app b..."),
+            ("left", "list", "workspaces apps", "widget", "order). Available widgets: workspaces the workspace pills (click to switch) apps app buttons for the active workspace's windows (click focuses) title focused window title layout layout name + tiling/floating state cpu / mem live CPU / RA..."),
             ("center", "list", "title", "widget", ""),
             ("right", "list", "layout cpu mem net volume battery date clock", "widget", ""),
         ]),
@@ -453,7 +455,7 @@ SCHEMA_DATA = {
             ("icon_volume", "text", "VOL", "", ""),
             ("icon_disk", "text", "DISK", "", ""),
         ]),
-        ("More widgets (listed in a zone = shown)", [
+        ("More widgets", [
             ("title_format", "text", "{title}", "", "Title text. Tokens: {title} (the window's title), {app} (the app's name, e.g. Microsoft Edge)."),
             ("keyboard_format", "text", "{lang}", "", "Keyboard language. Tokens: {lang} (ENG, DEU, ...) {region} (US, GB, ...)."),
             ("disk_drive", "text", "C:", "", "The drive (or folder) the disk widget measures, checked every 30 s: C, C: or a folder path."),
@@ -462,7 +464,7 @@ SCHEMA_DATA = {
             ("custom_command", "text", "", "", "custom: a command run hidden (as cmd /C) every custom_interval seconds (1 - 3600); its first output line is {output}. Stopped after 5 s. Empty = custom_format alone, as plain text."),
             ("custom_format", "text", "{output}", "", ""),
             ("custom_interval", "number", "10", "", ""),
-            ("palette", "colour", "classic", "", "Colour palette the 'auto' colours come from: classic (the default), catppuccin, nord, gruvbox, rosepine, mono, or system (Windows neutrals and your Windows accent colour, read at start and on reload). Each has a dark and a light variant;..."),
+            ("palette", "enum", "classic", "classic|catppuccin|nord|gruvbox|rosepine|mono|system", "Colour palette the 'auto' colours come from: classic (the default), catppuccin, nord, gruvbox, rosepine, mono, or system (Windows neutrals and your Windows accent colour, read at start and on reload). Each has a dark and a light variant;..."),
             ("bg", "colour", "auto", "", "Colours: 'auto' follows the palette and theme, or set an explicit #RRGGBB to override that colour permanently."),
             ("fg", "text", "auto", "", ""),
             ("accent", "text", "auto", "", "Active-workspace pill highlight."),
@@ -639,6 +641,25 @@ def _inside(widget: tk.Widget, parent: tk.Widget) -> bool:
     return False
 
 
+SWATCH_HEX = {
+    "auto": "#2f3039", "surface": "#2f3039",
+    "red": "#e06c75", "orange": "#d19a66", "yellow": "#e5c07b",
+    "green": "#98c379", "teal": "#56b6c2", "blue": "#61afef",
+    "purple": "#c678dd", "pink": "#e06c9f",
+    "classic": "#2f3039", "catppuccin": "#313244", "nord": "#3b4252",
+    "gruvbox": "#3c3836", "rosepine": "#26233a", "mono": "#3a3a3a",
+    "system": "#333333",
+}
+
+
+def swatch_hex(value: str) -> str:
+    """A colour to paint a swatch with; never raises for `auto` or a name."""
+    text = (value or "").strip()
+    if re.fullmatch(r"#[0-9A-Fa-f]{6}", text):
+        return text
+    return SWATCH_HEX.get(text.lower(), FIELD)
+
+
 class ColorField(tk.Frame):
     """Entry + swatch; the swatch opens the picker, the text takes #RRGGBB."""
 
@@ -648,7 +669,7 @@ class ColorField(tk.Frame):
         self.var = tk.StringVar(value=value)
         self.entry = ttk.Entry(self, textvariable=self.var, width=11)
         self.entry.pack(side="left")
-        self.swatch = tk.Button(self, width=3, bg=value or PANEL, relief="flat",
+        self.swatch = tk.Button(self, width=3, bg=swatch_hex(value), relief="flat",
                                 highlightthickness=1, highlightbackground=BORDER,
                                 command=self.pick)
         self.swatch.pack(side="left", padx=(6, 0), ipady=1)
@@ -657,8 +678,12 @@ class ColorField(tk.Frame):
 
     def sync(self) -> None:
         value = self.var.get().strip()
-        if re.fullmatch(r"#[0-9A-Fa-f]{6}", value):
-            self.swatch.configure(bg=value)
+        self.swatch.configure(bg=swatch_hex(value))
+        if not re.fullmatch(r"#[0-9A-Fa-f]{6}", value):
+            # Keep what the file meant (`auto`, a swatch name, ...): show it.
+            self.entry.configure(foreground=DIM)
+        else:
+            self.entry.configure(foreground=FG)
         self.on_change(value)
 
     def pick(self) -> None:
@@ -870,18 +895,18 @@ class RecordsDialog(tk.Toplevel):
         self.tree.item(item, values=self.rows[self.current])
 
     def update_swatch(self, value: str) -> None:
-        """Show the colour being typed: #RRGGBB, a Tk colour name or a swatch."""
+        """Show the colour being typed: #RRGGBB, a Tk name or an Astur swatch."""
         swatch = getattr(self, "swatch", None)
         if swatch is None:
             return
-        colour = FIELD
         text = value.strip()
+        colour = FIELD
         if text:
             try:
                 r, g, b = self.winfo_rgb(text)
                 colour = "#%02x%02x%02x" % (r >> 8, g >> 8, b >> 8)
             except tk.TclError:
-                colour = FIELD
+                colour = swatch_hex(text)
         swatch.configure(bg=colour)
 
     def pick_colour(self) -> None:
