@@ -1336,6 +1336,18 @@ static MAIN_DOWN: AtomicBool = AtomicBool::new(false);
 static FAKE_ALT: AtomicBool = AtomicBool::new(false);
 // Handle of the red corner-marker overlay window.
 static MARKER_HWND: AtomicIsize = AtomicIsize::new(0);
+
+// Window-move mode: a quick double-tap of the reserved main key enters it.
+// Arrow / key_focus_next / key_focus_prev / workspace keys then MOVE the
+// focused window with NO modifier; moving to a workspace, or any other key,
+// leaves the mode. MAIN_TAP_TICK holds the tick of the last DOWN (auto-
+// repeat is filtered by MAIN_DOWN's swap below), so the second down within
+// DOUBLE_TAP_MS of the first one toggles the mode.
+static MAIN_TAP_TICK: AtomicU32 = AtomicU32::new(0);
+const DOUBLE_TAP_MS: u32 = 400;
+static MOVE_MODE: AtomicBool = AtomicBool::new(false);
+static MOVE_HINT_HWND: AtomicIsize = AtomicIsize::new(0);
+const MOVE_HINT_CLASS: PCWSTR = w!("astur_move_hint");
 // True only while a move/resize drag is in progress. Lets the global mouse hook
 // skip the STATE mutex on every mouse-move when nothing is being dragged — and
 // system-wide mouse-move is the single hottest path through this process.
@@ -1657,6 +1669,10 @@ unsafe fn main_reset(why: &str) {
     if MAIN_DOWN.swap(false, Ordering::Relaxed) {
         log_info!("main key hold forgotten ({why})");
     }
+    // Also leave window move mode: the hook no longer tracks the main key,
+    // so a key in the mode would act on nothing the user expects, and the
+    // badge must not linger.
+    exit_move_mode();
     FAKE_ALT.store(false, Ordering::Relaxed);
     // The switcher commits on a Left Alt release that will never come.
     if ALT_SWITCHER_MODE.swap(false, Ordering::Relaxed) {
@@ -1964,7 +1980,20 @@ unsafe extern "system" fn keyboard_proc(code: i32, wparam: WPARAM, lparam: LPARA
             let main_vk = MAIN_VK.load(Ordering::Acquire);
             if main_vk != 0 && kb.vkCode == main_vk {
                 if down {
-                    MAIN_DOWN.store(true, Ordering::Relaxed);
+                    let already_down = MAIN_DOWN.swap(true, Ordering::Relaxed);
+                    // Only the FIRST down of a press takes part in the
+                    // double-tap check; the auto-repeat that follows does not.
+                    if !already_down {
+                        let now = GetTickCount();
+                        let last = MAIN_TAP_TICK.load(Ordering::Relaxed);
+                        MAIN_TAP_TICK.store(now, Ordering::Relaxed);
+                        if MOVE_MODE.load(Ordering::Relaxed) {
+                            // A single main-key press leaves the mode.
+                            exit_move_mode();
+                        } else if last != 0 && now.wrapping_sub(last) <= DOUBLE_TAP_MS {
+                            enter_move_mode();
+                        }
+                    }
                 } else if up {
                     MAIN_DOWN.store(false, Ordering::Relaxed);
                     if ALT_SWITCHER_MODE.swap(false, Ordering::Relaxed) {
@@ -1994,6 +2023,66 @@ unsafe extern "system" fn keyboard_proc(code: i32, wparam: WPARAM, lparam: LPARA
                 }
                 return LRESULT(1); // apps never see the reserved main key
             }
+
+            // Window move mode: the reserved main key was double-tapped, so
+            // the arrow keys and the workspace keys now MOVE the focused
+            // window with no modifier. The Shift variants of the bindings
+            // (main+shift+key) already mean "move", so the move-mode keys are
+            // looked up through them, and a rebind of key_focus_* or the
+            // workspace keys applies here too. Moves stay in the mode;
+            // moving to a workspace, or any other key, leaves it.
+            if MOVE_MODE.load(Ordering::Relaxed) {
+                let vk = kb.vkCode as usize;
+                if vk < 256 && !is_modifier_vk(kb.vkCode) {
+                    if down && !PRESSED[vk].swap(true, Ordering::Relaxed) {
+                        let m = MAIN_BITS.load(Ordering::Relaxed) | config::MOD_SHIFT;
+                        let e = BINDS[(m as usize) << 8 | vk].load(Ordering::Acquire);
+                        let mut exit = true;
+                        if e != 0 {
+                            if let Some((action, arg)) = config::decode_bind(e) {
+                                match action {
+                                    config::Action::SwapNext => {
+                                        push_cmd(Cmd::SwapDir(1));
+                                        exit = false;
+                                    }
+                                    config::Action::SwapPrev => {
+                                        push_cmd(Cmd::SwapDir(-1));
+                                        exit = false;
+                                    }
+                                    config::Action::MoveLeft => {
+                                        push_cmd(Cmd::MoveGeo(Dir::Left));
+                                        exit = false;
+                                    }
+                                    config::Action::MoveRight => {
+                                        push_cmd(Cmd::MoveGeo(Dir::Right));
+                                        exit = false;
+                                    }
+                                    config::Action::MoveUp => {
+                                        push_cmd(Cmd::MoveGeo(Dir::Up));
+                                        exit = false;
+                                    }
+                                    config::Action::MoveDown => {
+                                        push_cmd(Cmd::MoveGeo(Dir::Down));
+                                        exit = false;
+                                    }
+                                    config::Action::MoveToWorkspace => {
+                                        push_cmd(Cmd::MoveToWs(arg as usize));
+                                    }
+                                    config::Action::MoveToMonitorWorkspace => {
+                                        push_cmd(Cmd::MoveToLocalWs(arg as usize));
+                                    }
+                                    _ => {}
+                                }
+                            }
+                        }
+                        if exit {
+                            exit_move_mode();
+                        }
+                    }
+                    return LRESULT(1);
+                }
+            }
+
             let held = MAIN_DOWN.load(Ordering::Relaxed);
             let alt_reserved = main_vk == VK_LMENU.0 as u32 || main_vk == VK_RMENU.0 as u32;
 
@@ -2154,6 +2243,117 @@ unsafe fn hide_marker() {
     if raw != 0 {
         let _ = ShowWindow(hwnd_from(raw), SW_HIDE);
     }
+}
+
+// --- window move mode ----------------------------------------------------
+//
+// A quick double-tap of the reserved main key (see keyboard_proc) enters
+// this mode: with no modifier held, the arrow keys, key_focus_next /
+// key_focus_prev and the workspace / key_switch_ws_* bindings now MOVE the
+// focused window, exactly as their main+shift variants would. Moving stays
+// in the mode; moving to a workspace, or any other key, leaves it. The
+// "MOVE MODE" badge above the top of the monitor under the cursor is the
+// visual cue.
+
+unsafe fn show_move_hint() {
+    let raw = MOVE_HINT_HWND.load(Ordering::Relaxed);
+    if raw == 0 {
+        return;
+    }
+    let hwnd = hwnd_from(raw);
+    let mut pt = POINT::default();
+    let _ = GetCursorPos(&mut pt);
+    let mon = MonitorFromPoint(pt, MONITOR_DEFAULTTONEAREST);
+    let mut mi = MONITORINFO {
+        cbSize: core::mem::size_of::<MONITORINFO>() as u32,
+        ..Default::default()
+    };
+    if !GetMonitorInfoW(mon, &mut mi).as_bool() {
+        return;
+    }
+    let w = 200;
+    let hgt = 40;
+    let x = (mi.rcWork.left + mi.rcWork.right - w) / 2;
+    let y = mi.rcWork.top + 40;
+    let _ = SetWindowPos(
+        hwnd,
+        HWND_TOPMOST,
+        x,
+        y,
+        w,
+        hgt,
+        SWP_NOACTIVATE | SWP_SHOWWINDOW,
+    );
+    let _ = InvalidateRect(hwnd, None, BOOL(1));
+}
+
+unsafe fn hide_move_hint() {
+    let raw = MOVE_HINT_HWND.load(Ordering::Relaxed);
+    if raw != 0 {
+        let _ = ShowWindow(hwnd_from(raw), SW_HIDE);
+    }
+}
+
+unsafe fn enter_move_mode() {
+    if MOVE_MODE.swap(true, Ordering::Relaxed) {
+        return;
+    }
+    show_move_hint();
+}
+
+unsafe fn exit_move_mode() {
+    if !MOVE_MODE.swap(false, Ordering::Relaxed) {
+        return;
+    }
+    hide_move_hint();
+}
+
+/// Paint the move-mode badge: white "MOVE MODE" on dark red, sized to the
+/// monitor the cursor is on when it is shown.
+unsafe extern "system" fn move_hint_wndproc(h: HWND, msg: u32, w: WPARAM, l: LPARAM) -> LRESULT {
+    if msg == WM_PAINT {
+        let mut ps = PAINTSTRUCT::default();
+        let hdc = BeginPaint(h, &mut ps);
+        let mut rc = RECT::default();
+        let _ = GetClientRect(h, &mut rc);
+        let brush = CreateSolidBrush(COLORREF(0x000000CC)); // BGR: #CC0000
+        FillRect(hdc, &rc, brush);
+        let _ = DeleteObject(HGDIOBJ(brush.0));
+        SetBkMode(hdc, TRANSPARENT);
+        SetTextColor(hdc, COLORREF(0x00FFFFFF));
+        let font = CreateFontW(
+            -20,
+            0,
+            0,
+            0,
+            700,
+            0,
+            0,
+            0,
+            DEFAULT_CHARSET.0 as u32,
+            OUT_DEFAULT_PRECIS.0 as u32,
+            CLIP_DEFAULT_PRECIS.0 as u32,
+            CLEARTYPE_QUALITY.0 as u32,
+            0,
+            w!("Segoe UI"),
+        );
+        let old = SelectObject(hdc, HGDIOBJ(font.0));
+        let mut text: Vec<u16> = "MOVE MODE".encode_utf16().collect();
+        DrawTextW(
+            hdc,
+            &mut text,
+            &mut rc,
+            DT_CENTER | DT_VCENTER | DT_SINGLELINE,
+        );
+        SelectObject(hdc, old);
+        let _ = DeleteObject(HGDIOBJ(font.0));
+        let _ = EndPaint(h, &ps);
+        return LRESULT(0);
+    }
+    if msg == WM_ERASEBKGND {
+        return LRESULT(1);
+    }
+    DefWindowProcW(h, msg, w, l)
 }
 
 #[inline]
@@ -25649,6 +25849,41 @@ fn main() {
         .expect("CreateWindowExW failed");
         let _ = SetLayeredWindowAttributes(marker, COLORREF(0), 200, LWA_ALPHA);
         MARKER_HWND.store(marker.0 as isize, Ordering::Relaxed);
+
+        // Window move mode's badge: a small red "MOVE MODE" strip the entry
+        // shows above the top of the monitor under the cursor, so the mode
+        // is visible without a window being placed. NOACTIVATE and layered
+        // like Astur's other overlays.
+        let mh_wc = WNDCLASSW {
+            lpfnWndProc: Some(move_hint_wndproc),
+            hInstance: hinst,
+            lpszClassName: MOVE_HINT_CLASS,
+            hCursor: arrow_cursor(),
+            ..Default::default()
+        };
+        RegisterClassW(&mh_wc);
+        if let Ok(mh) = CreateWindowExW(
+            WS_EX_LAYERED
+                | WS_EX_TRANSPARENT
+                | WS_EX_TOPMOST
+                | WS_EX_TOOLWINDOW
+                | WS_EX_NOACTIVATE,
+            MOVE_HINT_CLASS,
+            w!(""),
+            WS_POPUP,
+            0,
+            0,
+            200,
+            40,
+            None,
+            None,
+            hinst,
+            None,
+        ) {
+            let _ = SetLayeredWindowAttributes(mh, COLORREF(0), 220, LWA_ALPHA);
+            MOVE_HINT_HWND.store(mh.0 as isize, Ordering::Relaxed);
+        }
+
         // Explorer broadcasts "TaskbarCreated" when it (re)starts; the marker
         // resets the wallpaper source cache on it. It is a registered message
         // above WM_USER, so UIPI drops it from medium-IL Explorer to an
