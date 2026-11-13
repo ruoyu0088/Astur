@@ -37,7 +37,7 @@ import tempfile
 import tkinter as tk
 from ctypes import wintypes
 from pathlib import Path
-from tkinter import colorchooser, messagebox, ttk
+from tkinter import colorchooser, font as tkfont, messagebox, ttk
 
 # --------------------------------------------------------------------------
 # Appearance
@@ -55,10 +55,23 @@ WARN = "#d9a13b"
 ERR = "#e0716b"
 FLASH = "#3d5a7a"       # the row highlight after a search jump
 
-FONT = ("Segoe UI", 9)
-FONT_BOLD = ("Segoe UI Semibold", 9)
-FONT_TITLE = ("Segoe UI Semibold", 12)
-FONT_MONO = ("Consolas", 9)
+# Fonts are created as named tkfont.Font objects (see init_ui_fonts),
+# so changing the UI font size at runtime updates every widget that
+# uses them: tk widgets and ttk styles both hold the same object.
+FONT: tkfont.Font | None = None
+FONT_BOLD: tkfont.Font | None = None
+FONT_TITLE: tkfont.Font | None = None
+FONT_MONO: tkfont.Font | None = None
+FONT_SMALL: tkfont.Font | None = None
+FONT_SMALL_BOLD: tkfont.Font | None = None
+_UI_ROOT: tk.Tk | None = None
+FONT_FAMILY = "Segoe UI"
+FONT_FAMILY_SEMI = "Segoe UI Semibold"
+FONT_FAMILY_MONO = "Consolas"
+FONT_TITLE_OFFSET = 3
+FONT_SIZE_MIN = 7
+FONT_SIZE_MAX = 20
+FONT_SIZE_DEFAULT = 9
 
 DOCS = ("astur", "navbar")
 DOC_TITLES = {"astur": "astur.conf", "navbar": "navbar.conf"}
@@ -135,6 +148,38 @@ def default_path(doc: str) -> Path:
         return Path(env).expanduser()
     name = "astur.conf" if doc == "astur" else "navbar.conf"
     return Path.home() / ".astur" / name
+
+
+def ui_pref_path() -> Path:
+    """Where the editor remembers its own UI preferences (font size)."""
+    return default_path("astur").parent / "settings-ui.conf"
+
+
+def load_ui_font_size() -> int:
+    """The saved UI font size, clamped to what the editor supports."""
+    try:
+        text = ui_pref_path().read_text(encoding="utf-8")
+    except OSError:
+        return FONT_SIZE_DEFAULT
+    for line in text.splitlines():
+        key, sep, value = line.partition("=")
+        if sep and key.strip() == "font_size":
+            try:
+                return max(FONT_SIZE_MIN, min(FONT_SIZE_MAX,
+                                              int(value.strip())))
+            except ValueError:
+                return FONT_SIZE_DEFAULT
+    return FONT_SIZE_DEFAULT
+
+
+def save_ui_font_size(size: int) -> None:
+    """Persist the UI font size; failures are silent (best-effort)."""
+    try:
+        path = ui_pref_path()
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(f"font_size = {size}\n", encoding="utf-8")
+    except OSError:
+        pass
 
 
 # --------------------------------------------------------------------------
@@ -569,6 +614,103 @@ LAYOUTS = [c for c in next(f.choices for f in FIELDS["astur"][0][1]
 # Small widgets
 # --------------------------------------------------------------------------
 
+def init_ui_fonts(root: tk.Tk) -> None:
+    """Create the named Font objects every widget in this editor uses."""
+    global FONT, FONT_BOLD, FONT_TITLE, FONT_MONO, FONT_SMALL, FONT_SMALL_BOLD
+    global _UI_ROOT
+    _UI_ROOT = root
+    size = load_ui_font_size()
+    small = max(FONT_SIZE_MIN, size - 1)
+    FONT = tkfont.Font(root=root, family=FONT_FAMILY, size=size)
+    FONT_BOLD = tkfont.Font(root=root, family=FONT_FAMILY_SEMI, size=size)
+    FONT_TITLE = tkfont.Font(
+        root=root, family=FONT_FAMILY_SEMI, size=size + FONT_TITLE_OFFSET
+    )
+    FONT_MONO = tkfont.Font(root=root, family=FONT_FAMILY_MONO, size=size)
+    FONT_SMALL = tkfont.Font(root=root, family=FONT_FAMILY, size=small)
+    FONT_SMALL_BOLD = tkfont.Font(root=root, family=FONT_FAMILY_SEMI, size=small)
+    _apply_named_ttk_fonts(root, size, reapply_style=False)
+
+
+def _apply_named_ttk_fonts(root: tk.Tk, size: int, *, reapply_style: bool) -> None:
+    """Point Tk's own named fonts at our family / size so every ttk
+    widget (Entry, Combobox, Button, Treeview, Spinbox, Scrollbar,
+    Checkbutton, ...) follows the UI font size. Without this they keep
+    TkDefaultFont's system size and appear unchanged when the user
+    nudges the toolbar control."""
+    for name in (
+        "TkDefaultFont",
+        "TkTextFont",
+        "TkMenuFont",
+        "TkHeadingFont",
+        "TkCaptionFont",
+        "TkSmallCaptionFont",
+        "TkIconFont",
+        "TkTooltipFont",
+    ):
+        try:
+            tkfont.nametofont(name, root=root).configure(
+                family=FONT_FAMILY, size=size
+            )
+        except tk.TclError:
+            pass
+    try:
+        tkfont.nametofont("TkFixedFont", root=root).configure(
+            family=FONT_FAMILY_MONO, size=size
+        )
+    except tk.TclError:
+        pass
+    if not reapply_style:
+        return
+    # Some ttk themes cache a resolved font per style; re-stating the
+    # entries we own makes a live size change take effect at once.
+    try:
+        style = ttk.Style(root)
+        style.configure(".", font=FONT)
+        style.configure("Title.TLabel", font=FONT_TITLE)
+        style.configure("Key.TLabel", font=FONT_BOLD)
+        style.configure("Accent.TButton", font=FONT_BOLD)
+        style.configure("Treeview", font=FONT)
+        style.configure("Treeview.Heading", font=FONT)
+    except tk.TclError:
+        pass
+
+
+def apply_ui_font_size(size: int) -> None:
+    """Change the UI font size now and for future runs."""
+    if FONT is None:
+        return
+    size = max(FONT_SIZE_MIN, min(FONT_SIZE_MAX, int(size)))
+    small = max(FONT_SIZE_MIN, size - 1)
+    FONT.configure(size=size)
+    FONT_BOLD.configure(size=size)
+    FONT_TITLE.configure(size=size + FONT_TITLE_OFFSET)
+    FONT_MONO.configure(size=size)
+    if FONT_SMALL is not None:
+        FONT_SMALL.configure(size=small)
+    if FONT_SMALL_BOLD is not None:
+        FONT_SMALL_BOLD.configure(size=small)
+    if _UI_ROOT is not None:
+        _apply_named_ttk_fonts(_UI_ROOT, size, reapply_style=True)
+    save_ui_font_size(size)
+    # Treeview rows are pixel-sized; grow them with the font so nothing
+    # is clipped as the font size changes.
+    try:
+        ttk.Style().configure(
+            "Treeview", rowheight=max(24, FONT.metrics("linespace") + 8)
+        )
+    except tk.TclError:
+        pass
+
+
+def small_font(weight: str = "normal") -> tkfont.Font | None:
+    """A smaller companion font for captions. A Font object, so a
+    later change to the live UI size moves the small text with it."""
+    if FONT_SMALL is None or FONT_SMALL_BOLD is None:
+        return None
+    return FONT_SMALL_BOLD if weight == "bold" else FONT_SMALL
+
+
 def centered_geometry(win: tk.Misc, width: int, height: int) -> str:
     """`WxH+X+Y` placing a WxH window at the centre of its screen."""
     screen_w = win.winfo_screenwidth()
@@ -625,7 +767,7 @@ def style_init(root: tk.Tk) -> None:
     style.theme_use("clam")
     style.configure(".", background=BG, foreground=FG, fieldbackground=FIELD,
                     bordercolor=BORDER, lightcolor=PANEL, darkcolor=PANEL,
-                    troughcolor=PANEL, focuscolor=ACCENT)
+                    troughcolor=PANEL, focuscolor=ACCENT, font=FONT)
     style.configure("TFrame", background=BG)
     style.configure("Panel.TFrame", background=PANEL)
     style.configure("TLabel", background=BG, foreground=FG)
@@ -650,7 +792,7 @@ def style_init(root: tk.Tk) -> None:
                     indicatorbackground=FIELD, indicatorforeground=FG)
     style.map("TCheckbutton", background=[("active", BG)])
     style.configure("Treeview", background=PANEL, fieldbackground=PANEL,
-                    foreground=FG, borderwidth=0, rowheight=24)
+                    foreground=FG, borderwidth=0, rowheight=24, font=FONT)
     style.map("Treeview", background=[("selected", ACCENT)],
               foreground=[("selected", "#101216")])
     style.configure("Treeview.Heading", background=PANEL, foreground=DIM,
@@ -1058,6 +1200,7 @@ class App:
         root.title("Astur settings")
         root.geometry(centered_geometry(root, 1040, 780))
         root.minsize(820, 520)
+        init_ui_fonts(root)
         style_init(root)
 
         self.build_toolbar()
@@ -1094,6 +1237,22 @@ class App:
         self.search_entry = search
         self.search_var.trace_add("write", lambda *_: self.update_search())
 
+        # UI font size: adjusts this editor's own text and remembers the
+        # choice in ~/.astur/settings-ui.conf for the next run.
+        size_box = tk.Frame(bar, bg=PANEL)
+        size_box.pack(side="left", padx=(12, 0), pady=8)
+        tk.Label(size_box, text="Font", bg=PANEL, fg=DIM,
+                 font=FONT, padx=4).pack(side="left")
+        self.ui_font_var = tk.StringVar(value=str(FONT.cget("size")))
+        self.ui_font_spin = ttk.Spinbox(
+            size_box, from_=FONT_SIZE_MIN, to=FONT_SIZE_MAX, width=3,
+            textvariable=self.ui_font_var, command=self.on_ui_font_change,
+        )
+        self.ui_font_spin.pack(side="left")
+        self.ui_font_spin.bind("<Return>",
+                               lambda e: (self.on_ui_font_change(), "break")[1])
+        self.ui_font_spin.bind("<FocusOut>", lambda e: self.on_ui_font_change())
+
         ttk.Button(bar, text="Reload", command=self.reload).pack(side="right", padx=(6, 12))
         ttk.Button(bar, text="Save", style="Accent.TButton",
                    command=self.save).pack(side="right")
@@ -1102,7 +1261,7 @@ class App:
         side = tk.Frame(parent, bg=PANEL, width=250)
         side.pack(side="left", fill="y")
         side.pack_propagate(False)
-        tk.Label(side, text="SECTIONS", bg=PANEL, fg=DIM, font=("Segoe UI", 8, "bold"),
+        tk.Label(side, text="SECTIONS", bg=PANEL, fg=DIM, font=small_font("bold"),
                  anchor="w", padx=14, pady=2).pack(fill="x", pady=(12, 6))
         self.nav = ttk.Treeview(side, show="tree", selectmode="browse")
         self.nav.pack(fill="both", expand=True, padx=(6, 6), pady=(0, 8))
@@ -1146,6 +1305,20 @@ class App:
         self.search_entry.bind("<Return>", lambda e: (self.jump(), "break")[1])
         self.search_entry.bind("<Down>", lambda e: (self.move_hit(1), "break")[1])
         self.search_entry.bind("<Up>", lambda e: (self.move_hit(-1), "break")[1])
+
+    def on_ui_font_change(self) -> None:
+        """Apply the toolbar's font size; a typo falls back to the old one."""
+        try:
+            size = int(self.ui_font_var.get())
+        except (TypeError, ValueError):
+            self.ui_font_var.set(str(FONT.cget("size")))
+            return
+        size = max(FONT_SIZE_MIN, min(FONT_SIZE_MAX, size))
+        self.ui_font_var.set(str(size))
+        if size == FONT.cget("size"):
+            return
+        apply_ui_font_size(size)
+
 
     def on_close(self) -> None:
         if self.dirty:
@@ -1264,7 +1437,7 @@ class App:
             ttk.Entry(right, textvariable=var, width=10).pack()
             if field.lo is not None:
                 tk.Label(right, text=f"{field.lo:g} … {field.hi:g}", bg=BG, fg=DIM,
-                         font=("Segoe UI", 8)).pack(anchor="e")
+                         font=small_font()).pack(anchor="e")
         elif field.kind == "records":
             count = len([r for r in (value or "").split(";;") if r.strip()])
             ttk.Button(right, text=f"Edit…  ({count})",
@@ -1280,7 +1453,7 @@ class App:
         elif field.kind == "list":
             ttk.Entry(right, textvariable=var, width=26).pack()
             tk.Label(right, text="separated by space or comma", bg=BG, fg=DIM,
-                     font=("Segoe UI", 8)).pack(anchor="e")
+                     font=small_font()).pack(anchor="e")
         else:
             ttk.Entry(right, textvariable=var, width=26).pack()
 
@@ -1320,7 +1493,7 @@ class App:
             cell = tk.Frame(box, bg=BG)
             cell.grid(row=i // 8, column=i % 8, sticky="w", padx=(0, 8), pady=(0, 4))
             tk.Label(cell, text=str(i + 1), bg=BG, fg=DIM,
-                     font=("Segoe UI", 8)).pack()
+                     font=small_font()).pack()
             combo = ttk.Combobox(cell, state="readonly", width=9,
                                  values=[""] + LAYOUTS)
             combo.set(parts[i].strip() if i < len(parts) else "")
