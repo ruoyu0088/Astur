@@ -292,7 +292,7 @@ SCHEMA_DATA = {
             ("popup_radius", "number", "16", "", ""),
             ("popup_border_width", "number", "1", "", ""),
             ("popup_opacity", "number", "94", "", ""),
-            ("popup_bg", "records", "auto", "name:colour", "Set colours to auto to follow theme, or explicit #RRGGBB."),
+            ("popup_bg", "colour", "auto", "", "Set colours to auto to follow theme, or explicit #RRGGBB."),
             ("popup_fg", "text", "auto", "", ""),
             ("popup_muted", "text", "auto", "", ""),
             ("popup_accent", "text", "auto", "", ""),
@@ -400,7 +400,7 @@ SCHEMA_DATA = {
             ("island_padding", "number", "10", "0..50", "Space between an island's or a pill's edge and its content, in px. int 0 - 50"),
             ("border_width", "number", "0", "0..10", "Outline width in px, 0 = none: around a floating bar, each island or each pill; a strip gets a line along its inner edge. Colour: `border`. int 0 - 10"),
             ("workspace_style", "enum", "box", "box|pill|underline|dot", "How the active workspace is marked: box accent block behind its number (the default) pill rounded accent pill behind its number underline short accent line under its number dot a dot per workspace instead of numbers (dim = empty), the ac..."),
-            ("widget_colors", "records", "", "widget:colour", "Pills shape only: a colour per widget's pill, as widget:colour pairs. A colour is a palette swatch (red orange yellow green teal blue purple pink; switching palette or theme recolours it), surface, or #RRGGBB. Text on a coloured pill is..."),
+            ("widget_colors", "colors", "", "widget:colour", "Pills shape only: a colour per widget's pill, as widget:colour pairs. A colour is a palette swatch (red orange yellow green teal blue purple pink; switching palette or theme recolours it), surface, or #RRGGBB. Text on a coloured pill is..."),
             ("separator_style", "enum", "line", "line|dot|powerline", "What the separator widget draws: line a thin line (the default) dot a small dot powerline a small arrow; with shape = pills the pills join edge to edge into square segments with arrow ends"),
             ("hover", "bool", "false", "", "Highlight the clickable item under the mouse pointer. bool"),
             ("title_bold", "bool", "false", "", "Draw the window title in bold. bool"),
@@ -467,7 +467,7 @@ SCHEMA_DATA = {
             ("fg", "text", "auto", "", ""),
             ("accent", "text", "auto", "", "Active-workspace pill highlight."),
             ("inactive", "text", "auto", "", "Empty workspaces / layout / stats text."),
-            ("accent_fg", "records", "auto", "name:colour", "Text on the accent highlight. auto = the palette's, or bg while bg is set."),
+            ("accent_fg", "colour", "auto", "", "Text on the accent highlight. auto = the palette's, or bg while bg is set."),
             ("surface", "text", "auto", "", "Island and pill fill."),
             ("border", "colour", "auto", "", "Outline colour (see border_width). auto = the inactive colour."),
         ]),
@@ -498,6 +498,9 @@ class Field:
             self.choices = [c for c in extra.split("|")]
         elif kind == "records":
             self.spec = re.split(r"[|:]", extra) if extra else []
+        elif kind == "colors":
+            # `widget:colour` pairs, space separated (widget_colors).
+            self.spec = ["widget", "colour"]
         elif kind == "number" and ".." in extra:
             a, b = extra.split("..", 1)
             try:
@@ -714,20 +717,27 @@ class WindowPicker(tk.Toplevel):
 
 
 class RecordsDialog(tk.Toplevel):
-    """Table editor for the `a|b|c ;; a|b|c` keys (window rules, hotkeys...)."""
+    """Table editor for the `a|b|c ;; a|b|c` keys (window rules, hotkeys...).
+
+    `rec_sep=None` is for the other shape, the space separated `name:value`
+    pairs of `widget_colors` (a comma or a space splits pairs, never a colon).
+    """
 
     def __init__(self, parent: tk.Widget, title: str, spec: list[str],
-                 value: str, on_ok) -> None:
+                 value: str, on_ok, rec_sep: str | None = ";;",
+                 is_colors: bool = False) -> None:
         super().__init__(parent)
         self.title(title)
         self.configure(bg=BG)
         self.transient(parent.winfo_toplevel())
         self.on_ok = on_ok
+        self.rec_sep = rec_sep
+        self.is_colors = is_colors
         self.spec = spec or ["value"]
         self.rows = self._parse(value)
         self.current: int | None = None
         w = 120 + 130 * min(3, len(self.spec))
-        self.geometry(f"{min(w, 900)}x470")
+        self.geometry(f"{min(max(w, 560 if is_colors else w), 900)}x470")
 
         head = tk.Frame(self, bg=PANEL)
         head.pack(fill="x")
@@ -765,19 +775,31 @@ class RecordsDialog(tk.Toplevel):
             ttk.Button(line, text="×", width=2,
                        command=lambda i=i: self.vars[i].set("")
                        ).pack(side="left", padx=(2, 0))
+            if self.is_colors and i == 1:
+                self.swatch = tk.Label(line, width=2, bg=FIELD, bd=0)
+                self.swatch.pack(side="left", padx=(4, 0))
+                ttk.Button(line, text="…", width=2,
+                           command=self.pick_colour).pack(side="left", padx=(2, 0))
+                var.trace_add("write",
+                              lambda *_a: self.update_swatch(self.vars[1].get()))
             var.trace_add("write", lambda *_a, i=i: self.apply_form(i))
             self.vars.append(var)
 
         buttons = tk.Frame(self, bg=BG)
-        buttons.pack(fill="x", padx=10, pady=10)
+        buttons.pack(fill="x", padx=10, pady=(6, 10))
+        actions = tk.Frame(buttons, bg=BG)
+        actions.pack(fill="x")
         for text, cmd in (("Add", self.add), ("Remove", self.remove),
                           ("Clear row", self.clear_row),
                           ("Up", lambda: self.move(-1)), ("Down", lambda: self.move(1))):
-            ttk.Button(buttons, text=text, command=cmd).pack(side="left", padx=(0, 6))
-        ttk.Button(buttons, text="Pick window…", command=self.pick_window
-                   ).pack(side="left", padx=(12, 0))
-        ttk.Button(buttons, text="Cancel", command=self.destroy).pack(side="right")
-        ttk.Button(buttons, text="OK", style="Accent.TButton",
+            ttk.Button(actions, text=text, command=cmd).pack(side="left", padx=(0, 6))
+        if not self.is_colors:
+            ttk.Button(actions, text="Pick window…", command=self.pick_window
+                       ).pack(side="left", padx=(12, 0))
+        confirm = tk.Frame(buttons, bg=BG)
+        confirm.pack(fill="x", pady=(6, 0))
+        ttk.Button(confirm, text="Cancel", command=self.destroy).pack(side="right")
+        ttk.Button(confirm, text="OK", style="Accent.TButton",
                    command=self.ok).pack(side="right", padx=(0, 6))
 
         self.refresh()
@@ -787,8 +809,24 @@ class RecordsDialog(tk.Toplevel):
 
     # -- data ---------------------------------------------------------
     def _parse(self, value: str) -> list[list[str]]:
-        rows = []
-        for record in (value or "").split(";;"):
+        value = value or ""
+        rows: list[list[str]] = []
+        if self.rec_sep is None:
+            # `cpu: orange` is a common YAML habit; the Rust parser glues such a
+            # token back on, so do the same here instead of losing the colour.
+            toks: list[str] = []
+            for tok in value.replace(",", " ").split():
+                if (toks and (toks[-1].endswith(":") or tok.startswith(":"))
+                        and toks[-1].count(":") + tok.count(":") == 1):
+                    toks[-1] += tok
+                else:
+                    toks.append(tok)
+            for tok in toks:
+                name, sep, colour = tok.partition(":")
+                row = [name.strip(), colour.strip() if sep else ""]
+                rows.append(row + [""] * (len(self.spec) - len(row)))
+            return rows
+        for record in value.split(self.rec_sep):
             record = record.strip()
             if not record:
                 continue
@@ -798,6 +836,10 @@ class RecordsDialog(tk.Toplevel):
         return rows
 
     def render_value(self) -> str:
+        if self.rec_sep is None:
+            pairs = [f"{row[0].strip()}:{row[1].strip()}"
+                     for row in self.rows if row[0].strip()]
+            return " ".join(pairs)
         sep = "|" if "|" in "".join(self.spec) or len(self.spec) > 1 else ":"
         out = []
         for row in self.rows:
@@ -826,6 +868,34 @@ class RecordsDialog(tk.Toplevel):
         self.rows[self.current][i] = self.vars[i].get()
         item = self.tree.get_children()[self.current]
         self.tree.item(item, values=self.rows[self.current])
+
+    def update_swatch(self, value: str) -> None:
+        """Show the colour being typed: #RRGGBB, a Tk colour name or a swatch."""
+        swatch = getattr(self, "swatch", None)
+        if swatch is None:
+            return
+        colour = FIELD
+        text = value.strip()
+        if text:
+            try:
+                r, g, b = self.winfo_rgb(text)
+                colour = "#%02x%02x%02x" % (r >> 8, g >> 8, b >> 8)
+            except tk.TclError:
+                colour = FIELD
+        swatch.configure(bg=colour)
+
+    def pick_colour(self) -> None:
+        """Pick the colour of the row being edited (widget_colors)."""
+        if len(self.vars) < 2:
+            return
+        from tkinter import colorchooser
+        start = self.vars[1].get().strip()
+        if not start.startswith("#"):
+            start = "#808080"
+        _rgb, hexv = colorchooser.askcolor(color=start, parent=self,
+                                           title="Widget colour")
+        if hexv:
+            self.vars[1].set(hexv.upper())
 
     def add(self) -> None:
         self.rows.append([""] * len(self.spec))
@@ -1116,6 +1186,10 @@ class App:
             count = len([r for r in (value or "").split(";;") if r.strip()])
             ttk.Button(right, text=f"Edit…  ({count})",
                        command=lambda f=field, v=var: self.edit_records(f, v)).pack()
+        elif field.kind == "colors":
+            pairs = value.replace(",", " ").split() if value else []
+            ttk.Button(right, text=f"Edit…  ({len(pairs)})",
+                       command=lambda f=field, v=var: self.edit_records(f, v)).pack()
         elif field.kind == "key":
             combo = ttk.Combobox(right, textvariable=var, width=12,
                                  values=KEY_NAMES)
@@ -1212,8 +1286,10 @@ class App:
         self.update_status()
 
     def edit_records(self, field: Field, var: tk.StringVar) -> None:
+        colors = field.kind == "colors"
         RecordsDialog(self.root, field.label, field.spec, var.get(),
-                      lambda text: var.set(text))
+                      lambda text: var.set(text),
+                      rec_sep=None if colors else ";;", is_colors=colors)
 
     # -- commands -----------------------------------------------------
     def save(self) -> None:

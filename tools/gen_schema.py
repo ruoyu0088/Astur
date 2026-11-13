@@ -38,7 +38,7 @@ OVERRIDES = {
     ("navbar", "left"): ("list", "widget"),
     ("navbar", "center"): ("list", "widget"),
     ("navbar", "right"): ("list", "widget"),
-    ("navbar", "widget_colors"): ("records", "widget:colour"),
+    ("navbar", "widget_colors"): ("colors", "widget:colour"),
     ("astur", "extra_hotkeys"): ("records", "chord|action|argument"),
     ("astur", "launcher_entries"): ("records", "label|target|icon"),
     ("astur", "system_actions"): ("records", "category|label|command"),
@@ -96,7 +96,9 @@ def kind_of(doc: str, key: str, comment: list[str], value: str) -> tuple[str, st
     if re.search(r"\bcolou?r\b|\bhex\b", low):
         return "colour", ""
     if re.search(r"\bcolou?rs\b", low) or "palette" in low:
-        return "records", "name:colour"
+        if ";;" in value:
+            return "records", ""
+        return "colour", ""
     if re.search(r"\bkeys?\b", low) and re.match(r"^[A-Za-z0-9_ ]*$", value):
         return "key", ""
     v = value.strip()
