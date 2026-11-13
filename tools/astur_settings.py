@@ -726,8 +726,8 @@ class RecordsDialog(tk.Toplevel):
         self.spec = spec or ["value"]
         self.rows = self._parse(value)
         self.current: int | None = None
-        w = 120 + 130 * len(self.spec)
-        self.geometry(f"{min(w, 900)}x420")
+        w = 120 + 130 * min(3, len(self.spec))
+        self.geometry(f"{min(w, 900)}x470")
 
         head = tk.Frame(self, bg=PANEL)
         head.pack(fill="x")
@@ -748,19 +748,30 @@ class RecordsDialog(tk.Toplevel):
         edit = tk.Frame(self, bg=BG)
         edit.pack(fill="x", padx=10)
         self.vars: list[tk.StringVar] = []
+        per_row = 3
+        for c in range(min(per_row, len(self.spec))):
+            edit.grid_columnconfigure(c, weight=1, uniform="field")
         for i, col in enumerate(self.spec):
             cell = tk.Frame(edit, bg=BG)
-            cell.pack(side="left", expand=True, fill="x", padx=(0, 6))
+            cell.grid(row=i // per_row, column=i % per_row, sticky="ew",
+                      padx=(0, 6), pady=(0, 4))
             tk.Label(cell, text=col.capitalize(), bg=BG, fg=DIM,
                      font=FONT).pack(anchor="w")
+            line = tk.Frame(cell, bg=BG)
+            line.pack(fill="x")
             var = tk.StringVar()
-            ttk.Entry(cell, textvariable=var).pack(fill="x")
+            ttk.Entry(line, textvariable=var).pack(side="left", fill="x",
+                                                   expand=True)
+            ttk.Button(line, text="×", width=2,
+                       command=lambda i=i: self.vars[i].set("")
+                       ).pack(side="left", padx=(2, 0))
             var.trace_add("write", lambda *_a, i=i: self.apply_form(i))
             self.vars.append(var)
 
         buttons = tk.Frame(self, bg=BG)
         buttons.pack(fill="x", padx=10, pady=10)
         for text, cmd in (("Add", self.add), ("Remove", self.remove),
+                          ("Clear row", self.clear_row),
                           ("Up", lambda: self.move(-1)), ("Down", lambda: self.move(1))):
             ttk.Button(buttons, text=text, command=cmd).pack(side="left", padx=(0, 6))
         ttk.Button(buttons, text="Pick window…", command=self.pick_window
@@ -829,6 +840,19 @@ class RecordsDialog(tk.Toplevel):
             return
         del self.rows[self.current]
         self.refresh()
+
+    def clear_row(self) -> None:
+        """Blank the whole row being edited (e.g. after a pick filled too much)."""
+        if self.current is None or self.current >= len(self.rows):
+            return
+        idx = self.current
+        self.rows[idx] = [""] * len(self.spec)
+        for var in self.vars:
+            var.set("")
+        self.refresh()
+        item = self.tree.get_children()[idx]
+        self.tree.selection_set(item)
+        self.select_row()
 
     def pick_window(self) -> None:
         """Fill the exe / class / title columns from a window that is open now."""
@@ -983,10 +1007,17 @@ class App:
                 self.save()
         self.root.destroy()
 
+    def grabbed(self) -> bool:
+        """Is a dialog holding a grab? (A ttk popdown can make Tk raise here.)"""
+        try:
+            return bool(self.root.grab_current())
+        except (tk.TclError, KeyError):
+            return False
+
     def watch_disk(self) -> None:
         """Pick up edits made to the files by something else (an editor, Astur)."""
         try:
-            if not self.dirty and not self.root.grab_current():
+            if not self.dirty and not self.grabbed():
                 if any(c.changed_on_disk() for c in self.files.values()):
                     for conf in self.files.values():
                         try:
@@ -1293,9 +1324,25 @@ class App:
         strip = self.rows.get((doc, key))
         if strip is not None:
             self.scroll_to(strip)
-            strip.configure(bg=ACCENT)
-            self.root.after(1200, lambda s=strip: s.configure(bg=BG))
+            self.flash(strip)
             strip.master.master.focus_set()
+
+    def flash(self, strip: tk.Widget, ms: int = 1200) -> None:
+        """Mark a row for a moment. The row may be gone by the time it ends
+        (the section was rebuilt), so both ends have to survive that."""
+        try:
+            strip.configure(bg=ACCENT)
+        except tk.TclError:
+            return
+
+        def off() -> None:
+            try:
+                if strip.winfo_exists():
+                    strip.configure(bg=BG)
+            except tk.TclError:
+                pass
+
+        self.root.after(ms, off)
 
     def scroll_to(self, widget: tk.Widget) -> None:
         self.canvas.update_idletasks()
