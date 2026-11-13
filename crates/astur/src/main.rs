@@ -29750,20 +29750,21 @@ mod tests {
 
     #[test]
     fn the_new_keys_map_to_strip_commands_and_shift_variants() {
-        // Default binds: R, C, [, ], H/L, T, Home/End.
+        // Default binds: R, X, [, ], Z/C, T, Home/End.
         let c = config::default_config();
         let alt = |vk| bound(&c, config::MOD_ALT, vk);
         let alt_shift = |vk| bound(&c, config::MOD_ALT | config::MOD_SHIFT, vk);
         let sig = |cmd: Cmd| Some(cmd_sig(&cmd));
         assert_eq!(alt(0x52), sig(Cmd::CycleWidth));
         assert_eq!(alt_shift(0x52), sig(Cmd::CycleHeight));
-        assert_eq!(alt(0x43), sig(Cmd::CenterColumn));
+        assert_eq!(alt(0x58), sig(Cmd::CenterColumn));
         assert_eq!(alt(0xDB), sig(Cmd::ConsumeOrExpel(-1)));
         assert_eq!(alt(0xDD), sig(Cmd::ConsumeOrExpel(1)));
-        // Shift+H/L is the tile height; plain H/L unchanged.
-        assert_eq!(alt_shift(0x48), sig(Cmd::ResizeTile(-0.1)));
-        assert_eq!(alt_shift(0x4C), sig(Cmd::ResizeTile(0.1)));
-        assert_eq!(alt(0x48), sig(Cmd::ResizeMaster(-0.05)));
+        // Shift+Z/C is the tile height; plain Z/C is the master split.
+        assert_eq!(alt_shift(0x5A), sig(Cmd::ResizeTile(-0.1)));
+        assert_eq!(alt_shift(0x43), sig(Cmd::ResizeTile(0.1)));
+        assert_eq!(alt(0x5A), sig(Cmd::ResizeMaster(-0.05)));
+        assert_eq!(alt(0x43), sig(Cmd::ResizeMaster(0.05)));
         // Alt+Shift+T no longer toggles tiling.
         assert_eq!(alt_shift(0x54), sig(Cmd::ToggleTabbed));
         assert_eq!(alt(0x54), sig(Cmd::ToggleTiling));
@@ -29780,7 +29781,7 @@ mod tests {
             c.main_key = main;
             let m = main.bits();
             assert_eq!(
-                bound(&c, m, 0x4A),
+                bound(&c, m, c.key_focus_next),
                 Some(cmd_sig(&Cmd::FocusDir(1))),
                 "{main:?}"
             );

@@ -200,16 +200,16 @@ pub struct Config {
     pub bar_show_battery: bool,  // show battery %
     pub ignore_classes: Vec<String>, // window classes never tiled/managed
     pub float_classes: Vec<String>, // window classes managed but auto-floated
-    pub key_focus_next: u32,     // Alt+<key> focus next window in the stack (default J)
-    pub key_focus_prev: u32,     // Alt+<key> focus previous window in the stack (default K)
-    pub key_shrink_master: u32,  // Alt+<key> shrink the master area (default H)
-    pub key_grow_master: u32,    // Alt+<key> grow the master area (default L)
-    pub key_promote_master: u32, // Alt+<key> promote focused window to master (default M)
+    pub key_focus_next: u32,     // Alt+<key> focus next window in the stack (default D)
+    pub key_focus_prev: u32,     // Alt+<key> focus previous window in the stack (default A)
+    pub key_shrink_master: u32,  // Alt+<key> shrink the master area (default Z)
+    pub key_grow_master: u32,    // Alt+<key> grow the master area (default C)
+    pub key_promote_master: u32, // Alt+<key> promote focused window to master (default S)
     pub key_toggle_tiling: u32,  // Alt+<key> toggle tiling on/off (default T)
     pub key_toggle_float: u32,   // Alt+<key> toggle floating for focused window (default F)
     pub key_close_window: u32,   // Alt+<key> close the focused window (default W)
     pub key_cycle_width: u32,    // Alt+<key> scrolling: cycle width, +Shift height (default R)
-    pub key_center_column: u32,  // Alt+<key> scrolling: centre focused column (default C)
+    pub key_center_column: u32,  // Alt+<key> scrolling: centre focused column (default X)
     pub key_consume_left: u32,   // Alt+<key> scrolling: consume/expel left (default [)
     pub key_consume_right: u32,  // Alt+<key> scrolling: consume/expel right (default ])
     pub key_fill_desktop: u32,   // Alt+<key> fill the workspace, focused on top (default E)
@@ -1303,16 +1303,16 @@ impl Config {
             bar_show_battery: true,
             ignore_classes: Vec::new(),
             float_classes: Vec::new(),
-            key_focus_next: 0x4A,     // J
-            key_focus_prev: 0x4B,     // K
-            key_shrink_master: 0x48,  // H
-            key_grow_master: 0x4C,    // L
-            key_promote_master: 0x4D, // M
+            key_focus_next: 0x44,     // D
+            key_focus_prev: 0x41,     // A
+            key_shrink_master: 0x5A,  // Z
+            key_grow_master: 0x43,    // C
+            key_promote_master: 0x53, // S
             key_toggle_tiling: 0x54,  // T
             key_toggle_float: 0x46,   // F
             key_close_window: 0x57,   // W
             key_cycle_width: 0x52,    // R
-            key_center_column: 0x43,  // C
+            key_center_column: 0x58,  // X
             key_consume_left: 0xDB,   // [ (VK_OEM_4)
             key_consume_right: 0xDD,  // ] (VK_OEM_6)
             key_fill_desktop: 0x45,   // E
@@ -1320,7 +1320,7 @@ impl Config {
             key_switch_ws_1: 0xBC,    // , (VK_OEM_COMMA)
             key_switch_ws_2: 0xBE,    // . (VK_OEM_PERIOD)
             key_switch_ws_3: 0xBF,    // / (VK_OEM_2)
-            main_key: MainKey::LAlt,
+            main_key: MainKey::RAlt,
             theme: "dark".to_string(),
             acrylic: false,
             bar_floating: false,
@@ -1862,31 +1862,31 @@ extra_hotkeys = ALT+GRAVE|scratchpad|
 # ============================================================================
 # The main key is held for every shortcut below and for mouse move / resize;
 # 'Alt' in this list means the main key. Choices:
-#   lalt      Left Alt (default). Astur keeps it: apps never see Left Alt, so
-#             use Right Alt for app shortcuts (Alt+F4, menus).
-#   ralt      Right Alt. Astur keeps it: apps never see Right Alt, so use
-#             Left Alt for app shortcuts (Alt+F4, menus).
+#   lalt      Left Alt. Astur keeps it: apps never see Left Alt, so use
+#             Right Alt for app shortcuts (Alt+F4, menus).
+#   ralt      Right Alt (default). Astur keeps it: apps never see Right Alt,
+#             so use Left Alt for app shortcuts (Alt+F4, menus).
 #   win       Windows key. Apps keep it; only Astur's shortcuts are taken and
 #             they replace Windows' own (Win+D ...). Win+L always locks the
-#             PC, so key_grow_master's default L becomes O (if O is free).
+#             PC: if a shortcut lands there, pick another key for it.
 #   alt       Either Alt, GlazeWM-style. Apps keep Alt shortcuts Astur doesn't use.
 #   ctrl+win  Ctrl and the Windows key held together.
 #   capslock  Caps Lock. It no longer turns capitals on: turn it off first.
 #             Pressed where Astur can't see it (an admin window, the lock
 #             screen, a UAC prompt) it still toggles; press it there again.
-main_key = lalt
+main_key = ralt
 #   Alt + left-drag      move window under cursor (drops back into the tiling)
 #   Alt + right-drag     resize nearest corner (red bracket marker)
 #   Alt+T                toggle tiling on/off (floating mode; workspaces kept)
-#   Alt+J / Alt+K        focus next / previous window in the stack
-#   Alt+Shift+J / K      swap window order in the stack
+#   Alt+D / Alt+A        focus next / previous window in the stack
+#   Alt+Shift+D / A      swap window order in the stack
 #   Alt+arrows           focus window by direction (cursor follows)
 #   Alt+Shift+arrows     move window by direction (across monitors)
-#   Alt+M                promote focused window to master
+#   Alt+S                promote focused window to master
 #   Alt+E                fill the workspace (the focused window on top), and back
 #   Alt+'                open the power menu (lock, sleep, restart ...)
 #   Alt+, / Alt+. / Alt+/  go to the 1st / 2nd / 3rd workspace of THIS screen
-#   Alt+H / Alt+L        master layout: shrink / grow the master column;
+#   Alt+Z / Alt+C        master layout: shrink / grow the master column;
 #                        dwindle layout: shrink / grow the focused window's split
 #   Alt+F                toggle floating for the focused window
 #   Alt+W                close the focused window
@@ -1903,12 +1903,12 @@ main_key = lalt
 #   Alt+Up / Down        focus window up / down in the column (tabbed: tab)
 #   Alt+Shift+arrows     move column left / right (at the strip end: the window
 #                        to the next monitor); window up / down in column
-#   Alt+Shift+J / K      move column right / left
-#   Alt+H / Alt+L        column width - / + 0.1
-#   Alt+Shift+H / L      window height - / + 0.1 within its column
+#   Alt+Shift+D / A      move column right / left
+#   Alt+Z / Alt+C        column width - / + 0.1
+#   Alt+Shift+Z / C      window height - / + 0.1 within its column
 #   Alt+R / Alt+Shift+R  cycle column width / window height (presets above)
-#   Alt+M                toggle full-width column
-#   Alt+C                centre the focused column
+#   Alt+S                toggle full-width column
+#   Alt+X                centre the focused column
 #   Alt+[ / Alt+]        pull the window into the column left / right; if it
 #                        shares a column, push it out into its own on that side
 #   Alt+Shift+T          toggle the column between stacked and tabbed
@@ -1921,19 +1921,19 @@ main_key = lalt
 #                        beside it, middle = stack into its column
 #   Alt + right-drag     side edge = column width, top/bottom = window height
 #
-# The keys above (J K H L M T F W E and ' for the power menu, and R C [ ] for
+# The keys above (D A Z C S T F W E and ' for the power menu, and R X [ ] for
 # scrolling) are rebindable. Each takes a single key name (see the 'keys' type
 # at the top of this file). Arrows, Home, End and Enter are fixed.  key
-key_focus_next = J
-key_focus_prev = K
-key_shrink_master = H
-key_grow_master = L
-key_promote_master = M
+key_focus_next = D
+key_focus_prev = A
+key_shrink_master = Z
+key_grow_master = C
+key_promote_master = S
 key_toggle_tiling = T
 key_toggle_float = F
 key_close_window = W
 key_cycle_width = R
-key_center_column = C
+key_center_column = X
 key_consume_left = [
 key_consume_right = ]
 key_fill_desktop = E
@@ -3929,17 +3929,18 @@ impl MainKey {
     pub fn description(self) -> &'static str {
         match self {
             MainKey::LAlt => {
-                "Recommended. Astur keeps Left Alt to itself, so apps never react to it. \
+                "Astur keeps Left Alt to itself, so apps never react to it. \
                  Use Right Alt for app shortcuts such as Alt+F4."
             }
             MainKey::RAlt => {
-                "Astur keeps Right Alt to itself, so apps never react to it. \
-                 Use Left Alt for app shortcuts such as Alt+F4."
+                "Recommended. Astur keeps Right Alt to itself, so apps never react to it. \
+                 Use Left Alt for app shortcuts such as Alt+F4. On layouts where Right Alt \
+                 is AltGr (German, French), AltGr characters stop typing while Astur runs."
             }
             MainKey::Win => {
                 "Apps and Windows keep the Windows key; only Astur's own shortcuts take \
-                 it over, replacing Windows ones such as Win+D. Win+L always locks the PC, \
-                 so \"grow\" moves to Win+O (unless one of your shortcuts uses O)."
+                 it over, replacing Windows ones such as Win+D. Windows keeps Win+L (it \
+                 always locks the PC), so a shortcut on L does nothing: pick another key."
             }
             MainKey::Alt => {
                 "Like GlazeWM. Apps keep Alt, except for the shortcuts Astur uses, such as \
@@ -4448,51 +4449,6 @@ fn what(c: &Config, action: Action, arg: u16) -> String {
     }
 }
 
-/// `key_grow_master` as the WM binds it. Under `main_key = win` its shipped
-/// L would be Win+L, which always locks the PC, so it moves to O: a letter
-/// (same meaning on every layout), the key right above L, no Astur default,
-/// and Windows' Win+O (rotation lock) exists only on tablets. Any other key
-/// the user set stays. A user who set L on purpose loses nothing: Win+L can
-/// never reach Astur. Only when O is free: grow_master is looked up before
-/// most `key_*` keys and the workspace keys, so taking Win+O from a key the
-/// user chose (a float key or workspace key on O, an extra on Win+O) would
-/// silently break it. Then L stays, and compile_keys reports it honestly as
-/// a Win+L that does nothing.
-pub fn grow_master_key(c: &Config) -> u32 {
-    const O: u32 = 0x4F;
-    if c.main_key != MainKey::Win || c.key_grow_master != 0x4C {
-        return c.key_grow_master;
-    }
-    let keys = [
-        c.key_focus_next,
-        c.key_focus_prev,
-        c.key_shrink_master,
-        c.key_promote_master,
-        c.key_toggle_tiling,
-        c.key_toggle_float,
-        c.key_close_window,
-        c.key_cycle_width,
-        c.key_center_column,
-        c.key_consume_left,
-        c.key_consume_right,
-        c.key_fill_desktop,
-        c.key_system_menu,
-        c.key_switch_ws_1,
-        c.key_switch_ws_2,
-        c.key_switch_ws_3,
-    ];
-    let extra_on_o = c.extra_hotkeys.iter().any(|h| {
-        (h.action != "scratchpad" || c.scratchpad_enabled)
-            && matches!(parse_chord(&h.chord, MainKey::Win),
-                Some((m, O)) if m == MOD_WIN || m == MOD_WIN | MOD_SHIFT)
-    });
-    if keys.contains(&O) || c.workspace_keys.contains(&O) || extra_on_o {
-        c.key_grow_master
-    } else {
-        O
-    }
-}
-
 /// Every hotkey of `c` in the order the WM looks them up, plus every problem
 /// with them. The WM fills its table from `binds`; Settings shows `issues`.
 /// Order, first wins on a shared chord (as the old hook's lookup): the power
@@ -4523,19 +4479,11 @@ pub fn compile_keys(c: &Config) -> Keymap {
             ),
         }
     }
-    if grow_master_key(c) != c.key_grow_master {
-        k.issue(
-            Level::Info,
-            (GrowMaster, 0),
-            "Win+L".into(),
-            "Win+L always locks the PC, so this uses Win+O".into(),
-        );
-    }
     for (vk, plain, shifted) in [
         (c.key_focus_next, FocusNext, Some(SwapNext)),
         (c.key_focus_prev, FocusPrev, Some(SwapPrev)),
         (c.key_shrink_master, ShrinkMaster, Some(ShrinkTile)),
-        (grow_master_key(c), GrowMaster, Some(GrowTile)),
+        (c.key_grow_master, GrowMaster, Some(GrowTile)),
         (c.key_promote_master, PromoteMaster, None),
         (c.key_toggle_tiling, ToggleTiling, Some(ToggleTabbed)),
         (c.key_toggle_float, ToggleFloat, None),
@@ -4935,7 +4883,7 @@ outer_gap = 4
         let d = Config::defaults();
         assert_eq!(
             (d.key_cycle_width, d.key_center_column),
-            (0x52, 0x43) // R, C
+            (0x52, 0x58) // R, X
         );
         assert_eq!((d.key_consume_left, d.key_consume_right), (0xDB, 0xDD));
         let c = parse_text(
@@ -5142,13 +5090,18 @@ outer_gap = 4
 
     #[test]
     fn main_key_parses_with_its_alias() {
-        assert_eq!(Config::defaults().main_key, MainKey::LAlt);
+        assert_eq!(Config::defaults().main_key, MainKey::RAlt);
+        assert_eq!(parse_text("main_key = lalt").main_key, MainKey::LAlt);
         assert_eq!(parse_text("main_key = ralt").main_key, MainKey::RAlt);
         assert_eq!(parse_text("main_key = rightalt").main_key, MainKey::RAlt);
         assert_eq!(parse_text("mod = right_alt").main_key, MainKey::RAlt);
         assert_eq!(parse_text("main_key = win").main_key, MainKey::Win);
         assert_eq!(parse_text("mod = capslock").main_key, MainKey::CapsLock);
-        assert_eq!(parse_text("main_key = shift").main_key, MainKey::LAlt);
+        assert_eq!(
+            parse_text("main_key = shift").main_key,
+            MainKey::RAlt,
+            "an unknown name keeps the default"
+        );
         assert!(parse_text("mod = alt").unknown_keys.is_empty());
     }
 
@@ -5174,8 +5127,8 @@ outer_gap = 4
         assert!(k.issues.is_empty(), "{:?}", k.issues);
         let m = keymap(&default_config());
         let ws = |i| (Action::SwitchWorkspace, i);
-        assert_eq!(m[&(MOD_ALT, 0x4A)], (Action::FocusNext, 0));
-        assert_eq!(m[&(MOD_ALT | MOD_SHIFT, 0x4A)], (Action::SwapNext, 0));
+        assert_eq!(m[&(MOD_ALT, 0x44)], (Action::FocusNext, 0));
+        assert_eq!(m[&(MOD_ALT | MOD_SHIFT, 0x44)], (Action::SwapNext, 0));
         assert_eq!(m[&(MOD_ALT, 0x31)], ws(0));
         assert_eq!(m[&(MOD_ALT, 0x20)], (Action::Launcher, 0));
         assert_eq!(m[&(MOD_ALT, 0x45)], (Action::FillDesktop, 0));
@@ -5203,79 +5156,6 @@ outer_gap = 4
         assert_eq!(keymap(&c)[&(MOD_ALT, 0xC0)], (Action::Extra, 0));
         c.main_key = MainKey::LAlt;
         assert_eq!(keymap(&c)[&(MOD_ALT, 0xC0)], (Action::Extra, 0));
-    }
-
-    #[test]
-    fn win_main_key_moves_grow_master_off_win_l() {
-        let mut c = default_config();
-        c.main_key = MainKey::Win;
-        let m = keymap(&c);
-        assert_eq!(m[&(MOD_WIN, 0x4F)], (Action::GrowMaster, 0));
-        assert_eq!(m[&(MOD_WIN | MOD_SHIFT, 0x4F)], (Action::GrowTile, 0));
-        assert!(!m.contains_key(&(MOD_WIN, 0x4C)));
-        let k = compile_keys(&c);
-        assert!(
-            k.issues.iter().all(|i| i.level != Level::Error),
-            "{:?}",
-            k.issues
-        );
-        assert!(k
-            .issues
-            .iter()
-            .any(|i| i.action == Action::GrowMaster && i.level == Level::Info));
-        // Win+Space (keyboard language) is a warning.
-        assert!(k
-            .issues
-            .iter()
-            .any(|i| i.chord == "Win+Space" && i.level == Level::Warn));
-        // A key the user picked stays.
-        c.key_grow_master = 0x50;
-        assert_eq!(keymap(&c)[&(MOD_WIN, 0x50)], (Action::GrowMaster, 0));
-        // Not under the other main keys.
-        c = default_config();
-        c.main_key = MainKey::CtrlWin;
-        let m = keymap(&c);
-        assert_eq!(m[&(MOD_CTRL | MOD_WIN, 0x4C)], (Action::GrowMaster, 0));
-    }
-
-    #[test]
-    fn grow_master_takes_win_o_only_when_it_is_free() {
-        let grow = |c: &Config| {
-            let k = compile_keys(c);
-            let levels: Vec<Level> = (k.issues.iter())
-                .filter(|i| i.action == Action::GrowMaster)
-                .map(|i| i.level)
-                .collect();
-            (keymap(c), levels)
-        };
-        // The user's own float key on O keeps Win+O; grow stays an honest
-        // (refused) Win+L rather than a note that it uses Win+O.
-        let mut c = default_config();
-        c.main_key = MainKey::Win;
-        c.key_toggle_float = 0x4F;
-        let (m, levels) = grow(&c);
-        assert_eq!(m[&(MOD_WIN, 0x4F)], (Action::ToggleFloat, 0));
-        assert_eq!(levels, [Level::Error]);
-        // A workspace key on O.
-        let mut c = default_config();
-        c.main_key = MainKey::Win;
-        c.workspace_keys = vec![0x59, 0x55, 0x49, 0x4F];
-        let (m, levels) = grow(&c);
-        assert_eq!(m[&(MOD_WIN, 0x4F)], (Action::SwitchWorkspace, 3));
-        assert_eq!(levels, [Level::Error]);
-        // An extra on Win+Shift+O.
-        let mut c = parse_text("extra_hotkeys = MOD+SHIFT+O|reload|");
-        c.main_key = MainKey::Win;
-        let (m, levels) = grow(&c);
-        assert_eq!(m[&(MOD_WIN | MOD_SHIFT, 0x4F)], (Action::Extra, 0));
-        assert!(!m.contains_key(&(MOD_WIN, 0x4F)));
-        assert_eq!(levels, [Level::Error]);
-        // An extra on another O chord (Ctrl) leaves O free for grow.
-        let mut c = parse_text("extra_hotkeys = MOD+CTRL+O|reload|");
-        c.main_key = MainKey::Win;
-        let (m, levels) = grow(&c);
-        assert_eq!(m[&(MOD_WIN, 0x4F)], (Action::GrowMaster, 0));
-        assert_eq!(levels, [Level::Info]);
     }
 
     #[test]
@@ -5318,13 +5198,16 @@ outer_gap = 4
         assert_eq!(check(MainKey::Alt, "CTRL+ALT+WIN+Q"), (true, vec![]));
         // A chord an earlier bind has: the earlier one runs, as before.
         let mut c = default_config();
-        c.workspace_keys[0] = 0x4A; // J
+        c.workspace_keys[0] = c.key_focus_next;
         let k = compile_keys(&c);
         assert!(k
             .issues
             .iter()
             .any(|i| i.action == Action::SwitchWorkspace && i.level == Warn));
-        assert_eq!(keymap(&c)[&(MOD_ALT, 0x4A)], (Action::FocusNext, 0));
+        assert_eq!(
+            keymap(&c)[&(MOD_ALT, c.key_focus_next)],
+            (Action::FocusNext, 0)
+        );
     }
 
     /// The keys a template assigns (every documented key, at its default).

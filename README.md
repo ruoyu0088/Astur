@@ -185,20 +185,21 @@ them.
   shortcuts on the main key, Alt or Win, and live config hot-reload.
 
 **The main key.** Every Astur shortcut and mouse move / resize is held with one
-main key, `Alt` in the tables below. It is **Left Alt** unless you pick another in
+main key, `Alt` in the tables below. It is **Right Alt** unless you pick another in
 Settings (or `main_key` in `astur.conf`):
 
 | `main_key` | What it means |
 |---|---|
-| `lalt` (default) | Left Alt, reserved: apps never see it. Left Alt plus a key Astur does not use does nothing (typing, editing and navigation keys, the numpad and F1-F12 are swallowed; volume, media, PrintScreen and F13-F24 still work). Right Alt is untouched; use it for app Alt shortcuts (Alt+F4, menus). Alt+Tab passes through by default; optional replacement uses Astur's workspace-aware picker. |
-| `ralt` | Right Alt, reserved the same way: apps never see it, and Left Alt stays the apps' Alt for menu bars and Alt+F4. Alt+Tab passes through by default; the optional Astur switcher works here too. Right Alt no longer types AltGr characters (on a German layout `@` is AltGr+Q and `€` is AltGr+E), so pick it only if you do not need AltGr. |
-| `win` | The Windows key. Apps and Windows keep it; only Astur's shortcuts are taken, and they replace Windows' own (Win+D, Win+1...). Start does not pop up after a Win shortcut or Win+drag. Win+L always locks the PC, so grow-master moves to `Win+O` (unless another of your shortcuts already uses O). |
+| `lalt` | Left Alt, reserved: apps never see it. Left Alt plus a key Astur does not use does nothing (typing, editing and navigation keys, the numpad and F1-F12 are swallowed; volume, media, PrintScreen and F13-F24 still work). Right Alt is untouched; use it for app Alt shortcuts (Alt+F4, menus). Alt+Tab passes through by default; optional replacement uses Astur's workspace-aware picker. |
+| `ralt` (default) | Right Alt, reserved the same way: apps never see it, and Left Alt stays the apps' Alt for menu bars and Alt+F4. Alt+Tab passes through by default; the optional Astur switcher works here too. Right Alt no longer types AltGr characters (on a German layout `@` is AltGr+Q and `€` is AltGr+E), so pick `lalt` if you need AltGr. |
+| `win` | The Windows key. Apps and Windows keep it; only Astur's shortcuts are taken, and they replace Windows' own (Win+D, Win+1...). Start does not pop up after a Win shortcut or Win+drag. Windows keeps Win+L (it always locks the PC), so a shortcut set to `L` does nothing there: pick another key. |
 | `alt` | Either Alt, GlazeWM-style. Apps keep their Alt shortcuts except the ones Astur uses; menu bars do not pop up after an Astur shortcut. |
 | `ctrl+win` | Ctrl and the Windows key held together. |
 | `capslock` | Caps Lock becomes the main key and no longer turns capitals on (turn it off first). Pressed where Astur can't see it (an admin window, the lock screen, a UAC prompt, or before Astur starts) it still turns capitals on; press it there again (Win+L locks the PC), or use the on-screen keyboard. |
 
 Ctrl+Alt is not offered: on German, French and similar keyboards it types
-characters (AltGr). Win+L and Ctrl+Alt+Del always belong to Windows.
+characters (AltGr), and so does the default main key, Right Alt. Pick `lalt` if
+you need AltGr. Win+L and Ctrl+Alt+Del always belong to Windows.
 
 In Settings, **Shortcuts > Astur key** shows each choice with the Windows
 shortcuts it would take over with your shortcuts. A new key works at once and
@@ -217,12 +218,12 @@ shortcut follow the key you picked.
 | `Alt` + `Space` | **App launcher + file search** *(Astur)* |
 | `Alt` + `.` | **Power / system menu** *(Astur)* (rebindable: `key_system_menu`) |
 | `Alt` + `T` | Toggle tiling mode on/off |
-| `Alt` + `J` / `K` | Focus next / previous window |
-| `Alt` + `Shift+J` / `Shift+K` | Swap window with next / previous |
+| `Alt` + `D` / `A` | Focus next / previous window |
+| `Alt` + `Shift+D` / `Shift+A` | Swap window with next / previous |
 | `Alt` + arrows | Focus window by direction (cursor follows) |
 | `Alt` + `Shift` + arrows | Move window by direction (across monitors) |
-| `Alt` + `H` / `L` | Shrink / grow master column (`master` layout) |
-| `Alt` + `M` | Promote focused window to master |
+| `Alt` + `Z` / `C` | Shrink / grow master column (`master` layout) |
+| `Alt` + `S` | Promote focused window to master |
 | `Alt` + `E` | Fill the whole workspace (the focused window on top), or back (toggle) |
 | `Alt` + `F` | Toggle float for focused window |
 | `Alt` + `W` | Close focused window |
@@ -232,12 +233,12 @@ shortcut follow the key you picked.
 | `Alt` + `Shift` + `1`–`9`, `0` | Move focused window to workspace |
 | `Alt` + `Tab` | Windows switcher by default; optional Astur workspace-aware switcher (Left Alt or Right Alt main key) |
 
-`Alt` here is the main key (above): with `main_key = win` read `Win` + `J`, and so on.
+`Alt` here is the main key (above): with `main_key = win` read `Win` + `D`, and so on.
 
-On a monitor running the scrolling layout, the arrows, `J K H L M` and a few new
+On a monitor running the scrolling layout, the arrows, `D A Z C S` and a few new
 keys work on columns instead — see [Scrolling layout](#scrolling-layout).
 
-Letter binds (`J K H L M T F W E`, and `R C [ ]` for scrolling) plus extra
+Letter binds (`D A Z C S T F W E`, and `R X [ ]` for scrolling) plus extra
 chords (`MOD` = the main key, with `CTRL`, `SHIFT`, `ALT`, `WIN`) are configurable
 in `%USERPROFILE%\.astur\astur.conf`, along with workspace keys, gaps, layout,
 borders, rules, launcher, menus, and desktop tools. Status bar uses `navbar.conf`
@@ -253,8 +254,8 @@ own strip and scroll position.
 - **Columns** — widths are fractions of the screen, so several are on screen at
   once (two at 1/2, three at 1/3). A new window opens as a new column right of the
   focused one at `scroll_default_width` (0.5). `Alt+R` cycles
-  `scroll_width_presets` (1/3, 1/2, 2/3, full), `Alt+H` / `Alt+L` step by 0.1,
-  `Alt+M` toggles full width.
+  `scroll_width_presets` (1/3, 1/2, 2/3, full), `Alt+Z` / `Alt+C` step by 0.1,
+  `Alt+S` toggles full width.
 - **Stacking** — `Alt+[` / `Alt+]` pull the window into the column on the left /
   right, or push it back out into its own column if it already shares one. Windows
   in a column split its height; `Alt+Shift+R` cycles `scroll_height_presets`.
@@ -270,7 +271,7 @@ own strip and scroll position.
   monitor to another layout bring every parked window back on screen.
 - **View** — `scroll_center = never` (default) scrolls only as far as needed to
   show the focused column, `always` keeps it centred, `on-overflow` centres it only
-  when it does not fit. `Alt+C` centres once.
+  when it does not fit. `Alt+X` centres once.
 - **Motion** — scrolls, column moves and reflows glide through the DWM-thumbnail
   overlay (see Animations). A parked window that was hidden or minimised has no
   DWM image to show, so it glides in from a background snapshot when one is ready,
@@ -282,13 +283,13 @@ own strip and scroll position.
 | `Alt` + `Up` / `Down` | Focus window up / down in the column (tabbed: previous / next tab) |
 | `Alt` + `Shift` + `Left` / `Right` | Move column (at the strip end: window to next monitor) |
 | `Alt` + `Shift` + `Up` / `Down` | Move window up / down in its column (tabbed: reorder tab) |
-| `Alt` + `J` / `K` | Focus next / previous window |
-| `Alt` + `Shift+J` / `Shift+K` | Move column right / left |
-| `Alt` + `H` / `L` | Column width − / + 0.1 |
-| `Alt` + `Shift+H` / `Shift+L` | Window height − / + 0.1 within its column |
+| `Alt` + `D` / `A` | Focus next / previous window |
+| `Alt` + `Shift+D` / `Shift+A` | Move column right / left |
+| `Alt` + `Z` / `C` | Column width − / + 0.1 |
+| `Alt` + `Shift+Z` / `Shift+C` | Window height − / + 0.1 within its column |
 | `Alt` + `R` / `Shift+R` | Cycle column width / window height presets |
-| `Alt` + `M` | Toggle full-width column |
-| `Alt` + `C` | Centre the focused column |
+| `Alt` + `S` | Toggle full-width column |
+| `Alt` + `X` | Centre the focused column |
 | `Alt` + `[` / `]` | Pull window into the left / right column, or push it out |
 | `Alt` + `Shift+T` | Toggle column between stacked and tabbed |
 | `Alt` + `Home` / `End` | Focus first / last column (`Shift`: move column there) |
@@ -297,7 +298,7 @@ own strip and scroll position.
 | `Alt` + left-drag drop | Left / right quarter of a window = new column beside it; middle = stack into its column |
 | `Alt` + right-drag | Side edge = column width; top / bottom edge = window height |
 
-On other layouts `R`, `C`, `[`, `]`, `Home` and `End` do nothing, and
+On other layouts `R`, `X`, `[`, `]`, `Home` and `End` do nothing, and
 `Alt+Shift+T` no longer toggles tiling. The same actions are available to
 `extra_hotkeys` and IPC: `focus_column_left`, `focus_column_right`,
 `move_column_left`, `move_column_right`, `cycle_width`, `cycle_height`,
@@ -402,9 +403,9 @@ See [setup and ready-to-merge YASB configuration](integrations/yasb/README.md).
 ## How it works
 
 Astur installs two low-level Windows hooks (`WH_MOUSE_LL`, `WH_KEYBOARD_LL`) that
-intercept input before it reaches any application. With the default main key, Left
+intercept input before it reaches any application. With the default main key, Right
 Alt is swallowed so it never triggers app menus or Alt shortcuts — only Astur sees it.
-A Left Alt chord Astur does not bind is swallowed too (typing, editing and navigation
+A Right Alt chord Astur does not bind is swallowed too (typing, editing and navigation
 keys), so the app never receives it as the bare key. With a Win, Alt or Ctrl+Win main
 key the modifier reaches apps and only Astur's own shortcut keys are swallowed; Astur
 then sends an unassigned key (0xE8) so Windows does not open Start, nor an app its menu
