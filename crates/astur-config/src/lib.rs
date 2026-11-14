@@ -215,6 +215,7 @@ pub struct Config {
     pub key_consume_right: u32,  // Alt+<key> scrolling: consume/expel right (default ])
     pub key_fill_desktop: u32,   // Alt+<key> fill the workspace, focused on top (default E)
     pub key_system_menu: u32,    // Alt+<key> open the power menu (default M)
+    pub key_swap_workspace: u32, // Alt+<key> enter swap-workspace mode (default P)
     pub key_switch_ws_1: u32,    // Alt+<key> go to the focused monitor's 1st workspace (default ,)
     pub key_switch_ws_2: u32,    // Alt+<key> go to its 2nd workspace (default .)
     pub key_switch_ws_3: u32,    // Alt+<key> go to its 3rd workspace (default /)
@@ -1328,6 +1329,7 @@ impl Config {
             key_consume_right: 0xDD,   // ] (VK_OEM_6)
             key_fill_desktop: 0x45,    // E
             key_system_menu: 0x4D,     // M
+            key_swap_workspace: 0x50,  // P
             key_switch_ws_1: 0xBC,     // , (VK_OEM_COMMA)
             key_switch_ws_2: 0xBE,     // . (VK_OEM_PERIOD)
             key_switch_ws_3: 0xBF,     // / (VK_OEM_2)
@@ -1972,6 +1974,13 @@ key_consume_left = [
 key_consume_right = ]
 key_fill_desktop = E
 key_system_menu = M
+# Alt+P enters SWAP MODE: the screen shows SWAP MODE, and the next key
+# picks the workspace to swap this one's windows with. A digit (1-9, 0) or a
+# workspace key swaps with that workspace and leaves the mode; Alt+A / Alt+D
+# (key_focus_prev / key_focus_next) or Alt+Left / Alt+Right swap with the
+# previous / next workspace (wrapping) and stay in the mode until another
+# key leaves it. Every workspace keeps its own layout.  key
+key_swap_workspace = P
 # Alt+, / Alt+. / Alt+/ go to the 1st / 2nd / 3rd workspace of the focused
 # monitor, in that monitor's own order (a screen holding 2, 4, 6, 8 goes to
 # 2, 4, 6). Add Shift to move the focused window to that workspace.
@@ -3230,6 +3239,11 @@ fn parse_into_from(c: &mut Config, text: &str, source: &str) {
                     c.key_system_menu = k;
                 }
             }
+            "key_swap_workspace" => {
+                if let Some(k) = key_to_vk(v) {
+                    c.key_swap_workspace = k;
+                }
+            }
             "key_switch_ws_1" => {
                 if let Some(k) = key_to_vk(v) {
                     c.key_switch_ws_1 = k;
@@ -3760,6 +3774,7 @@ pub fn reload_groups(old: &Config, new: &Config) -> ReloadGroups {
         key_consume_right,
         key_fill_desktop,
         key_system_menu,
+        key_swap_workspace,
         key_switch_ws_1,
         key_switch_ws_2,
         key_switch_ws_3,
@@ -3880,7 +3895,7 @@ pub fn reload_groups(old: &Config, new: &Config) -> ReloadGroups {
     diff!(live: key_shrink_master, key_grow_master, key_promote_master);
     diff!(live: key_toggle_tiling, key_toggle_float, key_close_window, key_minimize_window);
     diff!(live: key_cycle_width, key_center_column, key_consume_left, key_consume_right);
-    diff!(live: key_fill_desktop, key_system_menu);
+    diff!(live: key_fill_desktop, key_system_menu, key_swap_workspace);
     diff!(live: key_switch_ws_1, key_switch_ws_2, key_switch_ws_3);
     diff!(live: key_switch_ws_4, key_switch_ws_5, key_switch_ws_6);
     diff!(live: main_key);
@@ -4102,13 +4117,14 @@ pub enum Action {
     SwitchNextMonitorWorkspace,
     MoveToNextMonitorWorkspace,
     ToggleTaskbar,
+    SwapWorkspaceMode,
     Extra,
 }
 
 impl Action {
     /// Every action in declaration order (`ALL[a as usize] == a`), which is
     /// how a table entry stores it.
-    pub const ALL: [Action; 44] = {
+    pub const ALL: [Action; 45] = {
         use Action::*;
         [
             Launcher,
@@ -4154,6 +4170,7 @@ impl Action {
             SwitchNextMonitorWorkspace,
             MoveToNextMonitorWorkspace,
             ToggleTaskbar,
+            SwapWorkspaceMode,
             Extra,
         ]
     };
@@ -4205,6 +4222,7 @@ impl Action {
             SwitchNextMonitorWorkspace => "Go to a workspace of the next screen",
             MoveToNextMonitorWorkspace => "Move the window to a workspace of the next screen",
             ToggleTaskbar => "Hide or show the taskbar",
+            SwapWorkspaceMode => "Swap this workspace with another",
             Extra => "Custom shortcut",
         }
     }
@@ -4586,6 +4604,7 @@ pub fn compile_keys(c: &Config) -> Keymap {
         (c.key_consume_left, ConsumeLeft, None),
         (c.key_consume_right, ConsumeRight, None),
         (c.key_fill_desktop, FillDesktop, None),
+        (c.key_swap_workspace, SwapWorkspaceMode, None),
         (0x24, FirstColumn, Some(MoveFirstColumn)),
         (0x23, LastColumn, Some(MoveLastColumn)),
         (0x0D, Terminal, Some(Browser)),

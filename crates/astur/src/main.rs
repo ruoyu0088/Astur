@@ -1349,6 +1349,16 @@ const DOUBLE_TAP_MS: u32 = 200;
 static MOVE_MODE: AtomicBool = AtomicBool::new(false);
 static MOVE_HINT_HWND: AtomicIsize = AtomicIsize::new(0);
 const MOVE_HINT_CLASS: PCWSTR = w!("astur_move_hint");
+// Swap-workspace mode: main+P enters it; a workspace key swaps with that
+// workspace and leaves, key_focus_prev/next (or the arrow keys) swap with
+// the neighbour and stay. A badge on the screen says SWAP MODE.
+static SWAP_MODE: AtomicBool = AtomicBool::new(false);
+static SWAP_HINT_HWND: AtomicIsize = AtomicIsize::new(0);
+const SWAP_HINT_CLASS: PCWSTR = w!("astur_swap_hint");
+// The VKs of key_focus_prev / key_focus_next, so swap mode recognises them
+// whether or not the main key is still held.
+static KEY_FOCUS_PREV_VK: AtomicU32 = AtomicU32::new(0x41);
+static KEY_FOCUS_NEXT_VK: AtomicU32 = AtomicU32::new(0x44);
 // True only while a move/resize drag is in progress. Lets the global mouse hook
 // skip the STATE mutex on every mouse-move when nothing is being dragged — and
 // system-wide mouse-move is the single hottest path through this process.
@@ -1601,6 +1611,7 @@ unsafe fn run_bind(e: u32) {
             WM_SYSMENU,
             SM_OPEN,
         ),
+        config::Action::SwapWorkspaceMode => enter_swap_mode(),
         _ => {
             if let Some(c) = bind_cmd(action, arg) {
                 push_cmd(c);
@@ -1614,7 +1625,7 @@ fn bind_cmd(action: config::Action, arg: u16) -> Option<Cmd> {
     use config::Action as A;
     let edge = |last, carry| Cmd::ColumnEdge { last, carry };
     Some(match action {
-        A::Launcher | A::SystemMenu => return None,
+        A::Launcher | A::SystemMenu | A::SwapWorkspaceMode => return None,
         A::FocusNext => Cmd::FocusDir(1),
         A::FocusPrev => Cmd::FocusDir(-1),
         A::SwapNext => Cmd::SwapDir(1),
@@ -1678,6 +1689,7 @@ unsafe fn main_reset(why: &str) {
     // so a key in the mode would act on nothing the user expects, and the
     // badge must not linger.
     exit_move_mode();
+    exit_swap_mode();
     FAKE_ALT.store(false, Ordering::Relaxed);
     // The switcher commits on a Left Alt release that will never come.
     if ALT_SWITCHER_MODE.swap(false, Ordering::Relaxed) {
@@ -2029,7 +2041,69 @@ unsafe extern "system" fn keyboard_proc(code: i32, wparam: WPARAM, lparam: LPARA
                 return LRESULT(1); // apps never see the reserved main key
             }
 
-            // Window move mode: the reserved main key was double-tapped, so
+            // Swap-workspace mode (main+P). A / D (key_focus_prev / next)
+            // or Left / Right swap with the neighbouring workspace and stay
+            // in the mode; a workspace key or a digit swaps with that
+            // workspace and leaves; anything else leaves the mode and is
+            // handled as usual. The main key need not still be held.
+            if SWAP_MODE.load(Ordering::Relaxed) && down && !is_modifier_vk(kb.vkCode) {
+                let vk = kb.vkCode;
+                let mut delta = 0i32;
+                if vk == VK_LEFT.0 as u32 || vk == KEY_FOCUS_PREV_VK.load(Ordering::Relaxed) {
+                    delta = -1;
+                } else if vk == 0x27 /* VK_RIGHT */
+                    || vk == KEY_FOCUS_NEXT_VK.load(Ordering::Relaxed)
+                {
+                    delta = 1;
+                }
+                if delta != 0 {
+                    push_cmd(Cmd::SwapWorkspaceAdjacent(delta));
+                    return LRESULT(1);
+                }
+                let held = MAIN_DOWN.load(Ordering::Relaxed);
+                let m = live_mods(main_vk, held);
+                let e = if vk < 256 {
+                    BINDS[(m as usize) << 8 | vk as usize].load(Ordering::Acquire)
+                } else {
+                    0
+                };
+                let mut target: Option<(u8, usize)> = None;
+                if e != 0 {
+                    if let Some((action, arg)) = config::decode_bind(e) {
+                        match action {
+                            // The swap key itself leaves the mode (and is
+                            // swallowed, so it does not re-enter below).
+                            config::Action::SwapWorkspaceMode => {
+                                exit_swap_mode();
+                                return LRESULT(1);
+                            }
+                            config::Action::SwitchWorkspace => {
+                                target = Some((0, arg as usize));
+                            }
+                            config::Action::SwitchMonitorWorkspace => {
+                                target = Some((1, arg as usize));
+                            }
+                            config::Action::SwitchNextMonitorWorkspace => {
+                                target = Some((2, arg as usize));
+                            }
+                            _ => {}
+                        }
+                    }
+                }
+                if target.is_none() && (0x30..=0x39).contains(&vk) {
+                    let index = if vk == 0x30 { 9 } else { (vk - 0x31) as usize };
+                    target = Some((0, index));
+                }
+                if let Some((kind, index)) = target {
+                    push_cmd(Cmd::SwapWorkspaceTo(kind, index));
+                    exit_swap_mode();
+                    return LRESULT(1);
+                }
+                // Any other key leaves the mode; the key then runs as usual.
+                exit_swap_mode();
+            }
+
+            // Window move mode: the reserved main key was double-tapped, so            // Window move mode: the reserved main key was double-tapped, so
             // the arrow keys and the workspace keys now MOVE the focused
             // window with no modifier. The Shift variants of the bindings
             // (main+shift+key) already mean "move", so the move-mode keys are
@@ -2347,6 +2421,116 @@ unsafe extern "system" fn move_hint_wndproc(h: HWND, msg: u32, w: WPARAM, l: LPA
         );
         let old = SelectObject(hdc, HGDIOBJ(font.0));
         let mut text: Vec<u16> = "MOVE MODE".encode_utf16().collect();
+        DrawTextW(
+            hdc,
+            &mut text,
+            &mut rc,
+            DT_CENTER | DT_VCENTER | DT_SINGLELINE,
+        );
+        SelectObject(hdc, old);
+        let _ = DeleteObject(HGDIOBJ(font.0));
+        let _ = EndPaint(h, &ps);
+        return LRESULT(0);
+    }
+    if msg == WM_ERASEBKGND {
+        return LRESULT(1);
+    }
+    DefWindowProcW(h, msg, w, l)
+}
+
+// --- swap-workspace mode ------------------------------------------------
+//
+// main+P enters it (Action::SwapWorkspaceMode). A badge over the monitor
+// under the cursor says SWAP MODE. A workspace key (or a digit) swaps the
+// active workspace's windows with that workspace and leaves the mode;
+// key_focus_prev / key_focus_next (or Left / Right) swap with the previous /
+// next workspace, wrapping, and stay in it until any other key leaves. The
+// main key need not still be held. Every workspace keeps its own layout.
+
+unsafe fn show_swap_hint() {
+    let raw = SWAP_HINT_HWND.load(Ordering::Relaxed);
+    if raw == 0 {
+        return;
+    }
+    let hwnd = hwnd_from(raw);
+    let mut pt = POINT::default();
+    let _ = GetCursorPos(&mut pt);
+    let mon = MonitorFromPoint(pt, MONITOR_DEFAULTTONEAREST);
+    let mut mi = MONITORINFO {
+        cbSize: core::mem::size_of::<MONITORINFO>() as u32,
+        ..Default::default()
+    };
+    if !GetMonitorInfoW(mon, &mut mi).as_bool() {
+        return;
+    }
+    let w = 240;
+    let hgt = 40;
+    let x = (mi.rcWork.left + mi.rcWork.right - w) / 2;
+    let y = mi.rcWork.top + 40;
+    let _ = SetWindowPos(
+        hwnd,
+        HWND_TOPMOST,
+        x,
+        y,
+        w,
+        hgt,
+        SWP_NOACTIVATE | SWP_SHOWWINDOW,
+    );
+    let _ = InvalidateRect(hwnd, None, BOOL(1));
+}
+
+unsafe fn hide_swap_hint() {
+    let raw = SWAP_HINT_HWND.load(Ordering::Relaxed);
+    if raw != 0 {
+        let _ = ShowWindow(hwnd_from(raw), SW_HIDE);
+    }
+}
+
+unsafe fn enter_swap_mode() {
+    if SWAP_MODE.swap(true, Ordering::Relaxed) {
+        return;
+    }
+    exit_move_mode();
+    show_swap_hint();
+}
+
+unsafe fn exit_swap_mode() {
+    if !SWAP_MODE.swap(false, Ordering::Relaxed) {
+        return;
+    }
+    hide_swap_hint();
+}
+
+/// Paint the swap-mode badge: white "SWAP MODE" on dark blue.
+unsafe extern "system" fn swap_hint_wndproc(h: HWND, msg: u32, w: WPARAM, l: LPARAM) -> LRESULT {
+    if msg == WM_PAINT {
+        let mut ps = PAINTSTRUCT::default();
+        let hdc = BeginPaint(h, &mut ps);
+        let mut rc = RECT::default();
+        let _ = GetClientRect(h, &mut rc);
+        let brush = CreateSolidBrush(COLORREF(0x00CC6600)); // BGR: #0066CC
+        FillRect(hdc, &rc, brush);
+        let _ = DeleteObject(HGDIOBJ(brush.0));
+        SetBkMode(hdc, TRANSPARENT);
+        SetTextColor(hdc, COLORREF(0x00FFFFFF));
+        let font = CreateFontW(
+            -20,
+            0,
+            0,
+            0,
+            700,
+            0,
+            0,
+            0,
+            DEFAULT_CHARSET.0 as u32,
+            OUT_DEFAULT_PRECIS.0 as u32,
+            CLIP_DEFAULT_PRECIS.0 as u32,
+            CLEARTYPE_QUALITY.0 as u32,
+            0,
+            w!("Segoe UI"),
+        );
+        let old = SelectObject(hdc, HGDIOBJ(font.0));
+        let mut text: Vec<u16> = "SWAP MODE".encode_utf16().collect();
         DrawTextW(
             hdc,
             &mut text,
@@ -2965,6 +3149,13 @@ enum Cmd {
     /// A tab-bar click: (any window of the column, tab index).
     TabClick(isize, usize),
     ToggleTaskbar,
+    /// Swap the active workspace's windows with the adjacent one (`dir` -1
+    /// previous, +1 next, wrapping). Stays in swap mode.
+    SwapWorkspaceAdjacent(i32),
+    /// Swap the active workspace's windows with the one `kind` names (0 a
+    /// global workspace number, 1 this monitor's local one, 2 the next
+    /// monitor's local one) at `index`.
+    SwapWorkspaceTo(u8, usize),
 }
 
 impl Cmd {
@@ -3026,6 +3217,8 @@ impl Cmd {
             Cmd::ResizeTile(_) => "ResizeTile",
             Cmd::TabClick(..) => "TabClick",
             Cmd::ToggleTaskbar => "ToggleTaskbar",
+            Cmd::SwapWorkspaceAdjacent(_) => "SwapWorkspaceAdjacent",
+            Cmd::SwapWorkspaceTo(..) => "SwapWorkspaceTo",
         }
     }
 }
@@ -3150,6 +3343,8 @@ fn apply_hook_config(cfg: &Config) {
             "alt_tab_replacement works only with main_key = lalt or ralt; Windows' Alt+Tab runs"
         );
     }
+    KEY_FOCUS_PREV_VK.store(cfg.key_focus_prev, Ordering::Relaxed);
+    KEY_FOCUS_NEXT_VK.store(cfg.key_focus_next, Ordering::Relaxed);
     publish_binds(cfg.main_key, &keys.binds);
     // Enable/disable the taskbar-hiding feature to match the new config.
     unsafe {
@@ -13534,6 +13729,123 @@ unsafe fn restore_minimized(mgr: &mut Manager) {
     }
 }
 
+/// Swap the windows of workspace (mi, wi) with those of (to_mi, to_wi):
+/// windows, floating state and focus change places, while each workspace
+/// keeps its own layout configuration. The per-window layout state that no
+/// longer describes the new set (dwindle splits, scrolling strip columns) is
+/// reset, so both workspaces lay out from scratch. Visibility is re-applied
+/// (the active workspace shows its new windows, the other hides them).
+unsafe fn swap_workspaces(mgr: &mut Manager, mi: usize, wi: usize, to_mi: usize, to_wi: usize) {
+    if (mi, wi) == (to_mi, to_wi)
+        || mi >= mgr.monitors.len()
+        || to_mi >= mgr.monitors.len()
+        || wi >= mgr.monitors[mi].workspaces.len()
+        || to_wi >= mgr.monitors[to_mi].workspaces.len()
+    {
+        return;
+    }
+    let (w_a, f_a, focus_a) = {
+        let ws = &mut mgr.monitors[mi].workspaces[wi];
+        (
+            std::mem::take(&mut ws.windows),
+            std::mem::take(&mut ws.floating),
+            ws.focused,
+        )
+    };
+    let (w_b, f_b, focus_b) = {
+        let ws = &mut mgr.monitors[to_mi].workspaces[to_wi];
+        (
+            std::mem::take(&mut ws.windows),
+            std::mem::take(&mut ws.floating),
+            ws.focused,
+        )
+    };
+    {
+        let ws = &mut mgr.monitors[mi].workspaces[wi];
+        ws.windows = w_b;
+        ws.floating = f_b;
+        ws.focused = focus_b;
+        ws.splits.clear();
+        ws.strip = Strip::default();
+    }
+    {
+        let ws = &mut mgr.monitors[to_mi].workspaces[to_wi];
+        ws.windows = w_a;
+        ws.floating = f_a;
+        ws.focused = focus_a;
+        ws.splits.clear();
+        ws.strip = Strip::default();
+    }
+    for (m, w) in [(mi, wi), (to_mi, to_wi)] {
+        let ws = &mut mgr.monitors[m].workspaces[w];
+        if !ws.windows.contains(&ws.focused) || !focusable(ws.focused) {
+            ws.focused = focus_target(ws);
+        }
+    }
+    // Show the active workspaces' new windows, hide the others'; then lay
+    // out the active workspace of each affected monitor again.
+    normalize_visibility(mgr);
+    for (m, w) in [(mi, wi), (to_mi, to_wi)] {
+        let a = mgr.monitors[m].active;
+        if a == w {
+            ensure_visible(mgr, m, a);
+            place_active_instant(mgr, m);
+        }
+    }
+    // Focus stays in the (now active) workspace the user was in.
+    let f = mgr.monitors[mi].workspaces[wi].focused;
+    if f != 0 {
+        focus_window(f);
+    }
+}
+
+/// Swap the active workspace with the adjacent one `dir` (-1 previous, +1
+/// next), wrapping at either end. Stays in swap mode.
+unsafe fn swap_workspace_adjacent(mgr: &mut Manager, dir: i32) {
+    if mgr.monitors.is_empty() || dir == 0 {
+        return;
+    }
+    let mi = mgr.focused_mon.min(mgr.monitors.len() - 1);
+    let count = mgr.monitors[mi].workspaces.len();
+    if count < 2 {
+        return;
+    }
+    let a = mgr.monitors[mi].active;
+    let to = (a as i32 + dir).rem_euclid(count as i32) as usize;
+    swap_workspaces(mgr, mi, a, mi, to);
+}
+
+/// Swap the active workspace with the one `kind` names: 0 a global workspace
+/// number (shared mode), 1 this monitor's local one, 2 the next monitor's
+/// local one (wrapping; on a single monitor, this screen's index+3, as the
+/// Alt+L / Alt+; / Alt+' keys are). Leaves swap mode.
+unsafe fn swap_workspace_to(mgr: &mut Manager, kind: u8, index: usize) {
+    if mgr.monitors.is_empty() {
+        return;
+    }
+    let mi = mgr.focused_mon.min(mgr.monitors.len() - 1);
+    let a = mgr.monitors[mi].active;
+    let (to_mi, to_wi) = match kind {
+        0 => mgr.global_to_ml(index),
+        1 => (mi, index),
+        2 => {
+            let n = mgr.monitors.len();
+            if n <= 1 {
+                (mi, index + 3)
+            } else {
+                ((mi + 1) % n, index)
+            }
+        }
+        _ => return,
+    };
+    if to_mi >= mgr.monitors.len() || to_wi >= mgr.monitors[to_mi].workspaces.len() {
+        return;
+    }
+    swap_workspaces(mgr, mi, a, to_mi, to_wi);
+}
+
+/// Drop `h` from whatever workspace holds it and re-tile if that workspace is
+/// on screen. A no-op for an untracked handle.
 /// Drop `h` from whatever workspace holds it and re-tile if that workspace is
 /// on screen. A no-op for an untracked handle.
 unsafe fn untrack_window(mgr: &mut Manager, h: isize) {
@@ -13904,6 +14216,8 @@ unsafe fn process(mgr: &mut Manager, cmd: Cmd) {
         Cmd::SetLayout(layout) => set_monitor_layout(mgr, mgr.focused_mon, layout),
         Cmd::ToggleScratchpad => toggle_scratchpad(mgr),
         Cmd::ToggleTaskbar => request_taskbar_toggle(),
+        Cmd::SwapWorkspaceAdjacent(dir) => swap_workspace_adjacent(mgr, dir),
+        Cmd::SwapWorkspaceTo(kind, index) => swap_workspace_to(mgr, kind, index),
         Cmd::BarCycle(hmon, dir) => {
             // Wheel over the bar: previous/next workspace on that monitor (wraps).
             if let Some(mi) = mgr.mon_by_hmon(hmon) {
@@ -26482,6 +26796,33 @@ fn main() {
         ) {
             let _ = SetLayeredWindowAttributes(mh, COLORREF(0), 220, LWA_ALPHA);
             MOVE_HINT_HWND.store(mh.0 as isize, Ordering::Relaxed);
+        }
+        // Swap-mode badge: same place as the move-mode badge, labelled
+        // SWAP MODE, in its own colour.
+        let sh_wc = WNDCLASSW {
+            lpfnWndProc: Some(swap_hint_wndproc),
+            hInstance: hinst,
+            lpszClassName: SWAP_HINT_CLASS,
+            hCursor: arrow_cursor(),
+            ..Default::default()
+        };
+        RegisterClassW(&sh_wc);
+        if let Ok(sh) = CreateWindowExW(
+            WS_EX_LAYERED | WS_EX_TRANSPARENT | WS_EX_TOPMOST | WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE,
+            SWAP_HINT_CLASS,
+            w!(""),
+            WS_POPUP,
+            0,
+            0,
+            240,
+            40,
+            None,
+            None,
+            hinst,
+            None,
+        ) {
+            let _ = SetLayeredWindowAttributes(sh, COLORREF(0), 220, LWA_ALPHA);
+            SWAP_HINT_HWND.store(sh.0 as isize, Ordering::Relaxed);
         }
 
         // Explorer broadcasts "TaskbarCreated" when it (re)starts; the marker
