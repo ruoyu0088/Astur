@@ -4618,7 +4618,7 @@ impl Strip {
         m.restore_width = None;
     }
 
-    /// Alt+H / Alt+L.
+    /// Alt+Z / Alt+C.
     fn adjust_width(&mut self, h: isize, delta: f32, default: f32) {
         let cur = self.col_mut(h, default).width;
         self.set_width(h, cur + delta, default);
@@ -4630,7 +4630,7 @@ impl Strip {
         self.set_width(h, next_preset(presets, cur), default);
     }
 
-    /// Alt+M: full width, and back to the width it had.
+    /// No default key: full width, and back to the width it had.
     fn toggle_maximize(&mut self, h: isize, default: f32) {
         let m = self.col_mut(h, default);
         match m.restore_width.take() {
@@ -4692,7 +4692,7 @@ impl Strip {
         true
     }
 
-    /// Alt+Shift+H / L: `h`'s share by `delta` (clamped 0.1..=0.9); the
+    /// Alt+Shift+Z / C: `h`'s share by `delta` (clamped 0.1..=0.9); the
     /// others keep their proportions among themselves.
     fn adjust_tile_height(&mut self, tiled: &[isize], h: isize, delta: f32) -> bool {
         let Some((col, cur)) = self.tile_share(tiled, h) else {
@@ -13006,7 +13006,7 @@ fn focus_target(ws: &Workspace) -> isize {
         .unwrap_or(0)
 }
 
-/// Alt+J / Alt+K: the window `d` (+1 / -1) steps from the focused one in
+/// Alt+D / Alt+A: the window `d` (+1 / -1) steps from the focused one in
 /// `windows` order, wrapping, past the toggled-away scratchpad. Can come back
 /// to the focused window itself; None only when nothing else is left.
 fn focus_step(ws: &Workspace, d: i32) -> Option<isize> {
@@ -26475,12 +26475,12 @@ fn main() {
         println!("  Alt + right-drag = resize nearest corner (red bracket)");
         println!("  --- tiling ---");
         println!("  Alt+T          = toggle tiling on/off (keeps workspaces)");
-        println!("  Alt+J / Alt+K  = focus next / previous window");
-        println!("  Alt+Shift+J/K  = swap window order in the stack");
+        println!("  Alt+D / Alt+A  = focus next / previous window");
+        println!("  Alt+Shift+D/A  = swap window order in the stack");
         println!("  Alt+arrows     = focus window by direction (cursor follows)");
         println!("  Alt+Shift+arr  = move window by direction (across monitors)");
-        println!("  Alt+M          = promote focused window to master");
-        println!("  Alt+H / Alt+L  = shrink / grow the master area");
+        println!("  Alt+S          = promote focused window to master");
+        println!("  Alt+Z / Alt+C  = shrink / grow the master area");
         println!("  Alt+F          = toggle float for focused window");
         println!("  Alt+W          = close focused window");
         println!("  Alt+E          = fill the workspace (focused window on top, or back)");
