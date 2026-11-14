@@ -1313,27 +1313,27 @@ impl Config {
             bar_show_battery: true,
             ignore_classes: Vec::new(),
             float_classes: Vec::new(),
-            key_focus_next: 0x44,     // D
-            key_focus_prev: 0x41,     // A
-            key_shrink_master: 0x5A,  // Z
-            key_grow_master: 0x43,    // C
-            key_promote_master: 0x53, // S
-            key_toggle_tiling: 0x54,  // T
-            key_toggle_float: 0x46,   // F
-            key_close_window: 0x57,   // W
+            key_focus_next: 0x44,      // D
+            key_focus_prev: 0x41,      // A
+            key_shrink_master: 0x5A,   // Z
+            key_grow_master: 0x43,     // C
+            key_promote_master: 0x53,  // S
+            key_toggle_tiling: 0x54,   // T
+            key_toggle_float: 0x46,    // F
+            key_close_window: 0x57,    // W
             key_minimize_window: 0x51, // Q
-            key_cycle_width: 0x52,    // R
-            key_center_column: 0x58,  // X
-            key_consume_left: 0xDB,   // [ (VK_OEM_4)
-            key_consume_right: 0xDD,  // ] (VK_OEM_6)
-            key_fill_desktop: 0x45,   // E
-            key_system_menu: 0x4D,    // M
-            key_switch_ws_1: 0xBC,    // , (VK_OEM_COMMA)
-            key_switch_ws_2: 0xBE,    // . (VK_OEM_PERIOD)
-            key_switch_ws_3: 0xBF,    // / (VK_OEM_2)
-            key_switch_ws_4: 0x4C,    // L
-            key_switch_ws_5: 0xBA,    // ; (VK_OEM_1)
-            key_switch_ws_6: 0xDE,    // ' (VK_OEM_7)
+            key_cycle_width: 0x52,     // R
+            key_center_column: 0x58,   // X
+            key_consume_left: 0xDB,    // [ (VK_OEM_4)
+            key_consume_right: 0xDD,   // ] (VK_OEM_6)
+            key_fill_desktop: 0x45,    // E
+            key_system_menu: 0x4D,     // M
+            key_switch_ws_1: 0xBC,     // , (VK_OEM_COMMA)
+            key_switch_ws_2: 0xBE,     // . (VK_OEM_PERIOD)
+            key_switch_ws_3: 0xBF,     // / (VK_OEM_2)
+            key_switch_ws_4: 0x4C,     // L
+            key_switch_ws_5: 0xBA,     // ; (VK_OEM_1)
+            key_switch_ws_6: 0xDE,     // ' (VK_OEM_7)
             main_key: MainKey::RAlt,
             theme: "dark".to_string(),
             acrylic: false,

@@ -188,11 +188,11 @@ use windows::Win32::UI::WindowsAndMessaging::{
     HWND_TOP, MB_ICONERROR, MB_OK, MSGFLT_ALLOW, OBJID_CURSOR, PM_REMOVE, PW_RENDERFULLCONTENT,
     SMTO_ABORTIFHUNG, SM_CXSCREEN, SM_CYSCREEN, SPIF_SENDCHANGE, SPIF_UPDATEINIFILE,
     SPI_GETFOREGROUNDLOCKTIMEOUT, SPI_GETWORKAREA, SPI_SETDESKWALLPAPER,
-    SPI_SETFOREGROUNDLOCKTIMEOUT, SPI_SETWORKAREA, SW_MINIMIZE, SW_SHOW, SW_SHOWMINNOACTIVE, SW_SHOWNORMAL,
-    SYSTEM_PARAMETERS_INFO_UPDATE_FLAGS, WINDOWPLACEMENT, WINDOW_EX_STYLE, WINEVENT_OUTOFCONTEXT,
-    WINEVENT_SKIPOWNPROCESS, WM_CLIPBOARDUPDATE, WM_CLOSE, WM_DISPLAYCHANGE, WM_DPICHANGED,
-    WM_ENDSESSION, WM_ERASEBKGND, WM_PAINT, WM_SETTINGCHANGE, WM_TIMER, WM_USER, WS_CAPTION,
-    WS_CHILD,
+    SPI_SETFOREGROUNDLOCKTIMEOUT, SPI_SETWORKAREA, SW_MINIMIZE, SW_SHOW, SW_SHOWMINNOACTIVE,
+    SW_SHOWNORMAL, SYSTEM_PARAMETERS_INFO_UPDATE_FLAGS, WINDOWPLACEMENT, WINDOW_EX_STYLE,
+    WINEVENT_OUTOFCONTEXT, WINEVENT_SKIPOWNPROCESS, WM_CLIPBOARDUPDATE, WM_CLOSE, WM_DISPLAYCHANGE,
+    WM_DPICHANGED, WM_ENDSESSION, WM_ERASEBKGND, WM_PAINT, WM_SETTINGCHANGE, WM_TIMER, WM_USER,
+    WS_CAPTION, WS_CHILD,
 };
 
 // =========================================================================
@@ -1345,7 +1345,7 @@ static MARKER_HWND: AtomicIsize = AtomicIsize::new(0);
 // repeat is filtered by MAIN_DOWN's swap below), so the second down within
 // DOUBLE_TAP_MS of the first one toggles the mode.
 static MAIN_TAP_TICK: AtomicU32 = AtomicU32::new(0);
-const DOUBLE_TAP_MS: u32 = 400;
+const DOUBLE_TAP_MS: u32 = 200;
 static MOVE_MODE: AtomicBool = AtomicBool::new(false);
 static MOVE_HINT_HWND: AtomicIsize = AtomicIsize::new(0);
 const MOVE_HINT_CLASS: PCWSTR = w!("astur_move_hint");
@@ -13392,38 +13392,81 @@ unsafe fn show_workspace(mgr: &mut Manager, mi: usize, ws: usize) {
 }
 
 /// Windows minimized with main_key + Q, per (monitor, workspace), in the
-/// order they were minimized: a second press within DOUBLE_TAP_MS restores
-/// them all and reflows the layout again.
-static MINIMIZED_BY_KEY: Mutex<Option<HashMap<(usize, usize), Vec<isize>>>> =
-    Mutex::new(None);
-/// now_ms() of the last minimize press; 0 = none yet.
-static MINIMIZE_TAP_MS: AtomicU64 = AtomicU64::new(0);
+/// order they were minimized: a second press within MINIMIZE_DELAY_MS
+/// restores them all and reflows the layout again.
+static MINIMIZED_BY_KEY: Mutex<Option<HashMap<(usize, usize), Vec<isize>>>> = Mutex::new(None);
 
-/// main_key + Q: minimize the focused window. The tiling ignores minimized
-/// windows, so its workspace reflows at once. Pressed again within
-/// DOUBLE_TAP_MS, every window this chord minimized goes back and the layout
-/// reflows again.
+/// How long a main+Q minimize waits before it fires. A second press inside
+/// this window means "restore everything this chord minimized" instead, so a
+/// main+Q Q never flashes a minimize followed by a restore. Slightly longer
+/// than DOUBLE_TAP_MS, so the first press is still recognisably one half of
+/// a double tap.
+const MINIMIZE_DELAY_MS: u32 = 250;
+
+/// A main+Q minimize waiting for its delay to expire. Manager thread only.
+#[derive(Clone, Copy)]
+struct PendingMinimize {
+    hwnd: isize,
+    at: u64, // now_ms() when the chord was pressed
+}
+static PENDING_MINIMIZE: Mutex<Option<PendingMinimize>> = Mutex::new(None);
+
+/// main_key + Q: defer a minimize of the focused window by MINIMIZE_DELAY_MS,
+/// so pressing Q twice restores instead of flashing a minimize. Pressed again
+/// inside that window, every window this chord minimized goes back and the
+/// layout reflows again. The tiling ignores minimized windows, so a window it
+/// actually minimizes makes its workspace reflow.
 unsafe fn toggle_minimize(mgr: &mut Manager) {
     let now = now_ms().max(1);
-    let last = MINIMIZE_TAP_MS.swap(now, Ordering::Relaxed);
-    if last != 0 && now.saturating_sub(last) <= u64::from(DOUBLE_TAP_MS) {
+    // A press inside the delay of an earlier one: the double tap means
+    // "restore", and the deferred minimize of the first press is dropped
+    // before it ever ran, so no window flashes.
+    let double = {
+        let mut p = PENDING_MINIMIZE.lock().unwrap();
+        match *p {
+            Some(pm) if now.saturating_sub(pm.at) <= u64::from(MINIMIZE_DELAY_MS) => {
+                *p = None;
+                true
+            }
+            _ => false,
+        }
+    };
+    if double {
         restore_minimized(mgr);
         return;
     }
-    let (mi, a, h) = mgr.focused();
+    let (_, _, h) = mgr.focused();
     if h == 0 || scratch_hidden(h) || !IsWindow(hwnd_from(h)).as_bool() {
         return;
     }
-    let hwnd = hwnd_from(h);
-    if IsIconic(hwnd).as_bool() {
+    if IsIconic(hwnd_from(h)).as_bool() {
         return;
     }
+    // Deferred: manager_loop runs it once MINIMIZE_DELAY_MS has passed
+    // without a second press.
+    *PENDING_MINIMIZE.lock().unwrap() = Some(PendingMinimize { hwnd: h, at: now });
+}
+
+/// Run a deferred main+Q minimize: record it as minimized by the chord and
+/// post the minimize. Manager thread only.
+unsafe fn run_pending_minimize(mgr: &mut Manager, pm: PendingMinimize) {
+    let h = pm.hwnd;
+    let hwnd = hwnd_from(h);
+    if h == 0 || !IsWindow(hwnd).as_bool() || IsIconic(hwnd).as_bool() {
+        return;
+    }
+    // It may have moved to another workspace (or left the manager) while the
+    // press was pending: use where it is now, and drop a window the manager
+    // no longer tracks.
+    let Some((mi, wi)) = mgr.locate(h) else {
+        return;
+    };
     // Recorded before the minimize: the MINIMIZESTART retile may run first.
     MINIMIZED_BY_KEY
         .lock()
         .unwrap()
         .get_or_insert_with(HashMap::new)
-        .entry((mi, a))
+        .entry((mi, wi))
         .or_default()
         .push(h);
     // Posted, never waited for (a busy app would stall the manager); the
@@ -13437,11 +13480,7 @@ unsafe fn toggle_minimize(mgr: &mut Manager) {
 /// back. A window of a hidden workspace is restored and hidden again, so it
 /// reappears when that workspace is next shown.
 unsafe fn restore_minimized(mgr: &mut Manager) {
-    let by_key = MINIMIZED_BY_KEY
-        .lock()
-        .unwrap()
-        .take()
-        .unwrap_or_default();
+    let by_key = MINIMIZED_BY_KEY.lock().unwrap().take().unwrap_or_default();
     let mut retile: Vec<usize> = Vec::new();
     for ((mi, wi), wins) in by_key {
         if mi >= mgr.monitors.len() {
@@ -19848,6 +19887,26 @@ fn manager_loop(cfg: Config) {
         let (cmd, depth, burst) = {
             let mut q = CMDQ.lock().unwrap();
             let c = loop {
+                // A deferred main+Q minimize fires once its delay has passed,
+                // before any command is considered.
+                let due = {
+                    let mut p = PENDING_MINIMIZE.lock().unwrap();
+                    match *p {
+                        Some(pm)
+                            if now_ms() >= pm.at.saturating_add(u64::from(MINIMIZE_DELAY_MS)) =>
+                        {
+                            *p = None;
+                            Some(pm)
+                        }
+                        _ => None,
+                    }
+                };
+                if let Some(pm) = due {
+                    drop(q);
+                    unsafe { run_pending_minimize(&mut mgr, pm) };
+                    q = CMDQ.lock().unwrap();
+                    continue;
+                }
                 if let Some(c) = q.pop_front() {
                     break c;
                 }
@@ -19865,7 +19924,22 @@ fn manager_loop(cfg: Config) {
                 } else {
                     last_drag = None;
                     next_drag = Instant::now();
-                    match recheck.wait(Instant::now()) {
+                    // A deferred minimize needs a wakeup, or it would only fire
+                    // when the next command arrived.
+                    let pending_wait = {
+                        let p = PENDING_MINIMIZE.lock().unwrap();
+                        p.as_ref().map(|pm| {
+                            let due = pm.at.saturating_add(u64::from(MINIMIZE_DELAY_MS));
+                            std::time::Duration::from_millis(due.saturating_sub(now_ms()).max(1))
+                        })
+                    };
+                    let recheck_wait = recheck.wait(Instant::now());
+                    let wait = match (pending_wait, recheck_wait) {
+                        (Some(pw), Some(rw)) => Some(pw.min(rw)),
+                        (Some(pw), None) => Some(pw),
+                        (None, rw) => rw,
+                    };
+                    match wait {
                         None => q = CMDCV.wait(q).unwrap(),
                         Some(w) if !w.is_zero() => q = CMDCV.wait_timeout(q, w).unwrap().0,
                         Some(_) => {
@@ -19879,6 +19953,7 @@ fn manager_loop(cfg: Config) {
                     }
                 }
             };
+
             if let Cmd::DragStarted(_, generation) = &c {
                 drag_generation = *generation;
                 last_drag = None;
