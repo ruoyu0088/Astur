@@ -13009,7 +13009,6 @@ fn focusable(h: isize) -> bool {
     h != 0 && !scratch_hidden(h) && !unsafe { IsIconic(hwnd_from(h)).as_bool() }
 }
 
-
 /// Where focus lands on `ws`: `focused`, else its first window, never the
 /// toggled-away scratchpad. 0 when nothing is left.
 fn focus_target(ws: &Workspace) -> isize {
