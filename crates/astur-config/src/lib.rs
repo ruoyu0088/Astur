@@ -208,6 +208,7 @@ pub struct Config {
     pub key_toggle_tiling: u32,  // Alt+<key> toggle tiling on/off (default T)
     pub key_toggle_float: u32,   // Alt+<key> toggle floating for focused window (default F)
     pub key_close_window: u32,   // Alt+<key> close the focused window (default W)
+    pub key_minimize_window: u32, // Alt+<key> minimize the focused window (default Q)
     pub key_cycle_width: u32,    // Alt+<key> scrolling: cycle width, +Shift height (default R)
     pub key_center_column: u32,  // Alt+<key> scrolling: centre focused column (default X)
     pub key_consume_left: u32,   // Alt+<key> scrolling: consume/expel left (default [)
@@ -1320,6 +1321,7 @@ impl Config {
             key_toggle_tiling: 0x54,  // T
             key_toggle_float: 0x46,   // F
             key_close_window: 0x57,   // W
+            key_minimize_window: 0x51, // Q
             key_cycle_width: 0x52,    // R
             key_center_column: 0x58,  // X
             key_consume_left: 0xDB,   // [ (VK_OEM_4)
@@ -1920,6 +1922,7 @@ main_key = ralt
 #                        dwindle layout: shrink / grow the focused window's split
 #   Alt+F                toggle floating for the focused window
 #   Alt+W                close the focused window
+#   Alt+Q                minimize the focused window; press again quickly to restore
 #   Alt+Enter            launch terminal
 #   Alt+Shift+Enter      launch browser
 #   Alt+<workspace_key>  switch to that workspace (see workspace_keys above)
@@ -1951,7 +1954,7 @@ main_key = ralt
 #                        beside it, middle = stack into its column
 #   Alt + right-drag     side edge = column width, top/bottom = window height
 #
-# The keys above (D A Z C S T F W E and M for the power menu, and R X [ ] for
+# The keys above (D A Z C S T F W Q E and M for the power menu, and R X [ ] for
 # scrolling) are rebindable. Each takes a single key name (see the 'keys' type
 # at the top of this file). Arrows, Home, End and Enter are fixed.  key
 key_focus_next = D
@@ -1962,6 +1965,7 @@ key_promote_master = S
 key_toggle_tiling = T
 key_toggle_float = F
 key_close_window = W
+key_minimize_window = Q
 key_cycle_width = R
 key_center_column = X
 key_consume_left = [
@@ -3191,6 +3195,11 @@ fn parse_into_from(c: &mut Config, text: &str, source: &str) {
                     c.key_close_window = k;
                 }
             }
+            "key_minimize_window" => {
+                if let Some(k) = key_to_vk(v) {
+                    c.key_minimize_window = k;
+                }
+            }
             "key_cycle_width" => {
                 if let Some(k) = key_to_vk(v) {
                     c.key_cycle_width = k;
@@ -3744,6 +3753,7 @@ pub fn reload_groups(old: &Config, new: &Config) -> ReloadGroups {
         key_toggle_tiling,
         key_toggle_float,
         key_close_window,
+        key_minimize_window,
         key_cycle_width,
         key_center_column,
         key_consume_left,
@@ -3868,7 +3878,7 @@ pub fn reload_groups(old: &Config, new: &Config) -> ReloadGroups {
     diff!(live: hide_taskbar, hide_taskbar_hotkey);
     diff!(live: ignore_classes, float_classes, key_focus_next, key_focus_prev);
     diff!(live: key_shrink_master, key_grow_master, key_promote_master);
-    diff!(live: key_toggle_tiling, key_toggle_float, key_close_window);
+    diff!(live: key_toggle_tiling, key_toggle_float, key_close_window, key_minimize_window);
     diff!(live: key_cycle_width, key_center_column, key_consume_left, key_consume_right);
     diff!(live: key_fill_desktop, key_system_menu);
     diff!(live: key_switch_ws_1, key_switch_ws_2, key_switch_ws_3);
@@ -4064,6 +4074,7 @@ pub enum Action {
     ToggleTabbed,
     ToggleFloat,
     CloseWindow,
+    MinimizeWindow,
     CycleWidth,
     CycleHeight,
     CenterColumn,
@@ -4097,7 +4108,7 @@ pub enum Action {
 impl Action {
     /// Every action in declaration order (`ALL[a as usize] == a`), which is
     /// how a table entry stores it.
-    pub const ALL: [Action; 43] = {
+    pub const ALL: [Action; 44] = {
         use Action::*;
         [
             Launcher,
@@ -4115,6 +4126,7 @@ impl Action {
             ToggleTabbed,
             ToggleFloat,
             CloseWindow,
+            MinimizeWindow,
             CycleWidth,
             CycleHeight,
             CenterColumn,
@@ -4165,6 +4177,7 @@ impl Action {
             ToggleTabbed => "Stack or tab the column",
             ToggleFloat => "Float or tile the window",
             CloseWindow => "Close the window",
+            MinimizeWindow => "Minimize the window",
             CycleWidth => "Change the column width",
             CycleHeight => "Change the window height",
             CenterColumn => "Centre the column",
@@ -4567,6 +4580,7 @@ pub fn compile_keys(c: &Config) -> Keymap {
         (c.key_toggle_tiling, ToggleTiling, Some(ToggleTabbed)),
         (c.key_toggle_float, ToggleFloat, None),
         (c.key_close_window, CloseWindow, None),
+        (c.key_minimize_window, MinimizeWindow, None),
         (c.key_cycle_width, CycleWidth, Some(CycleHeight)),
         (c.key_center_column, CenterColumn, None),
         (c.key_consume_left, ConsumeLeft, None),

@@ -188,7 +188,7 @@ use windows::Win32::UI::WindowsAndMessaging::{
     HWND_TOP, MB_ICONERROR, MB_OK, MSGFLT_ALLOW, OBJID_CURSOR, PM_REMOVE, PW_RENDERFULLCONTENT,
     SMTO_ABORTIFHUNG, SM_CXSCREEN, SM_CYSCREEN, SPIF_SENDCHANGE, SPIF_UPDATEINIFILE,
     SPI_GETFOREGROUNDLOCKTIMEOUT, SPI_GETWORKAREA, SPI_SETDESKWALLPAPER,
-    SPI_SETFOREGROUNDLOCKTIMEOUT, SPI_SETWORKAREA, SW_SHOW, SW_SHOWMINNOACTIVE, SW_SHOWNORMAL,
+    SPI_SETFOREGROUNDLOCKTIMEOUT, SPI_SETWORKAREA, SW_MINIMIZE, SW_SHOW, SW_SHOWMINNOACTIVE, SW_SHOWNORMAL,
     SYSTEM_PARAMETERS_INFO_UPDATE_FLAGS, WINDOWPLACEMENT, WINDOW_EX_STYLE, WINEVENT_OUTOFCONTEXT,
     WINEVENT_SKIPOWNPROCESS, WM_CLIPBOARDUPDATE, WM_CLOSE, WM_DISPLAYCHANGE, WM_DPICHANGED,
     WM_ENDSESSION, WM_ERASEBKGND, WM_PAINT, WM_SETTINGCHANGE, WM_TIMER, WM_USER, WS_CAPTION,
@@ -1630,6 +1630,7 @@ fn bind_cmd(action: config::Action, arg: u16) -> Option<Cmd> {
         A::ToggleFloat => Cmd::ToggleFloat,
         A::FillDesktop => Cmd::ToggleFill,
         A::CloseWindow => Cmd::CloseFocused,
+        A::MinimizeWindow => Cmd::MinimizeWindow,
         A::CycleWidth => Cmd::CycleWidth,
         A::CycleHeight => Cmd::CycleHeight,
         A::CenterColumn => Cmd::CenterColumn,
@@ -2884,6 +2885,9 @@ enum Cmd {
     ToggleFloat,
     ToggleFill,
     CloseFocused,
+    /// main_key + Q: minimize the focused window; a quick double press of
+    /// the chord restores every window it minimized.
+    MinimizeWindow,
     /// This window was minimized or restored: re-tile its own monitor, if it
     /// is tiled there (`retile_for_target`, resolved when processed).
     RetileFor(isize),
@@ -2987,6 +2991,7 @@ impl Cmd {
             Cmd::ToggleFloat => "ToggleFloat",
             Cmd::ToggleFill => "ToggleFill",
             Cmd::CloseFocused => "CloseFocused",
+            Cmd::MinimizeWindow => "MinimizeWindow",
             Cmd::RetileFor(_) => "RetileFor",
             Cmd::RefreshMonitors => "RefreshMonitors",
             Cmd::RefreshWorkAreas => "RefreshWorkAreas",
@@ -13386,6 +13391,99 @@ unsafe fn show_workspace(mgr: &mut Manager, mi: usize, ws: usize) {
     }
 }
 
+/// Windows minimized with main_key + Q, per (monitor, workspace), in the
+/// order they were minimized: a second press within DOUBLE_TAP_MS restores
+/// them all and reflows the layout again.
+static MINIMIZED_BY_KEY: Mutex<Option<HashMap<(usize, usize), Vec<isize>>>> =
+    Mutex::new(None);
+/// now_ms() of the last minimize press; 0 = none yet.
+static MINIMIZE_TAP_MS: AtomicU64 = AtomicU64::new(0);
+
+/// main_key + Q: minimize the focused window. The tiling ignores minimized
+/// windows, so its workspace reflows at once. Pressed again within
+/// DOUBLE_TAP_MS, every window this chord minimized goes back and the layout
+/// reflows again.
+unsafe fn toggle_minimize(mgr: &mut Manager) {
+    let now = now_ms().max(1);
+    let last = MINIMIZE_TAP_MS.swap(now, Ordering::Relaxed);
+    if last != 0 && now.saturating_sub(last) <= u64::from(DOUBLE_TAP_MS) {
+        restore_minimized(mgr);
+        return;
+    }
+    let (mi, a, h) = mgr.focused();
+    if h == 0 || scratch_hidden(h) || !IsWindow(hwnd_from(h)).as_bool() {
+        return;
+    }
+    let hwnd = hwnd_from(h);
+    if IsIconic(hwnd).as_bool() {
+        return;
+    }
+    // Recorded before the minimize: the MINIMIZESTART retile may run first.
+    MINIMIZED_BY_KEY
+        .lock()
+        .unwrap()
+        .get_or_insert_with(HashMap::new)
+        .entry((mi, a))
+        .or_default()
+        .push(h);
+    // Posted, never waited for (a busy app would stall the manager); the
+    // retile below and the MINIMIZESTART event both re-tile once it lands.
+    let _ = ShowWindowAsync(hwnd, SW_MINIMIZE);
+    retile_monitor(mgr, mi);
+}
+
+/// Restore every window main_key + Q minimized, each to the workspace it was
+/// minimized from, and re-tile the monitors whose active workspace got one
+/// back. A window of a hidden workspace is restored and hidden again, so it
+/// reappears when that workspace is next shown.
+unsafe fn restore_minimized(mgr: &mut Manager) {
+    let by_key = MINIMIZED_BY_KEY
+        .lock()
+        .unwrap()
+        .take()
+        .unwrap_or_default();
+    let mut retile: Vec<usize> = Vec::new();
+    for ((mi, wi), wins) in by_key {
+        if mi >= mgr.monitors.len() {
+            continue;
+        }
+        let shown = mgr.monitors[mi].active == wi;
+        let mut any = false;
+        for h in wins {
+            let hwnd = hwnd_from(h);
+            if !IsWindow(hwnd).as_bool() || !IsIconic(hwnd).as_bool() {
+                continue;
+            }
+            // Still on the workspace it was minimized from (not moved away).
+            if !mgr.monitors[mi]
+                .workspaces
+                .get(wi)
+                .is_some_and(|ws| ws.windows.contains(&h))
+            {
+                continue;
+            }
+            let _ = ShowWindowAsync(hwnd, SW_RESTORE);
+            if !shown {
+                mark_hidden_by_us(h);
+                let _ = ShowWindowAsync(hwnd, SW_HIDE);
+            }
+            any = true;
+        }
+        if any && shown && !retile.contains(&mi) {
+            retile.push(mi);
+        }
+    }
+    for mi in retile {
+        let a = mgr.monitors[mi].active;
+        ensure_visible(mgr, mi, a);
+        retile_monitor(mgr, mi);
+        let f = mgr.monitors[mi].workspaces[a].focused;
+        if f != 0 {
+            focus_window(f);
+        }
+    }
+}
+
 /// Drop `h` from whatever workspace holds it and re-tile if that workspace is
 /// on screen. A no-op for an untracked handle.
 unsafe fn untrack_window(mgr: &mut Manager, h: isize) {
@@ -14156,6 +14254,7 @@ unsafe fn process(mgr: &mut Manager, cmd: Cmd) {
                 let _ = PostMessageW(hwnd_from(h), WM_CLOSE, WPARAM(0), LPARAM(0));
             }
         }
+        Cmd::MinimizeWindow => toggle_minimize(mgr),
         // The loop's update_bar does the work (and clears the flag again at
         // its top). Cleared here too, before any title is read, so a rename
         // from now on queues exactly one more refresh.
@@ -30358,6 +30457,9 @@ mod tests {
         }
         if vk == c.key_close_window {
             return one(Cmd::CloseFocused);
+        }
+        if vk == c.key_minimize_window {
+            return one(Cmd::MinimizeWindow);
         }
         if vk == c.key_fill_desktop {
             return one(Cmd::ToggleFill);
