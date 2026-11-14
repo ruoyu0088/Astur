@@ -13600,7 +13600,8 @@ unsafe fn show_workspace(mgr: &mut Manager, mi: usize, ws: usize) {
 /// Windows minimized with main_key + Q, per (monitor, workspace), in the
 /// order they were minimized: a second press within MINIMIZE_DELAY_MS
 /// restores them all and reflows the layout again.
-static MINIMIZED_BY_KEY: Mutex<Option<HashMap<(usize, usize), Vec<isize>>>> = Mutex::new(None);
+type MinimizedByKey = HashMap<(usize, usize), Vec<isize>>;
+static MINIMIZED_BY_KEY: Mutex<Option<MinimizedByKey>> = Mutex::new(None);
 
 /// How long a main+Q minimize waits before it fires. A second press inside
 /// this window means "restore everything this chord minimized" instead, so a
@@ -17667,10 +17668,12 @@ unsafe fn bar_widget_draw(
             SelectObject(hdc, fonts[0]);
         }
         BarWidget::Logo => {
-            if let Some((src, sw, sh)) = logo_alpha() {
+            if let Some((src, sw, sh)) = logo_image() {
                 let (lw, lh) = logo_dims(h_px);
-                let mask = scale_mask(src, *sw, *sh, lw as usize, lh as usize);
-                cv.mask((x, (h_px - lh) / 2), &mask, (lw, lh), it.color(data));
+                if lw > 0 && lh > 0 {
+                    let scaled = scale_rgba(src, *sw, *sh, lw as usize, lh as usize);
+                    cv.image((x, (h_px - lh) / 2), &scaled, (lw, lh));
+                }
             }
         }
         _ => {
@@ -18371,12 +18374,12 @@ fn aa_convex(px: &mut [u32], w: i32, pts: &[(f32, f32)], color: u32) {
     }
 }
 
-/// `src`, an `sw` x `sh` alpha mask, scaled to `dw` x `dh`: each output
-/// pixel the area-weighted mean of the source it covers (a box filter, so
-/// shrinking keeps the edges smooth; enlarging repeats the nearest). Pure;
-/// a short `src` gives a blank mask.
-fn scale_mask(src: &[u8], sw: usize, sh: usize, dw: usize, dh: usize) -> Vec<u8> {
-    let mut out = vec![0u8; dw * dh];
+/// `src`, an `sw` x `sh` RGBA icon (0xAARRGGBB), scaled to `dw` x `dh`: each
+/// output pixel the area-weighted mean of the source it covers, averaged in
+/// premultiplied alpha so transparent edges do not pull black into the
+/// colours. Pure; a short `src` gives a blank image.
+fn scale_rgba(src: &[u32], sw: usize, sh: usize, dw: usize, dh: usize) -> Vec<u32> {
+    let mut out = vec![0u32; dw * dh];
     if sw == 0 || sh == 0 || dw == 0 || dh == 0 || src.len() < sw * sh {
         return out;
     }
@@ -18387,45 +18390,76 @@ fn scale_mask(src: &[u8], sw: usize, sh: usize, dw: usize, dh: usize) -> Vec<u8>
         let (y0, y1) = (oy as f32 * fy, (oy + 1) as f32 * fy);
         for ox in 0..dw {
             let (x0, x1) = (ox as f32 * fx, (ox + 1) as f32 * fx);
-            let mut sum = 0.0;
+            let (mut r, mut g, mut b, mut a) = (0.0, 0.0, 0.0, 0.0);
             for y in y0 as usize..(y1.ceil() as usize).min(sh) {
                 for x in x0 as usize..(x1.ceil() as usize).min(sw) {
-                    sum += src[y * sw + x] as f32 * part(x, x0, x1) * part(y, y0, y1);
+                    let wgt = part(x, x0, x1) * part(y, y0, y1);
+                    let p = src[y * sw + x];
+                    let pa = ((p >> 24) & 0xFF) as f32 * wgt;
+                    r += ((p >> 16) & 0xFF) as f32 * pa;
+                    g += ((p >> 8) & 0xFF) as f32 * pa;
+                    b += (p & 0xFF) as f32 * pa;
+                    a += pa;
                 }
             }
-            out[oy * dw + ox] = (sum / (fx * fy)).round().clamp(0.0, 255.0) as u8;
+            let alpha = (a / (fx * fy)).round().clamp(0.0, 255.0) as u32;
+            let ch = |v: f32| {
+                if a > 0.0 {
+                    (v / a).round().clamp(0.0, 255.0) as u32
+                } else {
+                    0
+                }
+            };
+            out[oy * dw + ox] = (alpha << 24) | (ch(r) << 16) | (ch(g) << 8) | ch(b);
         }
     }
     out
 }
 
-/// `color` (0x00RRGGBB) through alpha `mask` (`size` = mw x mh) onto `px`
-/// (`w` wide) at `at`. Pure: clipped to the buffer.
-fn blend_mask(px: &mut [u32], w: i32, at: (i32, i32), mask: &[u8], size: (i32, i32), color: u32) {
+/// `src`, an RGBA icon (`size` = mw x mh, 0xAARRGGBB), onto `px` (`w` wide)
+/// at `at`, src-over. Pure: clipped to the buffer.
+fn blend_rgba(px: &mut [u32], w: i32, at: (i32, i32), src: &[u32], size: (i32, i32)) {
     let ((x, y), (mw, mh)) = (at, size);
     if w <= 0 || mw <= 0 || mh <= 0 {
         return;
     }
     let h = (px.len() / w as usize) as i32;
-    for (k, &a) in mask.iter().enumerate().take((mw * mh) as usize) {
-        let (dx, dy) = (x + k as i32 % mw, y + k as i32 / mw);
-        if a > 0 && (0..w).contains(&dx) && (0..h).contains(&dy) {
-            let p = &mut px[(dy * w + dx) as usize];
-            *p = blend_px(*p, color, a as f32 / 255.0);
+    for oy in 0..mh {
+        let dy = y + oy;
+        if !(0..h).contains(&dy) {
+            continue;
+        }
+        for ox in 0..mw {
+            let dx = x + ox;
+            if !(0..w).contains(&dx) {
+                continue;
+            }
+            let s = src[(oy * mw + ox) as usize];
+            let a = (s >> 24) & 0xFF;
+            if a == 0 {
+                continue;
+            }
+            let i = (dy * w + dx) as usize;
+            let d = px[i];
+            let mix = |sc: u32, dc: u32| ((sc * a + dc * (255 - a) + 127) / 255) & 0xFF;
+            px[i] = (d & 0xFF00_0000)
+                | (mix((s >> 16) & 0xFF, (d >> 16) & 0xFF) << 16)
+                | (mix((s >> 8) & 0xFF, (d >> 8) & 0xFF) << 8)
+                | mix(s & 0xFF, d & 0xFF);
         }
     }
 }
 
-/// The Astur bird's alpha (the tray icon PNG, Astur's own mark) as (mask,
-/// width, height), read once: CreateIconFromResourceEx decodes the PNG as
-/// the tray does, GetIconInfo + GetDIBits give its 32 bpp pixels. None
-/// when any step fails (the logo then draws nothing). Scaled per paint by
-/// `scale_mask`, a few hundred additions, rather than trusting the PNG
-/// scaling inside CreateIconFromResourceEx.
-fn logo_alpha() -> Option<&'static (Vec<u8>, usize, usize)> {
+/// The Astur mark (the tray icon PNG) as (pixels 0xAARRGGBB, width, height),
+/// read once: CreateIconFromResourceEx decodes the PNG as the tray does,
+/// GetIconInfo + GetDIBits give its 32 bpp pixels. None when any step fails
+/// (the logo then draws nothing). Trimmed to what actually has alpha, so the
+/// bar shows the mark and not the clear margin around it; scaled per paint
+/// by `scale_rgba`.
+fn logo_image() -> Option<&'static (Vec<u32>, usize, usize)> {
     use windows::Win32::Graphics::Gdi::{GetDIBits, GetObjectW, BITMAP};
     use windows::Win32::UI::WindowsAndMessaging::GetIconInfo;
-    static LOGO: OnceLock<Option<(Vec<u8>, usize, usize)>> = OnceLock::new();
+    static LOGO: OnceLock<Option<(Vec<u32>, usize, usize)>> = OnceLock::new();
     LOGO.get_or_init(|| unsafe {
         let icon =
             CreateIconFromResourceEx(TRAY_ICON_PNG, BOOL(1), 0x0003_0000, 0, 0, LR_DEFAULTCOLOR)
@@ -18477,28 +18511,27 @@ fn logo_alpha() -> Option<&'static (Vec<u8>, usize, usize)> {
         if lines == 0 {
             return None;
         }
-        // Trimmed to the bird itself: the 32 x 32 icon is mostly clear
-        // above and below its wings, which would shrink it in the bar.
+        // Trimmed to the pixels that are actually there: the 32 x 32 icon
+        // carries a clear margin, which would shrink the mark in the bar.
         let (w, h) = (w as usize, h as usize);
-        let alpha: Vec<u8> = pixels.iter().map(|p| (p >> 24) as u8).collect();
-        let solid = |i: usize| alpha[i] > 16;
+        let solid = |i: usize| (pixels[i] >> 24) > 16;
         let xs = (0..w).filter(|&x| (0..h).any(|y| solid(y * w + x)));
         let ys = (0..h).filter(|&y| (0..w).any(|x| solid(y * w + x)));
         let (x0, x1) = (xs.clone().min()?, xs.max()? + 1);
         let (y0, y1) = (ys.clone().min()?, ys.max()? + 1);
         let trimmed = (y0..y1)
-            .flat_map(|y| alpha[y * w + x0..y * w + x1].iter().copied())
+            .flat_map(|y| pixels[y * w + x0..y * w + x1].iter().copied())
             .collect();
         Some((trimmed, x1 - x0, y1 - y0))
     })
     .as_ref()
 }
 
-/// The logo's drawn size on a bar `h` px tall: the bird fitted into 1.1 h
+/// The logo's drawn size on a bar `h` px tall: the mark fitted into 1.1 h
 /// by 0.5 h, about a capital's height, and never enlarged past the 32 px
-/// source (a blurred bird looks worse than a small one). (0, 0) without it.
+/// source (an upscaled mark looks worse than a small one). (0, 0) without it.
 fn logo_dims(h: i32) -> (i32, i32) {
-    let Some((_, w, lh)) = logo_alpha() else {
+    let Some((_, w, lh)) = logo_image() else {
         return (0, 0);
     };
     let (w, lh) = (*w as f32, *lh as f32);
@@ -18573,9 +18606,9 @@ impl BarCanvas {
         self.with_pixels(|px| aa_convex(px, self.w, pts, px_color(color)));
     }
 
-    /// `blend_mask` in a COLORREF (the logo); nothing without a DIB.
-    unsafe fn mask(&self, at: (i32, i32), mask: &[u8], size: (i32, i32), color: u32) {
-        self.with_pixels(|px| blend_mask(px, self.w, at, mask, size, px_color(color)));
+    /// `blend_rgba` (the logo, in its own colours); nothing without a DIB.
+    unsafe fn image(&self, at: (i32, i32), src: &[u32], size: (i32, i32)) {
+        self.with_pixels(|px| blend_rgba(px, self.w, at, src, size));
     }
 
     /// Run `f` on the DIB's pixels after a GdiFlush (see `shape`); nothing
@@ -29367,29 +29400,33 @@ mod tests {
     }
 
     #[test]
-    fn the_logo_mask_scales_and_blends() {
-        // 4x4 to 2x2: each output pixel the mean of its 2x2 block.
-        let src = [255, 255, 0, 0, 255, 255, 0, 0, 0, 0, 0, 100, 0, 0, 100, 100];
-        assert_eq!(scale_mask(&src, 4, 4, 2, 2), [255, 0, 0, 75]);
-        assert_eq!(scale_mask(&src, 4, 4, 2, 1), [128, 38]);
-        assert_eq!(scale_mask(&[9], 1, 1, 2, 2), [9; 4], "enlarged: nearest");
-        assert_eq!(
-            scale_mask(&[1, 2], 4, 4, 2, 2),
-            [0; 4],
-            "short source: blank"
-        );
+    fn the_logo_scales_and_blends_in_colour() {
+        // 2x2 red-on-half-alpha and blue-opaque, scaled 1:1.
+        let mut src = vec![0x80FF_0000u32, 0xFF00_00FF, 0xFFFF_FFFF, 0x0000_0000];
+        assert_eq!(scale_rgba(&src, 2, 2, 2, 2), src, "1:1 keeps the pixels");
+        // 2x2 to 1x1: the mean, averaged in premultiplied alpha.
+        src.truncate(4);
+        let one = scale_rgba(&src, 2, 2, 1, 1);
+        let a = (one[0] >> 24) & 0xFF;
+        assert!(a > 0x80 && a < 0xFF, "mean alpha, got {a:#X}");
+        assert!((one[0] >> 16) & 0xFF > 0x80, "red kept: {:#X}", one[0]);
+        // Short source, zero size: blank, never a panic.
+        assert_eq!(scale_rgba(&[], 2, 2, 1, 1), vec![0]);
+        assert_eq!(scale_rgba(&src, 2, 2, 0, 0), Vec::<u32>::new());
+        // blend_rgba: opaque over, half over, transparent leaves it alone.
         let mut px = vec![0u32; 3 * 2];
-        blend_mask(&mut px, 3, (2, 0), &[255, 128, 0, 255], (2, 2), 0x00FF_FFFF);
-        assert_eq!(px, [0, 0, 0x00FF_FFFF, 0, 0, 0], "clipped at the edge");
-        blend_mask(&mut px, 3, (0, 1), &[128], (1, 1), 0x00FF_FFFF);
-        assert_eq!(px[3], 0x0080_8080);
-        // The bird itself, trimmed to its wings: wider than tall, solid.
-        let (alpha, w, h) = logo_alpha().expect("the tray PNG decodes");
-        assert!(*w > *h && *h > 0 && alpha.len() == w * h);
-        assert!(alpha.iter().any(|&a| a > 200));
-        // Fitted to the bar, never enlarged.
+        blend_rgba(&mut px, 3, (0, 0), &[0xFF00_FF00], (1, 1));
+        assert_eq!(px[0], 0x0000_FF00);
+        blend_rgba(&mut px, 3, (0, 0), &[0x0000_0000], (1, 1));
+        assert_eq!(px[0], 0x0000_FF00, "transparent: unchanged");
+        blend_rgba(&mut px, 3, (2, 0), &[0xFF11_2233, 0xFF44_5566], (1, 2));
+        assert_eq!(px[2], 0x0011_2233, "clipped at the bottom edge");
+        // The mark itself: shaped like something, fitted to the bar.
+        let (pixels, w, h) = logo_image().expect("the tray PNG decodes");
+        assert!(*w > 0 && *h > 0 && pixels.len() == w * h);
+        assert!(pixels.iter().any(|&p| (p >> 24) > 200));
         let (lw, lh) = logo_dims(36);
-        assert!(lw <= *w as i32 && lh <= 18 && lw > lh, "{lw}x{lh}");
+        assert!(lw > 0 && lh > 0 && lw <= *w as i32 && lh <= 18, "{lw}x{lh}");
     }
 
     #[test]
@@ -30857,6 +30894,11 @@ mod tests {
     fn old_lookup(c: &Config, vk: u32, shift: bool, ctrl: bool) -> Option<String> {
         if vk == c.key_system_menu && !shift && c.system_menu_enabled {
             return Some("SystemMenu".into());
+        }
+        if vk == c.key_swap_workspace
+            && (!shift || matches!(c.main_key, config::MainKey::LAlt | config::MainKey::RAlt))
+        {
+            return Some("SwapWorkspaceMode".into());
         }
         if vk == 0x20 && !shift && c.launcher_enabled {
             return Some("Launcher".into());
