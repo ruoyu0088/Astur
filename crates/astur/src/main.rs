@@ -8936,8 +8936,10 @@ unsafe fn active_window_rects(mgr: &Manager, mi: usize) -> Vec<(isize, RECT)> {
             items.push((h, r));
         }
     }
-    // A hidden window still has a rect: Alt+arrow picked the scratchpad.
-    items.retain(|&(h, _)| !scratch_hidden(h));
+    // A hidden window still has a rect: Alt+arrow picked the scratchpad. A
+    // minimised one is not in the tiling, and its rect is its icon's: neither
+    // may be a direction target, or focus left the visible workspace.
+    items.retain(|&(h, _)| focusable(h));
     items
 }
 
@@ -12998,16 +13000,26 @@ fn scratch_hidden(h: isize) -> bool {
         && !unsafe { IsWindowVisible(hwnd_from(h)) }.as_bool()
 }
 
+/// Can `h` take the focus? Not the toggled-away scratchpad, and not a
+/// minimised window: it is outside the tiling (`tiled_windows` skips it), so
+/// focusing it would leave no visible window showing the focus. `IsIconic`
+/// answers false for a handle that is not a live window, so the fake handles
+/// tests use stay focusable.
+fn focusable(h: isize) -> bool {
+    h != 0 && !scratch_hidden(h) && !unsafe { IsIconic(hwnd_from(h)).as_bool() }
+}
+
+
 /// Where focus lands on `ws`: `focused`, else its first window, never the
 /// toggled-away scratchpad. 0 when nothing is left.
 fn focus_target(ws: &Workspace) -> isize {
-    if ws.focused != 0 && !scratch_hidden(ws.focused) {
+    if focusable(ws.focused) {
         return ws.focused;
     }
     ws.windows
         .iter()
         .copied()
-        .find(|&w| !scratch_hidden(w))
+        .find(|&w| focusable(w))
         .unwrap_or(0)
 }
 
@@ -13019,7 +13031,7 @@ fn focus_step(ws: &Workspace, d: i32) -> Option<isize> {
     let len = ws.windows.len() as i32;
     (1..=len)
         .map(|k| ws.windows[(idx + d * k).rem_euclid(len) as usize])
-        .find(|&w| !scratch_hidden(w))
+        .find(|&w| focusable(w))
 }
 
 unsafe fn toggle_scratchpad(mgr: &mut Manager) {
