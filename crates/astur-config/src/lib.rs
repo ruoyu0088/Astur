@@ -213,10 +213,13 @@ pub struct Config {
     pub key_consume_left: u32,   // Alt+<key> scrolling: consume/expel left (default [)
     pub key_consume_right: u32,  // Alt+<key> scrolling: consume/expel right (default ])
     pub key_fill_desktop: u32,   // Alt+<key> fill the workspace, focused on top (default E)
-    pub key_system_menu: u32,    // Alt+<key> open the power menu (default ')
+    pub key_system_menu: u32,    // Alt+<key> open the power menu (default M)
     pub key_switch_ws_1: u32,    // Alt+<key> go to the focused monitor's 1st workspace (default ,)
     pub key_switch_ws_2: u32,    // Alt+<key> go to its 2nd workspace (default .)
     pub key_switch_ws_3: u32,    // Alt+<key> go to its 3rd workspace (default /)
+    pub key_switch_ws_4: u32,    // Alt+<key> go to the NEXT monitor's 1st workspace (default L)
+    pub key_switch_ws_5: u32,    // Alt+<key> go to its 2nd workspace (default ;)
+    pub key_switch_ws_6: u32,    // Alt+<key> go to its 3rd workspace (default ')
     pub theme: String,           // popup palette: dark | light | auto (follows Windows)
     pub acrylic: bool,           // experimental acrylic blur behind the popups
     pub bar_floating: bool,      // detached rounded bar (margins from the screen edges)
@@ -1316,10 +1319,13 @@ impl Config {
             key_consume_left: 0xDB,   // [ (VK_OEM_4)
             key_consume_right: 0xDD,  // ] (VK_OEM_6)
             key_fill_desktop: 0x45,   // E
-            key_system_menu: 0xDE,    // ' (VK_OEM_7)
+            key_system_menu: 0x4D,    // M
             key_switch_ws_1: 0xBC,    // , (VK_OEM_COMMA)
             key_switch_ws_2: 0xBE,    // . (VK_OEM_PERIOD)
             key_switch_ws_3: 0xBF,    // / (VK_OEM_2)
+            key_switch_ws_4: 0x4C,    // L
+            key_switch_ws_5: 0xBA,    // ; (VK_OEM_1)
+            key_switch_ws_6: 0xDE,    // ' (VK_OEM_7)
             main_key: MainKey::RAlt,
             theme: "dark".to_string(),
             acrylic: false,
@@ -1884,9 +1890,11 @@ main_key = ralt
 #   Alt+Shift+arrows     move window by direction (across monitors)
 #   Alt+S                promote focused window to master
 #   Alt+E                fill the workspace (the focused window on top), and back
-#   Alt+'                open the power menu (lock, sleep, restart ...)
+#   Alt+M                open the power menu (lock, sleep, restart ...)
 #   Alt+, / Alt+. / Alt+/  go to the 1st / 2nd / 3rd workspace of THIS screen
+#   Alt+L / Alt+; / Alt+'  go to the 1st / 2nd / 3rd workspace of the NEXT screen
 #   Alt+Shift+, / . / /    move the focused window to that workspace
+#   Alt+Shift+L ; '        move the focused window to the next screen's workspace
 #   Alt+Z / Alt+C        master layout: shrink / grow the master column;
 #                        dwindle layout: shrink / grow the focused window's split
 #   Alt+F                toggle floating for the focused window
@@ -1922,7 +1930,7 @@ main_key = ralt
 #                        beside it, middle = stack into its column
 #   Alt + right-drag     side edge = column width, top/bottom = window height
 #
-# The keys above (D A Z C S T F W E and ' for the power menu, and R X [ ] for
+# The keys above (D A Z C S T F W E and M for the power menu, and R X [ ] for
 # scrolling) are rebindable. Each takes a single key name (see the 'keys' type
 # at the top of this file). Arrows, Home, End and Enter are fixed.  key
 key_focus_next = D
@@ -1938,13 +1946,19 @@ key_center_column = X
 key_consume_left = [
 key_consume_right = ]
 key_fill_desktop = E
-key_system_menu = '
+key_system_menu = M
 # Alt+, / Alt+. / Alt+/ go to the 1st / 2nd / 3rd workspace of the focused
 # monitor, in that monitor's own order (a screen holding 2, 4, 6, 8 goes to
 # 2, 4, 6). Add Shift to move the focused window to that workspace.
 key_switch_ws_1 = ,
 key_switch_ws_2 = .
 key_switch_ws_3 = /
+# Alt+L / Alt+; / Alt+' go to the 1st / 2nd / 3rd workspace of the NEXT
+# monitor (the one after the focused monitor, wrapping to the first; with a
+# single monitor, of that one). Add Shift to move the focused window there.
+key_switch_ws_4 = l
+key_switch_ws_5 = ;
+key_switch_ws_6 = '
 # ============================================================================
 ";
 
@@ -3201,6 +3215,21 @@ fn parse_into_from(c: &mut Config, text: &str, source: &str) {
                     c.key_switch_ws_3 = k;
                 }
             }
+            "key_switch_ws_4" => {
+                if let Some(k) = key_to_vk(v) {
+                    c.key_switch_ws_4 = k;
+                }
+            }
+            "key_switch_ws_5" => {
+                if let Some(k) = key_to_vk(v) {
+                    c.key_switch_ws_5 = k;
+                }
+            }
+            "key_switch_ws_6" => {
+                if let Some(k) = key_to_vk(v) {
+                    c.key_switch_ws_6 = k;
+                }
+            }
             "main_key" | "mod" => {
                 if let Some(k) = MainKey::from_name(v) {
                     c.main_key = k;
@@ -3697,6 +3726,9 @@ pub fn reload_groups(old: &Config, new: &Config) -> ReloadGroups {
         key_switch_ws_1,
         key_switch_ws_2,
         key_switch_ws_3,
+        key_switch_ws_4,
+        key_switch_ws_5,
+        key_switch_ws_6,
         main_key,
         theme,
         acrylic,
@@ -3810,6 +3842,7 @@ pub fn reload_groups(old: &Config, new: &Config) -> ReloadGroups {
     diff!(live: key_cycle_width, key_center_column, key_consume_left, key_consume_right);
     diff!(live: key_fill_desktop, key_system_menu);
     diff!(live: key_switch_ws_1, key_switch_ws_2, key_switch_ws_3);
+    diff!(live: key_switch_ws_4, key_switch_ws_5, key_switch_ws_6);
     diff!(live: main_key);
     // Fail-safe: a difference none of the above caught (a field compared in
     // the wrong place, a PartialEq quirk) must still apply, so do it all.
@@ -4025,13 +4058,15 @@ pub enum Action {
     MoveToWorkspace,
     SwitchMonitorWorkspace,
     MoveToMonitorWorkspace,
+    SwitchNextMonitorWorkspace,
+    MoveToNextMonitorWorkspace,
     Extra,
 }
 
 impl Action {
     /// Every action in declaration order (`ALL[a as usize] == a`), which is
     /// how a table entry stores it.
-    pub const ALL: [Action; 40] = {
+    pub const ALL: [Action; 42] = {
         use Action::*;
         [
             Launcher,
@@ -4073,6 +4108,8 @@ impl Action {
             MoveToWorkspace,
             SwitchMonitorWorkspace,
             MoveToMonitorWorkspace,
+            SwitchNextMonitorWorkspace,
+            MoveToNextMonitorWorkspace,
             Extra,
         ]
     };
@@ -4120,6 +4157,8 @@ impl Action {
             MoveToWorkspace => "Move the window to a workspace",
             SwitchMonitorWorkspace => "Go to a workspace of this screen",
             MoveToMonitorWorkspace => "Move the window to a workspace of this screen",
+            SwitchNextMonitorWorkspace => "Go to a workspace of the next screen",
+            MoveToNextMonitorWorkspace => "Move the window to a workspace of the next screen",
             Extra => "Custom shortcut",
         }
     }
@@ -4513,6 +4552,13 @@ pub fn compile_keys(c: &Config) -> Keymap {
     {
         k.put_loose(c, m, vk, (SwitchMonitorWorkspace, i as u16), false);
         k.put_loose(c, m | MOD_SHIFT, vk, (MoveToMonitorWorkspace, i as u16), false);
+    }
+    for (i, &vk) in [c.key_switch_ws_4, c.key_switch_ws_5, c.key_switch_ws_6]
+        .iter()
+        .enumerate()
+    {
+        k.put_loose(c, m, vk, (SwitchNextMonitorWorkspace, i as u16), false);
+        k.put_loose(c, m | MOD_SHIFT, vk, (MoveToNextMonitorWorkspace, i as u16), false);
     }
     for (i, &vk) in c.workspace_keys.iter().enumerate() {
         k.put_loose(c, m, vk, (SwitchWorkspace, i as u16), false);
@@ -5137,8 +5183,17 @@ outer_gap = 4
         assert_eq!(m[&(MOD_ALT, 0x31)], ws(0));
         assert_eq!(m[&(MOD_ALT, 0x20)], (Action::Launcher, 0));
         assert_eq!(m[&(MOD_ALT, 0x45)], (Action::FillDesktop, 0));
-        assert_eq!(m[&(MOD_ALT, 0xDE)], (Action::SystemMenu, 0));
+        // System menu now lives on M by default.
+        assert_eq!(m[&(MOD_ALT, 0x4D)], (Action::SystemMenu, 0));
         assert_eq!(m[&(MOD_ALT, 0xBC)], (Action::SwitchMonitorWorkspace, 0));
+        // Next-screen workspace keys (L, ;, ').
+        assert_eq!(m[&(MOD_ALT, 0x4C)], (Action::SwitchNextMonitorWorkspace, 0));
+        assert_eq!(m[&(MOD_ALT, 0xBA)], (Action::SwitchNextMonitorWorkspace, 1));
+        assert_eq!(m[&(MOD_ALT, 0xDE)], (Action::SwitchNextMonitorWorkspace, 2));
+        assert_eq!(
+          m[&(MOD_ALT | MOD_SHIFT, 0x4C)],
+          (Action::MoveToNextMonitorWorkspace, 0)
+        );
         assert_eq!(m[&(MOD_ALT, 0xBE)], (Action::SwitchMonitorWorkspace, 1));
         assert_eq!(m[&(MOD_ALT, 0xBF)], (Action::SwitchMonitorWorkspace, 2));
         assert_eq!(

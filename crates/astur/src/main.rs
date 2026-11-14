@@ -1652,6 +1652,8 @@ fn bind_cmd(action: config::Action, arg: u16) -> Option<Cmd> {
         A::MoveToWorkspace => Cmd::MoveToWs(arg as usize),
         A::SwitchMonitorWorkspace => Cmd::SwitchLocal(arg as usize),
         A::MoveToMonitorWorkspace => Cmd::MoveToLocalWs(arg as usize),
+        A::SwitchNextMonitorWorkspace => Cmd::SwitchNextLocal(arg as usize),
+        A::MoveToNextMonitorWorkspace => Cmd::MoveToNextLocalWs(arg as usize),
         A::Extra => Cmd::Extra(arg as usize),
     })
 }
@@ -2070,6 +2072,9 @@ unsafe extern "system" fn keyboard_proc(code: i32, wparam: WPARAM, lparam: LPARA
                                     }
                                     config::Action::MoveToMonitorWorkspace => {
                                         push_cmd(Cmd::MoveToLocalWs(arg as usize));
+                                    }
+                                    config::Action::MoveToNextMonitorWorkspace => {
+                                        push_cmd(Cmd::MoveToNextLocalWs(arg as usize));
                                     }
                                     _ => {}
                                 }
@@ -2868,9 +2873,11 @@ enum Cmd {
     ResizeMaster(f32),
     Switch(usize),
     SwitchLocal(usize),
+    SwitchNextLocal(usize),
     YasbFocus(yasb::Focus),
     MoveToWs(usize),
     MoveToLocalWs(usize),
+    MoveToNextLocalWs(usize),
     ToggleTiling,
     ToggleFloat,
     ToggleFill,
@@ -2968,9 +2975,11 @@ impl Cmd {
             Cmd::ResizeMaster(_) => "ResizeMaster",
             Cmd::Switch(_) => "Switch",
             Cmd::SwitchLocal(_) => "SwitchLocal",
+            Cmd::SwitchNextLocal(_) => "SwitchNextLocal",
             Cmd::YasbFocus(_) => "YasbFocus",
             Cmd::MoveToWs(_) => "MoveToWs",
             Cmd::MoveToLocalWs(_) => "MoveToLocalWs",
+            Cmd::MoveToNextLocalWs(_) => "MoveToNextLocalWs",
             Cmd::ToggleTiling => "ToggleTiling",
             Cmd::ToggleFloat => "ToggleFloat",
             Cmd::ToggleFill => "ToggleFill",
@@ -13590,6 +13599,23 @@ unsafe fn process(mgr: &mut Manager, cmd: Cmd) {
                 show_workspace(mgr, mi, i);
             }
         }
+        Cmd::SwitchNextLocal(i) => {
+            // Alt+L / Alt+; / Alt+' — 1st/2nd/3rd workspace of the NEXT
+            // monitor, wrapping to the first (a single monitor uses its
+            // own).
+            if mgr.monitors.is_empty() {
+                return;
+            }
+            let cur = mgr.focused_mon.min(mgr.monitors.len() - 1);
+            let mi = if mgr.monitors.len() <= 1 {
+                cur
+            } else {
+                (cur + 1) % mgr.monitors.len()
+            };
+            if i < mgr.monitors[mi].workspaces.len() {
+                show_workspace(mgr, mi, i);
+            }
+        }
         Cmd::YasbFocus(focus) => yasb::focus_workspace(mgr, focus),
         Cmd::MoveToWs(i) => {
             if i >= mgr.cfg.workspaces || !mgr.tiling || mgr.monitors.is_empty() {
@@ -13683,6 +13709,56 @@ unsafe fn process(mgr: &mut Manager, cmd: Cmd) {
             // it is hidden.
             snap_remove(mgr.monitors[mi].hmon, from_a);
             place_hidden_workspace(mgr, mi, from_a);
+        }
+        Cmd::MoveToNextLocalWs(i) => {
+            // Alt+Shift+L / ; / ': move the focused window to the Nth
+            // workspace of the NEXT monitor, wrapping to the first (a
+            // single monitor is the same as MoveToLocalWs). The window
+            // travels first, then its destination is shown, exactly as
+            // MoveToWs does across screens.
+            if !mgr.tiling || mgr.monitors.is_empty() {
+                return;
+            }
+            let from_mi = mgr.focused_mon.min(mgr.monitors.len() - 1);
+            let to_mi = if mgr.monitors.len() <= 1 {
+                from_mi
+            } else {
+                (from_mi + 1) % mgr.monitors.len()
+            };
+            if i >= mgr.monitors[to_mi].workspaces.len() {
+                return;
+            }
+            let from_a = mgr.monitors[from_mi].active;
+            if to_mi == from_mi && i == from_a {
+                return;
+            }
+            let h = mgr.monitors[from_mi].workspaces[from_a].focused;
+            if h == 0 {
+                return;
+            }
+            if !mgr.move_window(h, to_mi, i, None) {
+                return;
+            }
+            let reflow_now = move_needs_source_retile(to_mi, from_mi);
+            mgr.focused_mon = to_mi;
+            let to_shown = i == mgr.monitors[to_mi].active;
+            if reflow_now {
+                retile_monitor_opts(mgr, from_mi, to_shown);
+            }
+            if !to_shown {
+                switch_monitor_workspace(mgr, to_mi, i);
+                if !reflow_now {
+                    snap_remove(mgr.monitors[from_mi].hmon, from_a);
+                    place_hidden_workspace(mgr, from_mi, from_a);
+                }
+            } else {
+                retile_monitor(mgr, to_mi);
+                focus_window(h);
+                if mgr.cfg.cursor_follows_focus {
+                    center_cursor_on(mgr, h);
+                }
+                bump_follow_settle();
+            }
         }
         Cmd::ToggleTiling => {
             // Flip tiling only. Workspaces stay intact so Alt+1..9 keeps working
@@ -26069,9 +26145,11 @@ fn main() {
         println!("  Alt+W          = close focused window");
         println!("  Alt+E          = fill the workspace (focused window on top, or back)");
         println!("  Alt+Space      = app launcher (type to filter, Enter to run)");
-        println!("  Alt+'          = open the power menu");
+        println!("  Alt+M          = open the power menu");
         println!("  Alt+, . /      = 1st / 2nd / 3rd workspace of this screen");
         println!("  Alt+Shift+, . / = move focused window to that workspace");
+        println!("  Alt+L ; '      = 1st / 2nd / 3rd workspace of the next screen");
+        println!("  Alt+Shift+L ; ' = move focused window to the next screen's workspace");
         println!("  Alt+Enter      = launch terminal");
         println!("  Alt+Shift+Enter= launch default browser");
         println!("  Alt+1..9,0     = switch workspace (or click a bar pill)");
