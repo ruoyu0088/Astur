@@ -13601,19 +13601,21 @@ unsafe fn process(mgr: &mut Manager, cmd: Cmd) {
         }
         Cmd::SwitchNextLocal(i) => {
             // Alt+L / Alt+; / Alt+' — 1st/2nd/3rd workspace of the NEXT
-            // monitor, wrapping to the first (a single monitor uses its
-            // own).
+            // monitor, wrapping to the first. With a single monitor the
+            // same three keys land on that screen's 4th/5th/6th workspace
+            // instead (i + 3), so they do not merely duplicate
+            // key_switch_ws_1/2/3 on one-screen setups.
             if mgr.monitors.is_empty() {
                 return;
             }
             let cur = mgr.focused_mon.min(mgr.monitors.len() - 1);
-            let mi = if mgr.monitors.len() <= 1 {
-                cur
+            let (mi, wi) = if mgr.monitors.len() <= 1 {
+                (cur, i + 3)
             } else {
-                (cur + 1) % mgr.monitors.len()
+                ((cur + 1) % mgr.monitors.len(), i)
             };
-            if i < mgr.monitors[mi].workspaces.len() {
-                show_workspace(mgr, mi, i);
+            if wi < mgr.monitors[mi].workspaces.len() {
+                show_workspace(mgr, mi, wi);
             }
         }
         Cmd::YasbFocus(focus) => yasb::focus_workspace(mgr, focus),
@@ -13712,41 +13714,42 @@ unsafe fn process(mgr: &mut Manager, cmd: Cmd) {
         }
         Cmd::MoveToNextLocalWs(i) => {
             // Alt+Shift+L / ; / ': move the focused window to the Nth
-            // workspace of the NEXT monitor, wrapping to the first (a
-            // single monitor is the same as MoveToLocalWs). The window
+            // workspace of the NEXT monitor, wrapping to the first. With a
+            // single monitor the destination is that screen's (i + 3)th
+            // workspace (4/5/6), matching Cmd::SwitchNextLocal. The window
             // travels first, then its destination is shown, exactly as
             // MoveToWs does across screens.
             if !mgr.tiling || mgr.monitors.is_empty() {
                 return;
             }
             let from_mi = mgr.focused_mon.min(mgr.monitors.len() - 1);
-            let to_mi = if mgr.monitors.len() <= 1 {
-                from_mi
+            let (to_mi, wi) = if mgr.monitors.len() <= 1 {
+                (from_mi, i + 3)
             } else {
-                (from_mi + 1) % mgr.monitors.len()
+                ((from_mi + 1) % mgr.monitors.len(), i)
             };
-            if i >= mgr.monitors[to_mi].workspaces.len() {
+            if wi >= mgr.monitors[to_mi].workspaces.len() {
                 return;
             }
             let from_a = mgr.monitors[from_mi].active;
-            if to_mi == from_mi && i == from_a {
+            if to_mi == from_mi && wi == from_a {
                 return;
             }
             let h = mgr.monitors[from_mi].workspaces[from_a].focused;
             if h == 0 {
                 return;
             }
-            if !mgr.move_window(h, to_mi, i, None) {
+            if !mgr.move_window(h, to_mi, wi, None) {
                 return;
             }
             let reflow_now = move_needs_source_retile(to_mi, from_mi);
             mgr.focused_mon = to_mi;
-            let to_shown = i == mgr.monitors[to_mi].active;
+            let to_shown = wi == mgr.monitors[to_mi].active;
             if reflow_now {
                 retile_monitor_opts(mgr, from_mi, to_shown);
             }
             if !to_shown {
-                switch_monitor_workspace(mgr, to_mi, i);
+                switch_monitor_workspace(mgr, to_mi, wi);
                 if !reflow_now {
                     snap_remove(mgr.monitors[from_mi].hmon, from_a);
                     place_hidden_workspace(mgr, from_mi, from_a);
