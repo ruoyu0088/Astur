@@ -348,6 +348,10 @@ SCHEMA_DATA = {
             ("focused_border", "colour", "#66AAFF", "", "Border colour of the focused window. colour"),
             ("unfocused_border", "colour", "#223A5E", "", "Border colour of unfocused windows. colour"),
         ]),
+        ("Taskbar hiding", [
+            ("hide_taskbar", "bool", "false", "", "Hide the Windows taskbar: it stays click-through and invisible, and HideTaskbar's key shows it for a moment. bool"),
+            ("hide_taskbar_hotkey", "key", "K", "", "Key (with the main key) that shows the taskbar until it slides away again. Pressing it twice in a row hides it at once."),
+        ]),
         ("Window rules", [
             ("ignore_classes", "text", "", "", "Never tile/manage these (in addition to the built-in shell/tooltip/lock-screen filtering). Example: ignore_classes = TaskManagerWindow, MyOverlayClass"),
             ("float_classes", "text", "", "", "Manage but always float these (let the app place them; don't tile). Example: float_classes = #32770, MsiDialogCloseClass"),
@@ -424,10 +428,13 @@ SCHEMA_DATA = {
             ("key_consume_left", "key", "[", "", "Stack the window on the left into the focused column."),
             ("key_consume_right", "key", "]", "", "Push the focused window into the column on the right."),
             ("key_fill_desktop", "key", "E", "", "Fill the whole work area with the focused window, or put everything back (the same key toggles)."),
-            ("key_system_menu", "key", "'", "", "Open the power menu: lock, sleep, restart and Astur's own actions."),
+            ("key_system_menu", "key", "M", "", "Open the power menu: lock, sleep, restart and Astur's own actions."),
             ("key_switch_ws_1", "key", ",", "", "Go to workspace 1; with Shift, move the focused window there."),
             ("key_switch_ws_2", "key", ".", "", "Go to workspace 2; with Shift, move the focused window there."),
             ("key_switch_ws_3", "key", "/", "", "Go to workspace 3; with Shift, move the focused window there."),
+            ("key_switch_ws_4", "key", "l", "", "Go to the next monitor's first workspace (on one monitor: workspace 4); with Shift, move the focused window there."),
+            ("key_switch_ws_5", "key", ";", "", "Go to the next monitor's second workspace (on one monitor: workspace 5); with Shift, move the focused window there."),
+            ("key_switch_ws_6", "key", "'", "", "Go to the next monitor's third workspace (on one monitor: workspace 6); with Shift, move the focused window there."),
         ]),
     ],
     "navbar": [

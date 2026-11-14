@@ -54,7 +54,9 @@ KEY_BLINDS = (
     "key_promote_master", "key_toggle_tiling", "key_toggle_float",
     "key_close_window", "key_cycle_width", "key_center_column",
     "key_consume_left", "key_consume_right", "key_fill_desktop",
-    "key_system_menu", "key_switch_ws_1", "key_switch_ws_2", "key_switch_ws_3",
+    "key_system_menu", "hide_taskbar_hotkey",
+    "key_switch_ws_1", "key_switch_ws_2", "key_switch_ws_3",
+    "key_switch_ws_4", "key_switch_ws_5", "key_switch_ws_6",
 )
 for _key in KEY_BLINDS:
     OVERRIDES[("astur", _key)] = ("key", "")
@@ -102,6 +104,21 @@ HELP_OVERRIDES = {
         "Go to workspace 2; with Shift, move the focused window there.",
     ("astur", "key_switch_ws_3"):
         "Go to workspace 3; with Shift, move the focused window there.",
+    ("astur", "key_switch_ws_4"):
+        "Go to the next monitor's first workspace (on one monitor: "
+        "workspace 4); with Shift, move the focused window there.",
+    ("astur", "key_switch_ws_5"):
+        "Go to the next monitor's second workspace (on one monitor: "
+        "workspace 5); with Shift, move the focused window there.",
+    ("astur", "key_switch_ws_6"):
+        "Go to the next monitor's third workspace (on one monitor: "
+        "workspace 6); with Shift, move the focused window there.",
+    ("astur", "hide_taskbar"):
+        "Hide the Windows taskbar: it stays click-through and invisible, "
+        "and HideTaskbar's key shows it for a moment. bool",
+    ("astur", "hide_taskbar_hotkey"):
+        "Key (with the main key) that shows the taskbar until it slides "
+        "away again. Pressing it twice in a row hides it at once.",
 }
 
 

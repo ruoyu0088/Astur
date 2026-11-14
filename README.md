@@ -134,6 +134,11 @@ them.
   categories with lock/sleep/hibernate/sign-out/restart/shutdown, settings, config,
   reload, restart-Astur, screenshot, and wallpaper actions. Order, width, icons,
   confirmation, custom categories, commands, URLs, and scripts are data-driven.
+- **Taskbar hiding** *(Astur, opt-in)* — `hide_taskbar = true` makes the Windows
+  taskbar (all monitors) invisible and click-through, so tiles reach the screen
+  edge; `hide_taskbar_hotkey` (`Alt+K` by default) shows it for a moment — Windows
+  focuses the tray, and Astur hides it again the instant it slides away. Exiting
+  Astur always puts the taskbar back.
 - **Desktop tools** *(Astur, opt-in)* — workspace-aware Alt+Tab picker, Alt+Grave
   scratchpad, clipboard/emoji launcher providers, workspace-triggered wallpaper,
   media title widget, active-workspace/MRU persistence, and local named-pipe IPC.
@@ -225,6 +230,7 @@ shortcut follow the key you picked.
 | `Alt` + `Z` / `C` | Shrink / grow master column (`master` layout) |
 | `Alt` + `S` | Promote focused window to master |
 | `Alt` + `E` | Fill the whole workspace (the focused window on top), or back (toggle) |
+| `Alt` + `K` | Show the taskbar for a moment, if hiding it is on (rebindable: `hide_taskbar_hotkey`) |
 | `Alt` + `F` | Toggle float for focused window |
 | `Alt` + `W` | Close focused window |
 | `Alt` + `Enter` | Launch terminal |
@@ -330,8 +336,8 @@ everything, which also repairs any window left mis-styled:
   `tab_bar_height`), gaps, borders, focus, animations/easing, popup theme/geometry,
   launcher providers/custom entries, system actions, desktop tools, rich rules,
   persistence, IPC, and hotkeys (`key_focus_next` … `key_fill_desktop`,
-  `key_system_menu`; scrolling keys: `key_cycle_width`, `key_center_column`,
-  `key_consume_left`, `key_consume_right`).
+  `key_system_menu`, `hide_taskbar_hotkey`; scrolling keys: `key_cycle_width`,
+  `key_center_column`, `key_consume_left`, `key_consume_right`).
 - **`navbar.conf`** — bar placement/style (`shape`, `palette`, `workspace_style`,
   `font_weight`, `border_width`, `island_padding`, `widget_colors`), three widget
   zones, labels/formats/icons (`icon_mode = glyph` for Windows icons), app

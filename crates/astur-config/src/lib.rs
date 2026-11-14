@@ -269,7 +269,13 @@ pub struct Config {
     pub bar_separator_style: String, // line | dot | powerline
     pub bar_hover: bool,             // highlight the clickable item under the pointer
     pub bar_title_format: String,    // title widget: {title} {app}
-    pub bar_title_bold: bool,        // title widget in a bold weight
+    pub bar_title_bold: bool,
+    /// Hide the taskbar by making it transparent and click-through, with a
+    /// hotkey to bring it back temporarily. Off by default.
+    pub hide_taskbar: bool,
+    /// Key (with the main key) that shows/hides the taskbar while the
+    /// feature is on. A VK code, like key_system_menu.
+    pub hide_taskbar_hotkey: u32,
 }
 
 /// Widget names accepted in the navbar `left` / `center` / `right` zone lists.
@@ -1376,6 +1382,8 @@ impl Config {
             bar_hover: false,
             bar_title_format: "{title}".to_string(),
             bar_title_bold: false,
+            hide_taskbar: false,
+            hide_taskbar_hotkey: 0x4B, // K
         }
     }
 
@@ -1716,6 +1724,19 @@ border_enabled = true
 focused_border = #66AAFF
 # Border colour of unfocused windows.     colour
 unfocused_border = #223A5E
+
+# ---------------------------------------------------------------------------
+# Taskbar hiding
+# ---------------------------------------------------------------------------
+
+# Hide the taskbar by making it transparent and click-through, so the
+# bottom screen edge never reveals it. Press the hotkey below to bring it
+# back temporarily (focus goes to the tray via Win+B); it re-hides itself
+# once the taskbar has auto-hidden again. Off by default.
+hide_taskbar = false
+# Key (with the main key) that shows/hides the taskbar while the feature
+# is on.  key
+hide_taskbar_hotkey = K
 
 # ---------------------------------------------------------------------------
 # Window rules
@@ -3423,6 +3444,12 @@ fn parse_into_from(c: &mut Config, text: &str, source: &str) {
             "hover" => c.bar_hover = parse_bool(v),
             "title_format" => c.bar_title_format = v.to_string(),
             "title_bold" => c.bar_title_bold = parse_bool(v),
+            "hide_taskbar" => c.hide_taskbar = parse_bool(v),
+            "hide_taskbar_hotkey" => {
+                if let Some(k) = key_to_vk(v) {
+                    c.hide_taskbar_hotkey = k;
+                }
+            }
             // `<widget>_click` and its _right / _middle forms: a known key
             // whatever the value; an unknown action keeps the previous one,
             // an empty value goes back to the default.
@@ -3770,6 +3797,8 @@ pub fn reload_groups(old: &Config, new: &Config) -> ReloadGroups {
         bar_hover,
         bar_title_format,
         bar_title_bold,
+        hide_taskbar,
+        hide_taskbar_hotkey,
     } = new;
     let mut g = ReloadGroups::default();
     macro_rules! diff {
@@ -3836,6 +3865,7 @@ pub fn reload_groups(old: &Config, new: &Config) -> ReloadGroups {
     diff!(live: settings_python);
     diff!(live: yasb_enabled, yasb_port);
     diff!(live: persist_state, log_level, unknown_keys, extra_hotkeys, window_rules);
+    diff!(live: hide_taskbar, hide_taskbar_hotkey);
     diff!(live: ignore_classes, float_classes, key_focus_next, key_focus_prev);
     diff!(live: key_shrink_master, key_grow_master, key_promote_master);
     diff!(live: key_toggle_tiling, key_toggle_float, key_close_window);
@@ -4060,13 +4090,14 @@ pub enum Action {
     MoveToMonitorWorkspace,
     SwitchNextMonitorWorkspace,
     MoveToNextMonitorWorkspace,
+    ToggleTaskbar,
     Extra,
 }
 
 impl Action {
     /// Every action in declaration order (`ALL[a as usize] == a`), which is
     /// how a table entry stores it.
-    pub const ALL: [Action; 42] = {
+    pub const ALL: [Action; 43] = {
         use Action::*;
         [
             Launcher,
@@ -4110,6 +4141,7 @@ impl Action {
             MoveToMonitorWorkspace,
             SwitchNextMonitorWorkspace,
             MoveToNextMonitorWorkspace,
+            ToggleTaskbar,
             Extra,
         ]
     };
@@ -4159,6 +4191,7 @@ impl Action {
             MoveToMonitorWorkspace => "Move the window to a workspace of this screen",
             SwitchNextMonitorWorkspace => "Go to a workspace of the next screen",
             MoveToNextMonitorWorkspace => "Move the window to a workspace of the next screen",
+            ToggleTaskbar => "Hide or show the taskbar",
             Extra => "Custom shortcut",
         }
     }
@@ -4507,6 +4540,9 @@ pub fn compile_keys(c: &Config) -> Keymap {
     if c.launcher_enabled {
         k.put_loose(c, m, 0x20, (Launcher, 0), false);
     }
+    if c.hide_taskbar {
+        k.put_loose(c, m, c.hide_taskbar_hotkey, (ToggleTaskbar, 0), false);
+    }
     for (i, h) in c.extra_hotkeys.iter().enumerate() {
         if h.action == "scratchpad" && !c.scratchpad_enabled {
             continue;
@@ -4551,14 +4587,26 @@ pub fn compile_keys(c: &Config) -> Keymap {
         .enumerate()
     {
         k.put_loose(c, m, vk, (SwitchMonitorWorkspace, i as u16), false);
-        k.put_loose(c, m | MOD_SHIFT, vk, (MoveToMonitorWorkspace, i as u16), false);
+        k.put_loose(
+            c,
+            m | MOD_SHIFT,
+            vk,
+            (MoveToMonitorWorkspace, i as u16),
+            false,
+        );
     }
     for (i, &vk) in [c.key_switch_ws_4, c.key_switch_ws_5, c.key_switch_ws_6]
         .iter()
         .enumerate()
     {
         k.put_loose(c, m, vk, (SwitchNextMonitorWorkspace, i as u16), false);
-        k.put_loose(c, m | MOD_SHIFT, vk, (MoveToNextMonitorWorkspace, i as u16), false);
+        k.put_loose(
+            c,
+            m | MOD_SHIFT,
+            vk,
+            (MoveToNextMonitorWorkspace, i as u16),
+            false,
+        );
     }
     for (i, &vk) in c.workspace_keys.iter().enumerate() {
         k.put_loose(c, m, vk, (SwitchWorkspace, i as u16), false);
@@ -4625,6 +4673,21 @@ outer_gap = 4
         assert_eq!(c.outer_gap, 12);
         assert_eq!(c.bar_height, 40);
         assert!(c.unknown_keys.is_empty(), "{:?}", c.unknown_keys);
+    }
+
+    #[test]
+    fn hide_taskbar_parses_and_defaults() {
+        let c = Config::defaults();
+        assert!(!c.hide_taskbar);
+        assert_eq!(c.hide_taskbar_hotkey, 0x4B); // K
+
+        let c = parse_text("hide_taskbar = true\nhide_taskbar_hotkey = J");
+        assert!(c.hide_taskbar);
+        assert_eq!(c.hide_taskbar_hotkey, 0x4A);
+
+        // An invalid key keeps the previous value (the default here).
+        let c = parse_text("hide_taskbar_hotkey = ???");
+        assert_eq!(c.hide_taskbar_hotkey, 0x4B);
     }
 
     #[test]
@@ -5191,8 +5254,8 @@ outer_gap = 4
         assert_eq!(m[&(MOD_ALT, 0xBA)], (Action::SwitchNextMonitorWorkspace, 1));
         assert_eq!(m[&(MOD_ALT, 0xDE)], (Action::SwitchNextMonitorWorkspace, 2));
         assert_eq!(
-          m[&(MOD_ALT | MOD_SHIFT, 0x4C)],
-          (Action::MoveToNextMonitorWorkspace, 0)
+            m[&(MOD_ALT | MOD_SHIFT, 0x4C)],
+            (Action::MoveToNextMonitorWorkspace, 0)
         );
         assert_eq!(m[&(MOD_ALT, 0xBE)], (Action::SwitchMonitorWorkspace, 1));
         assert_eq!(m[&(MOD_ALT, 0xBF)], (Action::SwitchMonitorWorkspace, 2));

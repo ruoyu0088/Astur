@@ -49,13 +49,14 @@ use windows::Win32::Graphics::Gdi::{
     CreateRoundRectRgn, CreateSolidBrush, DeleteDC, DeleteObject, DrawTextW, Ellipse, EndPaint,
     EnumDisplayMonitors, ExtCreatePen, FillRect, GdiFlush, GetDC, GetMonitorInfoW, GetStockObject,
     InvalidateRect, LineTo, MonitorFromPoint, MonitorFromRect, MonitorFromWindow, MoveToEx,
-    PolyBezier, ReleaseDC, RoundRect, SelectObject, SetBkMode, SetTextColor, SetWindowRgn,
-    UpdateWindow, BITMAPINFO, BITMAPINFOHEADER, BI_RGB, BLENDFUNCTION, BS_SOLID, CAPTUREBLT,
-    CLEARTYPE_QUALITY, CLIP_DEFAULT_PRECIS, DEFAULT_CHARSET, DEFAULT_GUI_FONT, DIB_RGB_COLORS,
-    DRAW_TEXT_FORMAT, DT_CALCRECT, DT_CENTER, DT_END_ELLIPSIS, DT_NOPREFIX, DT_RIGHT,
-    DT_SINGLELINE, DT_VCENTER, HBITMAP, HDC, HGDIOBJ, HMONITOR, LOGBRUSH, MONITORINFO,
+    PolyBezier, RedrawWindow, ReleaseDC, RoundRect, SelectObject, SetBkMode, SetTextColor,
+    SetWindowRgn, UpdateWindow, BITMAPINFO, BITMAPINFOHEADER, BI_RGB, BLENDFUNCTION, BS_SOLID,
+    CAPTUREBLT, CLEARTYPE_QUALITY, CLIP_DEFAULT_PRECIS, DEFAULT_CHARSET, DEFAULT_GUI_FONT,
+    DIB_RGB_COLORS, DRAW_TEXT_FORMAT, DT_CALCRECT, DT_CENTER, DT_END_ELLIPSIS, DT_NOPREFIX,
+    DT_RIGHT, DT_SINGLELINE, DT_VCENTER, HBITMAP, HDC, HGDIOBJ, HMONITOR, LOGBRUSH, MONITORINFO,
     MONITOR_DEFAULTTONEAREST, MONITOR_DEFAULTTONULL, NULL_BRUSH, OUT_DEFAULT_PRECIS, PAINTSTRUCT,
-    PS_GEOMETRIC, PS_SOLID, RGN_OR, SRCCOPY, TRANSPARENT,
+    PS_GEOMETRIC, PS_SOLID, RDW_ALLCHILDREN, RDW_ERASE, RDW_FRAME, RDW_INVALIDATE, RGN_OR, SRCCOPY,
+    TRANSPARENT,
 };
 use windows::Win32::Media::Audio::{
     eConsole, eRender, Endpoints::IAudioEndpointVolume, IMMDeviceEnumerator, MMDeviceEnumerator,
@@ -1655,6 +1656,7 @@ fn bind_cmd(action: config::Action, arg: u16) -> Option<Cmd> {
         A::SwitchNextMonitorWorkspace => Cmd::SwitchNextLocal(arg as usize),
         A::MoveToNextMonitorWorkspace => Cmd::MoveToNextLocalWs(arg as usize),
         A::Extra => Cmd::Extra(arg as usize),
+        A::ToggleTaskbar => Cmd::ToggleTaskbar,
     })
 }
 
@@ -2958,6 +2960,7 @@ enum Cmd {
     ResizeTile(f32), // Alt+Shift+H / L: the focused tile's share of its column
     /// A tab-bar click: (any window of the column, tab index).
     TabClick(isize, usize),
+    ToggleTaskbar,
 }
 
 impl Cmd {
@@ -3017,6 +3020,7 @@ impl Cmd {
             Cmd::ColumnEdge { .. } => "ColumnEdge",
             Cmd::ResizeTile(_) => "ResizeTile",
             Cmd::TabClick(..) => "TabClick",
+            Cmd::ToggleTaskbar => "ToggleTaskbar",
         }
     }
 }
@@ -3142,6 +3146,10 @@ fn apply_hook_config(cfg: &Config) {
         );
     }
     publish_binds(cfg.main_key, &keys.binds);
+    // Enable/disable the taskbar-hiding feature to match the new config.
+    unsafe {
+        apply_taskbar_config(cfg);
+    }
 }
 
 // ---- status bar (one per monitor) ----
@@ -7179,6 +7187,274 @@ unsafe fn unpark_all(mgr: &Manager) {
     }
 }
 
+// =========================================================================
+// Taskbar hiding: transparent + click-through taskbar, with a hotkey.
+// =========================================================================
+
+const WS_EX_LAYERED_TASKBAR: u32 = WS_EX_LAYERED.0;
+const WS_EX_TRANSPARENT_TASKBAR: u32 = WS_EX_TRANSPARENT.0;
+
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum TaskbarMode {
+    Hidden,
+    WaitingForAutoHide { shown_at: Instant },
+}
+
+struct TaskbarState {
+    enabled: bool,
+    mode: TaskbarMode,
+    /// `Some(deadline)` while Win+B is still to send. Astur's own hook
+    /// swallows keys pressed with the main key held, so the chord has to wait
+    /// until the user lets go; the deadline stops it waiting for ever.
+    win_b_deadline: Option<Instant>,
+}
+
+static TASKBAR_STATE: Mutex<TaskbarState> = Mutex::new(TaskbarState {
+    enabled: false,
+    mode: TaskbarMode::Hidden,
+    win_b_deadline: None,
+});
+static TASKBAR_CV: Condvar = Condvar::new();
+static TASKBAR_TOGGLE_PENDING: AtomicBool = AtomicBool::new(false);
+
+fn request_taskbar_toggle() {
+    TASKBAR_TOGGLE_PENDING.store(true, Ordering::Relaxed);
+    TASKBAR_CV.notify_one();
+}
+
+unsafe extern "system" fn enum_taskbar_proc(hwnd: HWND, lparam: LPARAM) -> BOOL {
+    let vec = &mut *(lparam.0 as *mut Vec<HWND>);
+    let class = window_class(hwnd);
+    if class == "Shell_TrayWnd" || class == "Shell_SecondaryTrayWnd" {
+        vec.push(hwnd);
+    }
+    BOOL(1)
+}
+
+/// Enumerate every taskbar window (main + secondary). Called fresh before
+/// each operation so Explorer restarts cannot leave a stale handle behind.
+unsafe fn enum_taskbar_windows() -> Vec<HWND> {
+    let mut vec = Vec::new();
+    let _ = EnumWindows(
+        Some(enum_taskbar_proc),
+        LPARAM(&mut vec as *mut Vec<HWND> as isize),
+    );
+    vec
+}
+
+unsafe fn apply_transparent_to_taskbars() {
+    for hwnd in enum_taskbar_windows() {
+        let ex = GetWindowLongW(hwnd, GWL_EXSTYLE) as u32;
+        // Already in the desired state: skip so the periodic check does not
+        // force a redraw every tick.
+        if (ex & WS_EX_TRANSPARENT_TASKBAR) != 0 && (ex & WS_EX_LAYERED_TASKBAR) != 0 {
+            continue;
+        }
+        let new_ex = ex | WS_EX_LAYERED_TASKBAR | WS_EX_TRANSPARENT_TASKBAR;
+        SetWindowLongW(hwnd, GWL_EXSTYLE, new_ex as i32);
+        let _ = SetLayeredWindowAttributes(hwnd, COLORREF(0), 0, LWA_ALPHA);
+        let _ = RedrawWindow(
+            hwnd,
+            None,
+            None,
+            RDW_INVALIDATE | RDW_ERASE | RDW_FRAME | RDW_ALLCHILDREN,
+        );
+    }
+}
+
+unsafe fn remove_transparent_from_taskbars() {
+    for hwnd in enum_taskbar_windows() {
+        let ex = GetWindowLongW(hwnd, GWL_EXSTYLE) as u32;
+        if (ex & WS_EX_TRANSPARENT_TASKBAR) == 0 && (ex & WS_EX_LAYERED_TASKBAR) == 0 {
+            continue;
+        }
+        let new_ex = ex & !(WS_EX_LAYERED_TASKBAR | WS_EX_TRANSPARENT_TASKBAR);
+        SetWindowLongW(hwnd, GWL_EXSTYLE, new_ex as i32);
+        let _ = SetLayeredWindowAttributes(hwnd, COLORREF(0), 255, LWA_ALPHA);
+        let _ = RedrawWindow(
+            hwnd,
+            None,
+            None,
+            RDW_INVALIDATE | RDW_ERASE | RDW_FRAME | RDW_ALLCHILDREN,
+        );
+    }
+}
+
+/// Has the main taskbar slid off the bottom of its monitor?
+unsafe fn is_taskbar_offscreen() -> bool {
+    let hwnd = match FindWindowW(w!("Shell_TrayWnd"), PCWSTR::null()) {
+        Ok(h) if !h.0.is_null() => h,
+        _ => return false,
+    };
+    let mut rect = RECT::default();
+    if GetWindowRect(hwnd, &mut rect).is_err() {
+        return false;
+    }
+    let mon = MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST);
+    let mut mi = MONITORINFO {
+        cbSize: core::mem::size_of::<MONITORINFO>() as u32,
+        ..Default::default()
+    };
+    if !GetMonitorInfoW(mon, &mut mi).as_bool() {
+        return false;
+    }
+    rect.top >= mi.rcMonitor.bottom - 2
+}
+
+/// Is any modifier (or the main key) still physically down? Sending Win+B
+/// then would be eaten by Astur's hook (main key + unbound key is swallowed)
+/// or merged into the app's chord.
+unsafe fn modifiers_held() -> bool {
+    let main = MAIN_VK.load(Ordering::Relaxed);
+    for vk in [
+        VK_LWIN.0 as u32,
+        VK_RWIN.0 as u32,
+        VK_LMENU.0 as u32,
+        VK_RMENU.0 as u32,
+        VK_LCONTROL.0 as u32,
+        VK_RCONTROL.0 as u32,
+        VK_LSHIFT.0 as u32,
+        VK_RSHIFT.0 as u32,
+        main,
+    ] {
+        if vk != 0 && GetAsyncKeyState(vk as i32) < 0 {
+            return true;
+        }
+    }
+    // B itself, so a repeat never doubles up.
+    GetAsyncKeyState(0x42) < 0
+}
+
+/// Send Win+B once the keys are free. Returns true when it is done (sent or
+/// given up), so the worker can go back to its normal tick.
+unsafe fn send_win_b_when_free() -> bool {
+    let deadline = TASKBAR_STATE.lock().unwrap().win_b_deadline;
+    let Some(deadline) = deadline else {
+        return true;
+    };
+    if modifiers_held() && Instant::now() < deadline {
+        return false;
+    }
+    if Instant::now() < deadline {
+        inject_key(VK_LWIN, false);
+        inject_key(VIRTUAL_KEY(0x42), false);
+        inject_key(VIRTUAL_KEY(0x42), true);
+        inject_key(VK_LWIN, true);
+    }
+    TASKBAR_STATE.lock().unwrap().win_b_deadline = None;
+    true
+}
+
+/// One hotkey press: show the taskbar (or cancel a show).
+unsafe fn taskbar_toggle_once() {
+    let mode = TASKBAR_STATE.lock().unwrap().mode;
+    match mode {
+        TaskbarMode::Hidden => {
+            remove_transparent_from_taskbars();
+            let mut guard = TASKBAR_STATE.lock().unwrap();
+            guard.mode = TaskbarMode::WaitingForAutoHide {
+                shown_at: Instant::now(),
+            };
+            guard.win_b_deadline = Some(Instant::now() + std::time::Duration::from_millis(2000));
+        }
+        TaskbarMode::WaitingForAutoHide { .. } => {
+            apply_transparent_to_taskbars();
+            let mut guard = TASKBAR_STATE.lock().unwrap();
+            guard.mode = TaskbarMode::Hidden;
+            guard.win_b_deadline = None;
+        }
+    }
+}
+
+/// Sync the feature's on/off state to the config. Called from
+/// apply_hook_config on startup and on every reload. The Win32 calls stay
+/// outside the lock: a reload must never wait for a redraw.
+unsafe fn apply_taskbar_config(cfg: &Config) {
+    let was = TASKBAR_STATE.lock().unwrap().enabled;
+    if cfg.hide_taskbar && !was {
+        {
+            let mut guard = TASKBAR_STATE.lock().unwrap();
+            guard.enabled = true;
+            guard.mode = TaskbarMode::Hidden;
+            guard.win_b_deadline = None;
+        }
+        apply_transparent_to_taskbars();
+        TASKBAR_CV.notify_one();
+    } else if !cfg.hide_taskbar && was {
+        // Strip the styles first, then stop the clock (docs order: never
+        // leave a transparent taskbar behind even if this thread stalls).
+        remove_transparent_from_taskbars();
+        {
+            let mut guard = TASKBAR_STATE.lock().unwrap();
+            guard.enabled = false;
+            guard.mode = TaskbarMode::Hidden;
+            guard.win_b_deadline = None;
+        }
+        TASKBAR_CV.notify_one();
+    }
+}
+
+fn taskbar_worker() {
+    loop {
+        if EXITING.load(Ordering::Relaxed) {
+            break;
+        }
+        let enabled = TASKBAR_STATE.lock().unwrap().enabled;
+        if !enabled {
+            let guard = TASKBAR_STATE.lock().unwrap();
+            drop(
+                TASKBAR_CV
+                    .wait_timeout(guard, std::time::Duration::from_millis(500))
+                    .unwrap()
+                    .0,
+            );
+            continue;
+        }
+        if TASKBAR_TOGGLE_PENDING.swap(false, Ordering::Relaxed) {
+            unsafe { taskbar_toggle_once() };
+            continue;
+        }
+        let mode = TASKBAR_STATE.lock().unwrap().mode;
+        unsafe {
+            match mode {
+                TaskbarMode::Hidden => {
+                    // Re-assert click-through every tick so an Explorer restart
+                    // (which resets the style) cannot leave the taskbar revealed.
+                    apply_transparent_to_taskbars();
+                }
+                TaskbarMode::WaitingForAutoHide { shown_at } => {
+                    // 1 s grace: let the reveal animation finish, then watch it
+                    // slide off and hide again the moment it is gone.
+                    if shown_at.elapsed() >= std::time::Duration::from_millis(1000)
+                        && is_taskbar_offscreen()
+                    {
+                        apply_transparent_to_taskbars();
+                        TASKBAR_STATE.lock().unwrap().mode = TaskbarMode::Hidden;
+                    }
+                }
+            }
+        }
+        let pending = unsafe { !send_win_b_when_free() };
+        let tick = if pending {
+            20
+        } else if matches!(
+            TASKBAR_STATE.lock().unwrap().mode,
+            TaskbarMode::WaitingForAutoHide { .. }
+        ) {
+            100
+        } else {
+            500
+        };
+        let guard = TASKBAR_STATE.lock().unwrap();
+        drop(
+            TASKBAR_CV
+                .wait_timeout(guard, std::time::Duration::from_millis(tick))
+                .unwrap()
+                .0,
+        );
+    }
+}
+
 unsafe fn restore_all_windows() {
     // Stop the manager first, then let a command already running finish: a
     // retile or switch landing after the restore re-parked or re-hid what it
@@ -7186,6 +7462,16 @@ unsafe fn restore_all_windows() {
     // thread's windows) cannot hold the exit; set_pos_raw and switch_plain
     // refuse once EXITING is set, which covers a command that outlives it.
     EXITING.store(true, Ordering::SeqCst);
+    // Taskbar cleanup comes FIRST: strip the transparent/click-through styles
+    // before the timer stops, so nothing can be left transparent after Astur
+    // exits even if this thread is held up later.
+    remove_transparent_from_taskbars();
+    {
+        let mut guard = TASKBAR_STATE.lock().unwrap();
+        guard.enabled = false;
+        guard.win_b_deadline = None;
+    }
+    TASKBAR_CV.notify_one();
     // Before the wait and the restore, which can stall this thread (see
     // unhook_input).
     unhook_input();
@@ -13416,6 +13702,7 @@ unsafe fn process(mgr: &mut Manager, cmd: Cmd) {
         // hotkey `layout` and the IPC verb both arrive here.
         Cmd::SetLayout(layout) => set_monitor_layout(mgr, mgr.focused_mon, layout),
         Cmd::ToggleScratchpad => toggle_scratchpad(mgr),
+        Cmd::ToggleTaskbar => request_taskbar_toggle(),
         Cmd::BarCycle(hmon, dir) => {
             // Wheel over the bar: previous/next workspace on that monitor (wraps).
             if let Some(mi) = mgr.mon_by_hmon(hmon) {
@@ -25942,11 +26229,7 @@ fn main() {
         };
         RegisterClassW(&mh_wc);
         if let Ok(mh) = CreateWindowExW(
-            WS_EX_LAYERED
-                | WS_EX_TRANSPARENT
-                | WS_EX_TOPMOST
-                | WS_EX_TOOLWINDOW
-                | WS_EX_NOACTIVATE,
+            WS_EX_LAYERED | WS_EX_TRANSPARENT | WS_EX_TOPMOST | WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE,
             MOVE_HINT_CLASS,
             w!(""),
             WS_POPUP,
@@ -26117,6 +26400,7 @@ fn main() {
         spawn_named("sysmenu", sysmenu_thread);
         // Hidden window that holds the keyboard when focus is on nothing (#25).
         spawn_named("focus-sink", focus_sink_thread);
+        spawn_named("taskbar", taskbar_worker);
         // Hot-reload config files on save.
         spawn_named("config-watcher", move || config_watcher(cfg_unread));
         // Put the input hooks back if Windows silently drops them.
@@ -29946,8 +30230,11 @@ mod tests {
                 format!("{} {n}", c.name())
             }
             Cmd::ResizeMaster(d) | Cmd::ResizeTile(d) => format!("{} {d}", c.name()),
-            Cmd::Switch(i) | Cmd::MoveToWs(i) | Cmd::SwitchLocal(i) | Cmd::MoveToLocalWs(i)
-        | Cmd::Extra(i) => format!("{} {i}", c.name()),
+            Cmd::Switch(i)
+            | Cmd::MoveToWs(i)
+            | Cmd::SwitchLocal(i)
+            | Cmd::MoveToLocalWs(i)
+            | Cmd::Extra(i) => format!("{} {i}", c.name()),
             Cmd::FocusGeo(d) | Cmd::MoveGeo(d) => format!("{} {}", c.name(), *d as u8),
             Cmd::ColumnEdge { last, carry } => format!("{} {last} {carry}", c.name()),
             c => c.name().to_string(),
@@ -30054,11 +30341,21 @@ mod tests {
         }
         let monitor = [c.key_switch_ws_1, c.key_switch_ws_2, c.key_switch_ws_3]
             .iter()
+            .position(|&k| k == vk);
+        if let Some(monitor) = monitor {
+            return one(if shift {
+                Cmd::MoveToLocalWs(monitor)
+            } else {
+                Cmd::SwitchLocal(monitor)
+            });
+        }
+        let next = [c.key_switch_ws_4, c.key_switch_ws_5, c.key_switch_ws_6]
+            .iter()
             .position(|&k| k == vk)?;
         one(if shift {
-            Cmd::MoveToLocalWs(monitor)
+            Cmd::MoveToNextLocalWs(next)
         } else {
-            Cmd::SwitchLocal(monitor)
+            Cmd::SwitchNextLocal(next)
         })
     }
 
@@ -30233,6 +30530,23 @@ mod tests {
             per(new)
         );
         assert_eq!(hits as usize, 2 * n * 3 / 4);
+    }
+
+    #[test]
+    fn hide_taskbar_hotkey_binds_with_the_main_key() {
+        let mut c = config::default_config();
+        assert!(!c.hide_taskbar);
+        assert_eq!(
+            bound(&c, config::MOD_ALT, c.hide_taskbar_hotkey),
+            None,
+            "off by default"
+        );
+
+        c.hide_taskbar = true;
+        assert_eq!(
+            bound(&c, config::MOD_ALT, c.hide_taskbar_hotkey),
+            Some("ToggleTaskbar".to_string())
+        );
     }
 
     #[test]
