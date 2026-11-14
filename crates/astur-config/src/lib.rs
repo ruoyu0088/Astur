@@ -1558,7 +1558,7 @@ workspaces = 10
 
 # Keys (with LEFT ALT) that select workspaces 1, 2, 3, ... in order. Add Shift
 # to MOVE the focused window to that workspace instead. Avoid the fixed binds
-# (J K H L M T F W R C [ ], arrows, Enter, Space, Home, End): a fixed bind wins
+# (D A Z C S T F W R X [ ], arrows, Enter, Space, Home, End): a fixed bind wins
 # and that workspace gets no key. Example for Alt+Q/E/Y = ws 1/2/3:
 #   workspace_keys = Q E Y U I O
 # keys
@@ -1596,7 +1596,7 @@ monitor_layouts =
 workspace_layouts =
 
 # Fraction of the width given to the master window (master layout, and the
-# master split that Alt+H / Alt+L adjust).  float 0.10 - 0.90
+# master split that Alt+Z / Alt+C adjust).  float 0.10 - 0.90
 master_ratio = 0.55
 
 # Scrolling layout: width of a new column, as a fraction of the screen
