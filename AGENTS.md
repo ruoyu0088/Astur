@@ -29,6 +29,11 @@ single Rust `.exe` with no installer and no required config. Core hooks:
   re-tile/scroll via an overlay of live DWM thumbnails (off/glide).
 - **App launcher** — Alt+Space opens a fuzzy app picker (Start Menu shortcuts),
   hook-driven with no foreground focus. See `plan/launcher.md`.
+- **Swap-workspace mode** — main+P: the bar says SWAP MODE, the next key
+  picks the workspace to swap this one's windows with (digit, workspace key,
+  or main+A / main+D for previous / next); layouts stay per workspace.
+- **Minimize** — main+Q minimizes the focused window; pressing it again
+  within a moment restores every window that key minimized.
 - Coloured DWM borders, unfocused dimming, focus-follows-mouse, per-app rules,
   live config hot-reload.
 
@@ -169,6 +174,6 @@ queues. Keep it that way — do not move work onto the hooks (main thread).
 - `plan/launcher.md` — Alt+Space picker: v1/v2 shipped + Phase 3 file-search plan.
 - `plan/optimization.md` — Phase 4 optimization pass plan (in progress backlog).
 - `plan/mods.md` — modding/extensibility architecture (declarative + IPC mods + security).
-- `plan/system-menu.md` — Alt+Shift+Space power menu (shipped) + backlog.
+- `plan/system-menu.md` — main+M power menu (shipped; key_system_menu) + backlog.
 - `plan/roadmap-v2.md` — v2 strategy: GUI config, installer, packaging, MFT search.
 - `plan/ideas.md` — backlog / discussion.

@@ -55,6 +55,7 @@ KEY_BLINDS = (
     "key_close_window", "key_cycle_width", "key_center_column",
     "key_consume_left", "key_consume_right", "key_fill_desktop",
     "key_system_menu", "hide_taskbar_hotkey",
+    "key_minimize_window", "key_swap_workspace",
     "key_switch_ws_1", "key_switch_ws_2", "key_switch_ws_3",
     "key_switch_ws_4", "key_switch_ws_5", "key_switch_ws_6",
 )
@@ -98,6 +99,14 @@ HELP_OVERRIDES = {
         "back (the same key toggles).",
     ("astur", "key_system_menu"):
         "Open the power menu: lock, sleep, restart and Astur's own actions.",
+    ("astur", "key_minimize_window"):
+        "Minimize the focused window; press it again within a moment to bring "
+        "back every window this key minimized.",
+    ("astur", "key_swap_workspace"):
+        "Enter swap mode: the screen shows SWAP MODE and the next key picks the "
+        "workspace to swap this one's windows with (a digit, a workspace key, "
+        "or Mod+A / Mod+D for the previous / next one). Every workspace keeps "
+        "its own layout.",
     ("astur", "key_switch_ws_1"):
         "Go to workspace 1; with Shift, move the focused window there.",
     ("astur", "key_switch_ws_2"):

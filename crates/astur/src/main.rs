@@ -27058,6 +27058,8 @@ fn main() {
         println!("  Alt+Z / Alt+C  = shrink / grow the master area");
         println!("  Alt+F          = toggle float for focused window");
         println!("  Alt+W          = close focused window");
+        println!("  Alt+Q          = minimize focused window (again: restore)");
+        println!("  Alt+P          = swap this workspace's windows with another");
         println!("  Alt+E          = fill the workspace (focused window on top, or back)");
         println!("  Alt+Space      = app launcher (type to filter, Enter to run)");
         println!("  Alt+M          = open the power menu");

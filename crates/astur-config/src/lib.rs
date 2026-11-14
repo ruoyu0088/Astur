@@ -1925,6 +1925,7 @@ main_key = ralt
 #   Alt+F                toggle floating for the focused window
 #   Alt+W                close the focused window
 #   Alt+Q                minimize the focused window; press again quickly to restore
+#   Alt+P                swap this workspace's windows with another workspace
 #   Alt+Enter            launch terminal
 #   Alt+Shift+Enter      launch browser
 #   Alt+<workspace_key>  switch to that workspace (see workspace_keys above)
@@ -1967,6 +1968,8 @@ key_promote_master = S
 key_toggle_tiling = T
 key_toggle_float = F
 key_close_window = W
+# Alt+Q minimizes the focused window; pressing it again within a moment
+# restores every window that key minimized.  key
 key_minimize_window = Q
 key_cycle_width = R
 key_center_column = X

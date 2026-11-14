@@ -77,6 +77,11 @@ them.
   stacked `monocle`, or Niri-style `scrolling` (see [Scrolling layout](#scrolling-layout))
   across up to 20 named/icon-labelled virtual workspaces. Each monitor can run its
   own layout (`monitor_layouts`)
+- **Minimize with the main key** — `Alt+Q` minimizes the focused window; press it
+  again to bring back everything that key minimized (`key_minimize_window`)
+- **Swap workspaces** — `Alt+P` swaps this workspace's windows with another one
+  (a digit, a workspace key, or `Alt+A` / `Alt+D` for the previous / next one);
+  every workspace keeps its own layout (`key_swap_workspace`)
 - **Status bar** — a per-monitor bar (or only on the screens you pick,
   `monitors`) with three fully configurable widget zones
   (left / center / right): workspace pills, focused title, app buttons (click to
@@ -233,6 +238,8 @@ shortcut follow the key you picked.
 | `Alt` + `K` | Show the taskbar for a moment, if hiding it is on (rebindable: `hide_taskbar_hotkey`) |
 | `Alt` + `F` | Toggle float for focused window |
 | `Alt` + `W` | Close focused window |
+| `Alt` + `Q` | Minimize focused window; press again quickly to restore what it minimized (rebindable: `key_minimize_window`) |
+| `Alt` + `P` | **Swap-workspace mode**: the screen says SWAP MODE, the next key picks the workspace to swap this one's windows with (rebindable: `key_swap_workspace`) |
 | `Alt` + `Enter` | Launch terminal |
 | `Alt` + `Shift+Enter` | Launch browser |
 | `Alt` + `1`–`9`, `0` | Switch to workspace 1–10 |
