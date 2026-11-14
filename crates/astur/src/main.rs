@@ -7207,12 +7207,18 @@ struct TaskbarState {
     /// swallows keys pressed with the main key held, so the chord has to wait
     /// until the user lets go; the deadline stops it waiting for ever.
     win_b_deadline: Option<Instant>,
+    /// When every modifier first looked released. The chord only goes out
+    /// once that has held for a moment, so a key-up still being processed
+    /// cannot turn Win+B into Win+Alt+B (Windows reads that as HDR on/off and
+    /// Xbox Game Bar pops a toast).
+    win_b_free_since: Option<Instant>,
 }
 
 static TASKBAR_STATE: Mutex<TaskbarState> = Mutex::new(TaskbarState {
     enabled: false,
     mode: TaskbarMode::Hidden,
     win_b_deadline: None,
+    win_b_free_since: None,
 });
 static TASKBAR_CV: Condvar = Condvar::new();
 static TASKBAR_TOGGLE_PENDING: AtomicBool = AtomicBool::new(false);
@@ -7325,6 +7331,31 @@ unsafe fn modifiers_held() -> bool {
     GetAsyncKeyState(0x42) < 0
 }
 
+/// Let go of every modifier Windows might still think is down. A stuck Alt
+/// (a fake one from the Alt+Tab passthrough, or a key-up the shell has not
+/// processed yet) turns Win+B into Win+Alt+B, which Windows reads as "toggle
+/// HDR" and Xbox Game Bar announces with a toast. Harmless when already up.
+unsafe fn release_modifiers() {
+    for vk in [
+        VK_MENU,
+        VK_LMENU,
+        VK_RMENU,
+        VK_CONTROL,
+        VK_LCONTROL,
+        VK_RCONTROL,
+        VK_SHIFT,
+        VK_LSHIFT,
+        VK_RSHIFT,
+        VK_LWIN,
+        VK_RWIN,
+    ] {
+        inject_key(vk, true);
+    }
+}
+
+/// How long every modifier must look released before Win+B goes out.
+const WIN_B_SETTLE_MS: u64 = 60;
+
 /// Send Win+B once the keys are free. Returns true when it is done (sent or
 /// given up), so the worker can go back to its normal tick.
 unsafe fn send_win_b_when_free() -> bool {
@@ -7332,16 +7363,36 @@ unsafe fn send_win_b_when_free() -> bool {
     let Some(deadline) = deadline else {
         return true;
     };
-    if modifiers_held() && Instant::now() < deadline {
+    let now = Instant::now();
+    if now >= deadline {
+        let mut guard = TASKBAR_STATE.lock().unwrap();
+        guard.win_b_deadline = None;
+        guard.win_b_free_since = None;
+        return true;
+    }
+    if modifiers_held() {
+        TASKBAR_STATE.lock().unwrap().win_b_free_since = None;
         return false;
     }
-    if Instant::now() < deadline {
-        inject_key(VK_LWIN, false);
-        inject_key(VIRTUAL_KEY(0x42), false);
-        inject_key(VIRTUAL_KEY(0x42), true);
-        inject_key(VK_LWIN, true);
+    // Free right now: remember since when, and only send once it has held for
+    // a moment. Without this, Win+B can race the key-up of the hotkey and
+    // reach Windows as Win+Alt+B or Win+Shift+B.
+    let since = {
+        let mut guard = TASKBAR_STATE.lock().unwrap();
+        *guard.win_b_free_since.get_or_insert(now)
+    };
+    if now.duration_since(since) < std::time::Duration::from_millis(WIN_B_SETTLE_MS) {
+        return false;
     }
-    TASKBAR_STATE.lock().unwrap().win_b_deadline = None;
+    release_modifiers();
+    std::thread::sleep(std::time::Duration::from_millis(15));
+    inject_key(VK_LWIN, false);
+    inject_key(VIRTUAL_KEY(0x42), false);
+    inject_key(VIRTUAL_KEY(0x42), true);
+    inject_key(VK_LWIN, true);
+    let mut guard = TASKBAR_STATE.lock().unwrap();
+    guard.win_b_deadline = None;
+    guard.win_b_free_since = None;
     true
 }
 
@@ -7356,12 +7407,14 @@ unsafe fn taskbar_toggle_once() {
                 shown_at: Instant::now(),
             };
             guard.win_b_deadline = Some(Instant::now() + std::time::Duration::from_millis(2000));
+            guard.win_b_free_since = None;
         }
         TaskbarMode::WaitingForAutoHide { .. } => {
             apply_transparent_to_taskbars();
             let mut guard = TASKBAR_STATE.lock().unwrap();
             guard.mode = TaskbarMode::Hidden;
             guard.win_b_deadline = None;
+            guard.win_b_free_since = None;
         }
     }
 }
