@@ -13734,7 +13734,8 @@ unsafe fn restore_minimized(mgr: &mut Manager) {
 /// keeps its own layout configuration. The per-window layout state that no
 /// longer describes the new set (dwindle splits, scrolling strip columns) is
 /// reset, so both workspaces lay out from scratch. Visibility is re-applied
-/// (the active workspace shows its new windows, the other hides them).
+/// and the display switches to the target workspace: the windows that were
+/// on screen now live there (ws3 swapped with ws1 shows ws1).
 unsafe fn swap_workspaces(mgr: &mut Manager, mi: usize, wi: usize, to_mi: usize, to_wi: usize) {
     if (mi, wi) == (to_mi, to_wi)
         || mi >= mgr.monitors.len()
@@ -13782,21 +13783,36 @@ unsafe fn swap_workspaces(mgr: &mut Manager, mi: usize, wi: usize, to_mi: usize,
             ws.focused = focus_target(ws);
         }
     }
+    // The swapped windows now live on the target workspace, so the display
+    // follows them there: ws3 swapped with ws1 shows ws1, not ws3. A
+    // cross-monitor swap makes the target monitor the focused one; the
+    // source monitor keeps showing its own workspace, which now holds the
+    // target's old windows.
+    mgr.focused_mon = to_mi;
+    mgr.monitors[to_mi].active = to_wi;
     // Show the active workspaces' new windows, hide the others'; then lay
     // out the active workspace of each affected monitor again.
     normalize_visibility(mgr);
-    for (m, w) in [(mi, wi), (to_mi, to_wi)] {
-        let a = mgr.monitors[m].active;
-        if a == w {
-            ensure_visible(mgr, m, a);
-            place_active_instant(mgr, m);
-        }
+    let a0 = mgr.monitors[mi].active;
+    ensure_visible(mgr, mi, a0);
+    place_active_instant(mgr, mi);
+    if to_mi != mi {
+        let a1 = mgr.monitors[to_mi].active;
+        ensure_visible(mgr, to_mi, a1);
+        place_active_instant(mgr, to_mi);
     }
-    // Focus stays in the (now active) workspace the user was in.
-    let f = mgr.monitors[mi].workspaces[wi].focused;
+    // Focus the target workspace's window (the one that was focused before
+    // the swap, now showing there).
+    let f = mgr.monitors[to_mi].workspaces[to_wi].focused;
     if f != 0 {
         focus_window(f);
+        if mgr.cfg.cursor_follows_focus {
+            center_cursor_on(mgr, f);
+        }
     }
+    // The cursor has not moved, so focus-follows-mouse must not yank the
+    // focus back to the workspace the user just left.
+    bump_follow_settle();
 }
 
 /// Swap the active workspace with the adjacent one `dir` (-1 previous, +1
