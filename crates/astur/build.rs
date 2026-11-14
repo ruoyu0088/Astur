@@ -6,6 +6,9 @@
 // `cargo build --release` should produce something the tray's "Astur Settings"
 // can actually start.
 fn main() {
+    println!("cargo:rerun-if-changed=astur.rc");
+    println!("cargo:rerun-if-changed=assets/astur.ico");
+
     embed_resource::compile("astur.rc", embed_resource::NONE);
     copy_settings_editor();
 }
