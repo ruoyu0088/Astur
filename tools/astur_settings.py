@@ -82,9 +82,16 @@ BAR_WIDGETS = (
     "date clock media uptime custom logo separator spacer"
 ).split()
 
+# Every key name Astur's key_to_vk() knows, letters and digits first (they are
+# what the default binds use: D A Z C S X K E W T F R M and 1..9).
 KEY_NAMES = (
-    "Space Tab Enter Backspace Esc Left Up Right Down Home End PgUp PgDn "
-    "Insert Delete [ ] ` - = ; ' , . / \\"
+    " ".join("ABCDEFGHIJKLMNOPQRSTUVWXYZ")
+    + " "
+    + " ".join("0123456789")
+    + " "
+    + " ".join(f"F{i}" for i in range(1, 25))
+    + " Space Tab Enter Backspace Esc Insert Delete Home End PgUp PgDn "
+    "Left Up Right Down [ ] ` - = ; ' , . / \\"
 ).split()
 
 
