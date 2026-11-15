@@ -1710,6 +1710,10 @@ kbd {
   --kc: var(--orange);
 }
 
+.key.menu .cap {
+  color: var(--orange);
+}
+
 .key.k-purple {
   --kc: var(--purple);
 }
