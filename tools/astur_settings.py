@@ -354,6 +354,8 @@ SCHEMA_DATA = {
             ("border_enabled", "bool", "true", "", "Coloured window borders. Requires Windows 11 (no effect on Windows 10). bool"),
             ("focused_border", "colour", "#66AAFF", "", "Border colour of the focused window. colour"),
             ("unfocused_border", "colour", "#223A5E", "", "Border colour of unfocused windows. colour"),
+            ("float_focused_border", "colour", "", "", "Border colour of a floating focused window. Empty keeps the colour above. Floating windows are the ones Alt+F takes out of the layout. colour"),
+            ("float_unfocused_border", "colour", "", "", "Border colour of a floating unfocused window. Empty keeps the colour above. colour"),
         ]),
         ("Taskbar hiding", [
             ("hide_taskbar", "bool", "false", "", "Hide the Windows taskbar: it stays click-through and invisible, and HideTaskbar's key shows it for a moment. bool"),

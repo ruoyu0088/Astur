@@ -6010,6 +6010,9 @@ unsafe fn toggle_fill(mgr: &mut Manager) {
             retile_monitor(mgr, mi);
         }
         FILL_SEEN.store(0, Ordering::Relaxed);
+        // Back to the layout: every window left floating, so re-colour the ones
+        // that were tiled before the fill.
+        restyle_workspace(mgr, mi, a);
         focus_window(h);
         return;
     }
@@ -6116,6 +6119,9 @@ unsafe fn toggle_fill(mgr: &mut Manager) {
         SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE,
     );
     FILL_SEEN.store(h, Ordering::Relaxed);
+    // Every window on the workspace is floating now: give them the floating
+    // border colour (the focus did not change, so nothing else would).
+    restyle_workspace(mgr, mi, a);
     focus_window(h);
 }
 
@@ -8750,7 +8756,7 @@ unsafe fn motion_dims(hwnd: HWND, focused: bool, cfg: &Config) -> (u8, u8) {
 }
 
 /// Apply opacity + border colour to a single window based on focus state.
-unsafe fn style_window(hwnd: HWND, focused: bool, cfg: &Config) {
+unsafe fn style_window(hwnd: HWND, floating: bool, focused: bool, cfg: &Config) {
     // Exit restore under way or done: a command that outlived its wait must
     // not re-dim or re-border what restore_windows just unstyled.
     if EXITING.load(Ordering::Relaxed) {
@@ -8787,7 +8793,7 @@ unsafe fn style_window(hwnd: HWND, focused: bool, cfg: &Config) {
         }
     }
     if cfg.border_enabled {
-        set_border(hwnd, focused, cfg);
+        set_border(hwnd, border_color(cfg, floating, focused), cfg);
     }
 }
 
@@ -8840,7 +8846,12 @@ unsafe fn style_all(mgr: &Manager) {
     for m in &mgr.monitors {
         for ws in &m.workspaces {
             for &h in &ws.windows {
-                style_window(hwnd_from(h), h != 0 && h == focused_h, &mgr.cfg);
+                style_window(
+                    hwnd_from(h),
+                    ws.floating.contains(&h),
+                    h != 0 && h == focused_h,
+                    &mgr.cfg,
+                );
             }
         }
     }
@@ -8853,8 +8864,31 @@ unsafe fn style_all(mgr: &Manager) {
 unsafe fn style_active(mgr: &Manager, mi: usize) {
     let a = mgr.monitors[mi].active;
     let f = mgr.monitors[mi].workspaces[a].focused;
-    for &h in &mgr.monitors[mi].workspaces[a].windows {
-        style_window(hwnd_from(h), h != 0 && h == f, &mgr.cfg);
+    let ws = &mgr.monitors[mi].workspaces[a];
+    for &h in &ws.windows {
+        style_window(
+            hwnd_from(h),
+            ws.floating.contains(&h),
+            h != 0 && h == f,
+            &mgr.cfg,
+        );
+    }
+}
+
+/// Re-apply the styling of every window on a workspace after something that
+/// changes border colours without changing the focus: Alt+F, or Alt+E taking
+/// the workspace's windows over. Cheap only because those are rare; the
+/// per-command path stays apply_styles' two windows.
+unsafe fn restyle_workspace(mgr: &Manager, mi: usize, wi: usize) {
+    let ws = &mgr.monitors[mi].workspaces[wi];
+    let f = ws.focused;
+    for &h in &ws.windows {
+        style_window(
+            hwnd_from(h),
+            ws.floating.contains(&h),
+            h != 0 && h == f,
+            &mgr.cfg,
+        );
     }
 }
 
@@ -8872,26 +8906,54 @@ unsafe fn apply_styles(mgr: &Manager) {
         return;
     }
     if prev != 0 && IsWindow(hwnd_from(prev)).as_bool() {
-        style_window(hwnd_from(prev), false, &mgr.cfg);
+        style_window(hwnd_from(prev), is_floating(mgr, prev), false, &mgr.cfg);
     }
     if focused_h != 0 {
-        style_window(hwnd_from(focused_h), true, &mgr.cfg);
+        style_window(
+            hwnd_from(focused_h),
+            is_floating(mgr, focused_h),
+            true,
+            &mgr.cfg,
+        );
+    }
+}
+
+/// Whether `h` is floating right now (Alt+F, a float rule, or Alt+E's fill).
+/// Windows Astur does not track are not floating; they are not styled either.
+fn is_floating(mgr: &Manager, h: isize) -> bool {
+    mgr.locate(h)
+        .is_some_and(|(mi, wi)| mgr.monitors[mi].workspaces[wi].floating.contains(&h))
+}
+
+/// The DWM border colour for a window in this state. A floating window may have
+/// its own focused / unfocused colour; an empty key (`None`) keeps the tiled one.
+fn border_color(cfg: &Config, floating: bool, focused: bool) -> u32 {
+    let own = if focused {
+        cfg.float_focused_border
+    } else {
+        cfg.float_unfocused_border
+    };
+    match own {
+        Some(c) if floating => c,
+        _ => {
+            if focused {
+                cfg.focused_border
+            } else {
+                cfg.unfocused_border
+            }
+        }
     }
 }
 
 /// The DWM border colour alone: style_window's border half, and the whole of
 /// the #19.1 re-assert (reassert_borders), which must not touch the alpha.
-unsafe fn set_border(hwnd: HWND, focused: bool, cfg: &Config) {
+unsafe fn set_border(hwnd: HWND, color: u32, cfg: &Config) {
     // Per window, not per pass: a call that outlived the exit wait (a busy
     // app) must not re-border what restore_windows just reset.
-    if EXITING.load(Ordering::SeqCst) {
+    if EXITING.load(Ordering::SeqCst) || !cfg.border_enabled {
         return;
     }
-    let color = COLORREF(if focused {
-        cfg.focused_border
-    } else {
-        cfg.unfocused_border
-    });
+    let color = COLORREF(color);
     let _ = DwmSetWindowAttribute(
         hwnd,
         DWMWA_BORDER_COLOR,
@@ -8978,7 +9040,11 @@ unsafe fn reassert_borders(mgr: &Manager, windows: &[isize]) {
                 && IsWindowVisible(hwnd).as_bool()
                 && !IsHungAppWindow(hwnd).as_bool()
             {
-                set_border(hwnd, h == f, &mgr.cfg);
+                set_border(
+                    hwnd,
+                    border_color(&mgr.cfg, is_floating(mgr, h), h == f),
+                    &mgr.cfg,
+                );
             }
         }
     }
@@ -12942,7 +13008,7 @@ unsafe fn switch_monitor_workspace(mgr: &mut Manager, mi: usize, n: usize) {
         && IsWindow(hwnd_from(prev)).as_bool()
         && IsWindowVisible(hwnd_from(prev)).as_bool()
     {
-        style_window(hwnd_from(prev), false, &mgr.cfg);
+        style_window(hwnd_from(prev), is_floating(mgr, prev), false, &mgr.cfg);
     }
     probe.mark("style");
     // Only now, with the switch done and styled underneath: the worker then
@@ -14012,7 +14078,7 @@ unsafe fn process(mgr: &mut Manager, cmd: Cmd) {
                         // before the retile, so its open motion ends on the
                         // styled alpha instead of popping at the reveal.
                         if global_focus(mgr) != h {
-                            style_window(hwnd, false, &mgr.cfg);
+                            style_window(hwnd, floating, false, &mgr.cfg);
                         }
                         retile_monitor(mgr, mi);
                     } else {
@@ -14626,6 +14692,9 @@ unsafe fn process(mgr: &mut Manager, cmd: Cmd) {
             // lie off the view: scroll to it, or it parks while focused.
             ensure_visible(mgr, mi, a);
             retile_monitor(mgr, mi);
+            // Floating and tiled windows may be bordered in different colours,
+            // and the focus did not move: repaint the state change now.
+            restyle_workspace(mgr, mi, a);
         }
         Cmd::ToggleFill => toggle_fill(mgr),
         Cmd::CloseFocused => {
@@ -29275,6 +29344,27 @@ mod tests {
             r"C:\x\not-astur-settings.exe",
             "TkTopLevel"
         ));
+    }
+
+    #[test]
+    fn a_floating_window_can_have_its_own_border_colour() {
+        let mut c = Config::defaults();
+        c.focused_border = 0x0000_00FF;
+        c.unfocused_border = 0x0000_FF00;
+        // Empty keys: a floating window keeps the tiled colour.
+        c.float_focused_border = None;
+        c.float_unfocused_border = None;
+        assert_eq!(border_color(&c, true, true), c.focused_border);
+        assert_eq!(border_color(&c, true, false), c.unfocused_border);
+        assert_eq!(border_color(&c, false, true), c.focused_border);
+        assert_eq!(border_color(&c, false, false), c.unfocused_border);
+        // Set keys: floating takes its own colour, tiled is untouched.
+        c.float_focused_border = Some(0x00FF_0000);
+        c.float_unfocused_border = Some(0x0012_3456);
+        assert_eq!(border_color(&c, true, true), 0x00FF_0000);
+        assert_eq!(border_color(&c, true, false), 0x0012_3456);
+        assert_eq!(border_color(&c, false, true), c.focused_border);
+        assert_eq!(border_color(&c, false, false), c.unfocused_border);
     }
 
     #[test]

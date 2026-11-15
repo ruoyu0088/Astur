@@ -68,6 +68,8 @@ pub struct Config {
     pub border_enabled: bool,           // draw coloured DWM borders (Windows 11)
     pub focused_border: u32,            // COLORREF for the focused window border
     pub unfocused_border: u32,          // COLORREF for unfocused window borders
+    pub float_focused_border: Option<u32>, // floating + focused; None = focused_border
+    pub float_unfocused_border: Option<u32>, // floating + unfocused; None = unfocused_border
     pub cursor_follows_focus: bool,     // warp the mouse to the focused window
     pub focus_follows_mouse: bool,      // hovering a window focuses it (focus follows mouse)
     pub animations: bool,               // animate tiling moves + workspace slides
@@ -1185,6 +1187,8 @@ impl Config {
             border_enabled: true,
             focused_border: parse_color("#66AAFF", 0x00FFAA66),
             unfocused_border: parse_color("#223A5E", 0x005E3A22),
+            float_focused_border: None,
+            float_unfocused_border: None,
             cursor_follows_focus: true,
             focus_follows_mouse: false,
             animations: true,
@@ -1728,6 +1732,11 @@ border_enabled = true
 focused_border = #66AAFF
 # Border colour of unfocused windows.     colour
 unfocused_border = #223A5E
+# Border colour of a floating focused window. Empty keeps the colour above.
+# Floating windows are the ones Alt+F takes out of the layout.    colour
+float_focused_border =
+# Border colour of a floating unfocused window. Empty keeps the colour above.  colour
+float_unfocused_border =
 
 # ---------------------------------------------------------------------------
 # Taskbar hiding
@@ -2979,6 +2988,13 @@ fn parse_into_from(c: &mut Config, text: &str, source: &str) {
             "border_enabled" => c.border_enabled = parse_bool(v),
             "focused_border" => c.focused_border = parse_color(v, c.focused_border),
             "unfocused_border" => c.unfocused_border = parse_color(v, c.unfocused_border),
+            "float_focused_border" => {
+                c.float_focused_border = parse_theme_color(v, NO_LEGACY, c.float_focused_border);
+            }
+            "float_unfocused_border" => {
+                c.float_unfocused_border =
+                    parse_theme_color(v, NO_LEGACY, c.float_unfocused_border);
+            }
             "cursor_follows_focus" => c.cursor_follows_focus = parse_bool(v),
             "focus_follows_mouse" => c.focus_follows_mouse = parse_bool(v),
             "animations" => c.animations = parse_bool(v),
@@ -3652,6 +3668,8 @@ pub fn reload_groups(old: &Config, new: &Config) -> ReloadGroups {
         border_enabled,
         focused_border,
         unfocused_border,
+        float_focused_border,
+        float_unfocused_border,
         cursor_follows_focus,
         focus_follows_mouse,
         animations,
@@ -3845,7 +3863,14 @@ pub fn reload_groups(old: &Config, new: &Config) -> ReloadGroups {
     // `shape` decides floating, which changes the reserved height; `monitors`
     // which screens reserve one at all.
     diff!(wm: bar_shape, bar_monitors);
-    diff!(style: unfocused_opacity, border_enabled, focused_border, unfocused_border);
+    diff!(
+        style: unfocused_opacity,
+        border_enabled,
+        focused_border,
+        unfocused_border,
+        float_focused_border,
+        float_unfocused_border
+    );
     // wp_publish: whether any animation reads the wallpaper cache.
     diff!(anim: animations, animation_ms, workspace_slide, workspace_anim, window_anim);
     // Everything the bar draws. Snapshot fields (colours, formats, zones)
@@ -5665,6 +5690,15 @@ floating = true"
                 ..ReloadGroups::default()
             }
         );
+
+        // A floating window's own border colour is a style key too, and an empty
+        // one means "keep the tiled colour".
+        let mut c = base.clone();
+        c.float_focused_border = Some(0x0012_3456);
+        assert!(reload_groups(&base, &c).style);
+        c.float_focused_border = None;
+        c.float_unfocused_border = Some(0x0012_3456);
+        assert!(reload_groups(&base, &c).style);
 
         // The launcher list is re-enumerated only for its own keys.
         let mut c = base.clone();
