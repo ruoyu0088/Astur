@@ -1,7 +1,7 @@
 # 截图清单 / Screenshot slots
 
-把截好的 PNG 用**同名文件**覆盖这里的占位图即可，页面会自动引用，不需要改 HTML。
-文件名和尺寸必须完全一致；页面按这个尺寸预留了位置。
+把截好的 PNG 用**同名文件**覆盖这里的图片即可，页面会自动引用，不需要改 HTML。
+页面按图片原始比例显示，尺寸不必和下面完全一致；保持接近的构图和分辨率即可，太小会糊，太大会拖慢加载。
 
 所有图片：PNG、sRGB、无透明背景、无圆角/阴影裁切、不要包含个人信息（真实姓名、邮箱、公司项目名、浏览器标签、文件路径）。用假项目名或空白文档。
 
@@ -11,12 +11,12 @@
 |---|---|---|---|
 | `hero-desktop.png` | 2560 × 1440 | 整个桌面：dwindle 布局 + 状态栏 | 首页 hero |
 | `scrolling-layout.png` | 2560 × 1440 | scrolling 布局：多列、标签列、右侧 peek | 首页 + 文档 scrolling |
-| `floating-window.png` | 1600 × 1000 | 浮动窗口压在平铺窗口上 | 文档 floating |
-| `bar.png` | 2560 × 120 | 只截状态栏（上下带一点桌面） | 文档 status bar |
-| `launcher.png` | 1200 × 800 | Alt+Space 启动器打开、有搜索结果 | 文档 launcher |
-| `system-menu.png` | 800 × 900 | Alt+M 系统菜单打开 | 文档 launcher/system menu |
-| `settings.png` | 1400 × 900 | 设置编辑器，Status bar 或 Shortcuts 页 | 文档 settings |
-| `resize-bracket.png` | 800 × 600 | Alt+右键拖拽时的红色角标特写 | 文档 floating |
+| `floating-window.png` | 1600 × 1000 | 浮动窗口压在平铺窗口上（当前用示意图） | 文档 floating |
+| `bar.png` | 2560 × 42 | 只截状态栏本身 | 文档 status bar |
+| `launcher.png` | 864 × 605 | Alt+Space 启动器打开、有搜索结果 | 文档 launcher |
+| `system-menu.png` | 545 × 461 | Alt+M 系统菜单打开 | 文档 launcher/system menu |
+| `settings.png` | 1302 × 1015 | 设置编辑器，Status bar 或 Shortcuts 页 | 文档 settings |
+| `resize-bracket.png` | 1039 × 710 | Alt+右键拖拽时的红色角标特写 | 文档 floating |
 
 ## 拍摄前的统一设置
 
@@ -25,7 +25,7 @@
 3. **桌面**：隐藏桌面图标；关掉与画面无关的窗口；不要出现 Windows 任务栏（Astur 的 bar 就是状态栏；如果任务栏也在，画面会显得很乱）。
 4. **内容**：用假项目名，例如 `nebula/`、`src/main.rs`、`docs/`。浏览器只开一个文档页，不要开邮箱、聊天、云盘。
 5. **截屏方式**：`Win + Shift + S` 区域截图，或 `Win + PrtScn` 全屏后裁剪。不要用 `Alt + PrtScn`：Alt 是 Astur 的主键，容易和窗口管理操作冲突。
-6. **精确裁剪**：用能输入精确宽高的工具（Photoshop、Affinity、IrfanView、ShareX 的固定区域模式）。页面按原始比例显示，尺寸不对会变形或出现空白。
+6. **裁剪**：用能输入精确宽高的工具（Photoshop、Affinity、IrfanView、ShareX 的固定区域模式）。页面不会拉伸图片，但截图里的字体太小或画面太碎会看不清。
 
 ## 每张图怎么摆
 
@@ -62,51 +62,49 @@
 - 浮动窗口要有清晰的边框/阴影，和背后的窗口拉开层次；如果用了 `float_focused_border`，让颜色可见。
 - 裁成 1600 × 1000，窗口边缘不要贴边，四周留 40–80 px 背景。
 
-### 4. `bar.png` — 2560 × 120
+### 4. `bar.png` — 2560 × 42
 
-- 只截状态栏区域，横向 2560 px，纵向 120 px；bar 本身大约在图片垂直中间，上下各留一点桌面背景。
+- 只截状态栏本身，横向 2560 px，纵向就是 bar 的高度（当前 42 px）；不要额外留桌面背景。
 - 必须完整包含三个区域：
   - 左：workspace pills（至少 4 个，含当前工作区高亮）+ 应用按钮；
   - 中：当前窗口标题；
   - 右：layout、CPU、RAM、音量、日期、时钟（至少 5 个 widget）。
 - 不要裁掉左右边缘；不要有鼠标悬停高亮或 tooltip。
-- 如果 bar 在屏幕顶部，直接从全屏图裁顶部 120 px；在底部就裁底部 120 px。
+- 如果 bar 在屏幕顶部，直接从全屏图裁顶部一条；在底部就裁底部一条。
 
-### 5. `launcher.png` — 1200 × 800
+### 5. `launcher.png` — 864 × 605
 
 - 按 `Alt + Space` 打开启动器，输入 `ter` 或 `code`，让结果列表出现 4–6 项。
 - 画面包含：搜索框、结果列表、每项图标、选中项高亮、底部键盘提示（如果有）。
 - 背景是暗色桌面/窗口，启动器面板居中；不要出现真实文件名、最近打开的个人文档。
-- 裁 1200 × 800，面板四周留出背景，不要贴边。
+- 当前截图尺寸约 864 × 605，面板四周留出背景，不要贴边。
 - 启动器打开后会接管键盘，`Win+Shift+S` / `PrtScn` 不会触发。用延迟截图：先在仓库根目录运行
   `powershell -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File tools\capture_launcher.ps1 -Delay 10`，
-  再按 `Alt+Space` 输入查询；10 秒后自动保存到桌面 `launcher.png`，最后裁成 1200 × 800。
+  再按 `Alt+Space` 输入查询；10 秒后自动保存到桌面 `launcher.png`，最后裁到面板周围。
   也可以用截图工具的 5 秒延迟模式。
 
-### 6. `system-menu.png` — 800 × 900
+### 6. `system-menu.png` — 545 × 461
 
 - 按 `Alt + M` 打开系统菜单（默认键是 M；如果你改过 `key_system_menu`，用你自己的键）。
-- 画面要能看到：
-  - 电源区：Lock、Sleep、Restart、Shut down；
-  - Astur 区：Settings、Open config、Reload、Restart Astur、Exit Astur；
-  - 如果有 Screenshot / Wallpapers 也保留。
-- 菜单本身大约 380 px 宽，800 × 900 的画面会带背景；让菜单居中偏上，背景暗且干净。
+- 画面至少能看到 Astur 区：Settings、Open config、Reload、Restart Astur、Exit Astur、Screenshot。
+  电源区（Lock / Sleep / Restart / Shut down）可以一起入镜，也可以只截 setup 分类；当前截图是后者。
+- 菜单本身大约 380 px 宽，545 × 461 的画面会带一点背景；让菜单居中，背景暗且干净。
 - 不要展开二级确认框。
 
-### 7. `settings.png` — 1400 × 900
+### 7. `settings.png` — 1302 × 1015
 
-- 从托盘打开 Settings，把窗口拉到 1400 × 900 左右。
+- 从托盘打开 Settings，把窗口拉到约 1300 × 1015。
 - 推荐页面：**Status bar**（能看到 shape、palette、三个 zone 的字段和 widget 颜色），或 **Shortcuts**（能看到 main_key 和各快捷键字段）。二选一，优先 Status bar，因为视觉上更能说明 Astur 的 bar。
 - 左侧导航、页面标题、主要控件都要完整；不要出现滚动条压住内容。
 - 如果窗口有标题栏，保留；不要截到桌面其他窗口。
 - 设置里的路径如果是 `C:\Users\你的名字\...`，换成 `C:\Tools\Astur\` 之类的示例路径，或直接裁掉。
 
-### 8. `resize-bracket.png` — 800 × 600
+### 8. `resize-bracket.png` — 1039 × 710
 
 - 这是细节图，不是全屏图：按住 `Alt`，在窗口右下角（或任一角）按住右键拖动，出现红色角标时截图。
 - 画面里要有：窗口角、红色 bracket、被拖动窗口的边缘，背景可以虚化/暗化。
-- 实际操作时用左手按 `Win + PrtScn` 全屏截，再裁 800 × 600；或者用 ShareX 的延迟截图。
-- 如果截不到，可以用 `floating-window.png` 的角部放大代替，但页面会按 800 × 600 显示，建议还是拍一张。
+- 实际操作时用左手按 `Win + PrtScn` 全屏截，再裁到角标周围；或者用 ShareX 的延迟截图。
+- 如果截不到，可以用 `floating-window.png` 的角部放大代替；页面按原始比例显示。
 
 ## 替换后检查
 
@@ -119,7 +117,7 @@ python -m http.server -d docs 8123
 
 - 图片没有拉伸、没有黑边、没有占位文字；
 - 首页 hero 在 1440 宽和手机宽度下都正常；
-- `bar.png` 没有被压扁（它是 2560 × 120 的长条）；
+- `bar.png` 没有被压扁（它是 2560 × 42 的长条）；
 - 文档里的图注仍然准确（如果截图内容和图注不一致，改图注或重拍）。
 
 替换完删掉本文件也可以，留着方便下次更新截图。

@@ -168,7 +168,8 @@ page lives under `/Astur/`).
 - `docs/style.css` — all styling, including the CSS-only keyboard tabs.
 - `docs/assets/screens/` — screenshot slots plus `README.md`, the Chinese
   shot list the owner follows when replacing the placeholders. Replace a PNG
-  with the same filename and size; do not rename the files or edit the HTML.
+  with the same filename; the page follows the image's own aspect ratio, so a
+  close size is enough. Do not rename the files or edit the HTML.
 - Preview with `python -m http.server -d docs 8123`.
 
 When a release changes a default, a config key or the settings editor, update

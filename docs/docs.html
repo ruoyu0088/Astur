@@ -342,8 +342,8 @@
         <p class="doc-lead">Scrolling is a Niri-style workspace: windows sit in columns on an endless horizontal strip, and the view scrolls along it. Instead of squeezing a fifth window into the same screen, you add a fifth column and scroll to it.</p>
 
         <figure class="doc-figure">
-          <img src="assets/screens/scrolling-layout.png" alt="A scrolling workspace with several columns, one tabbed column and another column peeking in from the edge." width="2560" height="1440" loading="lazy">
-          <figcaption><b>scrolling-layout.png</b> — three columns, a tabbed column, and the next column peeking in.</figcaption>
+          <img src="assets/screens/scrolling-layout.png" alt="A scrolling workspace with three columns; the status bar shows scrolling 3 of 3." width="2560" height="1440" loading="lazy">
+          <figcaption><b>scrolling-layout.png</b> — three columns on the strip; the focused editor is column 3 of 3.</figcaption>
         </figure>
 
         <h3>Columns and widths</h3>
@@ -427,11 +427,11 @@
 
         <div class="figure-grid">
           <figure class="doc-figure">
-            <img src="assets/screens/floating-window.png" alt="A floating window above a tiled layout." width="1600" height="1000" loading="lazy">
-            <figcaption><b>floating-window.png</b> — a floating window over a tiled workspace.</figcaption>
+            <img src="assets/screens/floating-window.png" alt="A diagram of a floating window above a tiled layout." width="1600" height="1000" loading="lazy">
+            <figcaption><b>floating-window.png</b> — a floating window over a tiled workspace (diagram).</figcaption>
           </figure>
           <figure class="doc-figure">
-            <img src="assets/screens/resize-bracket.png" alt="The red corner bracket shown while Alt-right-dragging a window." width="800" height="600" loading="lazy">
+            <img src="assets/screens/resize-bracket.png" alt="The red corner bracket shown while Alt-right-dragging a window." width="1039" height="710" loading="lazy">
             <figcaption><b>resize-bracket.png</b> — the corner marker during an Alt-right-drag.</figcaption>
           </figure>
         </div>
@@ -460,9 +460,13 @@
         <h2>Status bar</h2>
         <p class="doc-lead">The bar is optional, but it is where Astur becomes visible. Each monitor can have its own bar showing that monitor's workspaces and focused window, with widgets split into three zones.</p>
 
-        <figure class="doc-figure">
-          <img src="assets/screens/bar.png" alt="The Astur status bar with workspace pills on the left, a window title in the centre, and layout, CPU, memory, volume and clock widgets on the right." width="2560" height="120" loading="lazy">
-          <figcaption><b>bar.png</b> — the default strip: workspace pills, title, and system widgets. A wide crop works best.</figcaption>
+        <figure class="doc-figure bar-shot">
+          <div class="bar-scroll">
+            <a href="assets/screens/bar.png" target="_blank" rel="noopener">
+              <img src="assets/screens/bar.png" alt="The Astur status bar with workspace pills on the left, a window title in the centre, and layout, CPU, memory, volume and clock widgets on the right." width="2560" height="42" loading="lazy">
+            </a>
+          </div>
+          <figcaption><b>bar.png</b> — the default strip: workspace pills, title, and system widgets. Scroll to see the rest, or click to open it at full resolution.</figcaption>
         </figure>
 
         <h3>Three zones, one bar per monitor</h3>
@@ -558,9 +562,9 @@
         </div>
         <p><kbd>Tab</kbd> shows the selected file's modified time, size and path. <kbd>Shift</kbd> + <kbd>Enter</kbd> reveals a file in Explorer; <kbd>F5</kbd> refreshes the app and custom entries. Placement, width, height, row height, icon size, corner radius, opacity, result limit and mouse navigation are all configurable.</p>
 
-        <figure class="doc-figure narrow">
-          <img src="assets/screens/launcher.png" alt="The Astur launcher with a query and matching applications." width="1200" height="800" loading="lazy">
-          <figcaption><b>launcher.png</b> — a query with app, file and web results.</figcaption>
+        <figure class="doc-figure narrow launcher-shot">
+          <img src="assets/screens/launcher.png" alt="The Astur launcher with a query and matching applications." width="864" height="605" loading="lazy">
+          <figcaption><b>launcher.png</b> — a query with app results.</figcaption>
         </figure>
 
         <h3>The system menu</h3>
@@ -570,9 +574,9 @@
 <span class="c"># category|label|target|icon|confirm</span>
 <span class="k">system_actions</span> = <span class="v">Tools|Open notes|notepad.exe|auto|false ;; Web|Astur docs|https://ruoyu0088.github.io/Astur/|auto|false</span></div>
 
-        <figure class="doc-figure narrow">
-          <img src="assets/screens/system-menu.png" alt="The Astur system menu showing power actions and setup actions." width="800" height="900" loading="lazy">
-          <figcaption><b>system-menu.png</b> — power and setup categories in one menu.</figcaption>
+        <figure class="doc-figure narrow menu-shot">
+          <img src="assets/screens/system-menu.png" alt="The Astur system menu showing setup actions." width="545" height="461" loading="lazy">
+          <figcaption><b>system-menu.png</b> — the setup category; power actions are in the other category.</figcaption>
         </figure>
 
         <div class="callout">
@@ -691,7 +695,7 @@
         <p class="doc-lead">The settings editor is a Windows 11-style form over the same two text files. Edit fields and press <b>Save</b> (<kbd>Ctrl</kbd> + <kbd>S</kbd>); the window manager hot-reloads about 0.1 seconds later. <b>Reload</b> (<kbd>F5</kbd>) discards unsaved edits and reads the files again.</p>
 
         <figure class="doc-figure">
-          <img src="assets/screens/settings.png" alt="The Astur settings editor showing a settings page with sections and controls." width="1400" height="900" loading="lazy">
+          <img src="assets/screens/settings.png" alt="The Astur settings editor showing a settings page with sections and controls." width="1302" height="1015" loading="lazy">
           <figcaption><b>settings.png</b> — the settings editor.</figcaption>
         </figure>
 

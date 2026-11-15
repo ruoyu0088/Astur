@@ -2803,6 +2803,43 @@ kbd {
   font-size: 0.77rem;
 }
 
+.doc-figure.bar-shot a {
+  display: block;
+  border-radius: 10px;
+}
+
+.doc-figure.bar-shot .bar-scroll {
+  overflow-x: auto;
+  border: 1px solid #232c42;
+  border-radius: 10px;
+  background: #0a0d15;
+  -webkit-overflow-scrolling: touch;
+}
+
+.doc-figure.bar-shot img {
+  width: 2560px;
+  max-width: none;
+  border: 0;
+  border-radius: 0;
+}
+
+.doc-figure.bar-shot a:hover img {
+  outline: 2px solid var(--blue);
+  outline-offset: -2px;
+}
+
+.doc-figure.bar-shot figcaption {
+  padding-top: 6px;
+}
+
+.doc-figure.launcher-shot {
+  max-width: 760px;
+}
+
+.doc-figure.menu-shot {
+  max-width: 560px;
+}
+
 .figure-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
