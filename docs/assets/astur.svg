@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" role="img" aria-label="Astur">
+  <title>Astur</title>
+
+  <!-- 底板：Astur dark 主题背景 -->
+  <rect width="256" height="256" rx="56" fill="#1A1B26"/>
+
+  <!-- 主窗口外框（白色，18px 宽，小图标下仍可辨认） -->
+  <rect x="34" y="38" width="128" height="180" rx="26" fill="#FFFFFF"/>
+
+  <!-- 主窗口填充（blue swatch） -->
+  <rect x="52" y="56" width="92" height="144" rx="8" fill="#7AA2F7"/>
+
+  <!-- 堆叠窗口（green / orange swatch） -->
+  <rect x="174" y="56" width="48" height="66" rx="8" fill="#9ECE6A"/>
+  <rect x="174" y="134" width="48" height="66" rx="8" fill="#FF9E64"/>
+</svg>

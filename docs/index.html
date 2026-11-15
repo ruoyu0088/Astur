@@ -1,0 +1,709 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Astur — Tiling window manager for Windows 10 and 11</title>
+  <meta name="description" content="Astur is a fast, free tiling window manager for Windows 10 and 11. One portable .exe, six layouts, up to 20 workspaces, Alt-drag anywhere, a Niri-style scrolling layout and a per-monitor status bar.">
+  <meta name="theme-color" content="#0b0d14">
+  <link rel="canonical" href="https://ruoyu0088.github.io/Astur/">
+  <link rel="icon" href="assets/astur.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="style.css">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="Astur — Tiling window manager for Windows">
+  <meta property="og:description" content="Six layouts, up to 20 workspaces, Alt-drag anywhere and a Niri-style scrolling layout. One portable .exe, no installer.">
+  <meta property="og:url" content="https://ruoyu0088.github.io/Astur/">
+  <meta property="og:image" content="https://ruoyu0088.github.io/Astur/assets/screens/hero-desktop.png">
+  <meta name="twitter:card" content="summary_large_image">
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+
+<header class="site-nav">
+  <div class="wrap nav-inner">
+    <a class="brand" href="index.html" aria-label="Astur home">
+      <img src="assets/astur.svg" alt="" width="30" height="30">
+      <span>Astur</span>
+    </a>
+    <nav class="nav-links" aria-label="Primary">
+      <a href="#features">Features</a>
+      <a href="#layouts">Layouts</a>
+      <a href="#workspaces">Workspaces</a>
+      <a href="#hotkeys">Hotkeys</a>
+      <a href="docs.html">Docs</a>
+    </nav>
+    <div class="nav-actions">
+      <a class="nav-github" href="https://github.com/ruoyu0088/Astur" aria-label="Astur on GitHub">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 .5a12 12 0 0 0-3.8 23.4c.6.1.8-.3.8-.6v-2.1c-3.3.7-4-1.6-4-1.6-.6-1.4-1.4-1.8-1.4-1.8-1.1-.8.1-.8.1-.8 1.2.1 1.9 1.3 1.9 1.3 1.1 1.9 2.9 1.3 3.6 1 .1-.8.4-1.3.8-1.6-2.7-.3-5.5-1.3-5.5-5.9 0-1.3.5-2.4 1.2-3.2-.1-.3-.5-1.5.1-3.2 0 0 1-.3 3.3 1.2a11.5 11.5 0 0 1 6 0c2.3-1.5 3.3-1.2 3.3-1.2.6 1.7.2 2.9.1 3.2.8.8 1.2 1.9 1.2 3.2 0 4.6-2.8 5.6-5.5 5.9.4.4.8 1.1.8 2.2v3.3c0 .3.2.7.8.6A12 12 0 0 0 12 .5Z"/></svg>
+        <span>GitHub</span>
+      </a>
+      <a class="btn btn-primary btn-sm" href="https://github.com/ruoyu0088/Astur/releases/latest">Download</a>
+    </div>
+  </div>
+</header>
+
+<main id="main">
+
+  <!-- hero -->
+  <section class="hero">
+    <div class="wrap">
+      <span class="eyebrow"><span class="dot"></span> Windows 10 / 11 · Free and open source</span>
+      <h1>Your windows,<br><span class="accent">already in place.</span></h1>
+      <p class="hero-sub">Astur is a tiling window manager for Windows. Hold Alt to move or resize anything, and every window finds its slot. Six layouts, up to 20 workspaces, a Niri-style scrolling strip, and motion that feels like part of the OS.</p>
+      <div class="hero-actions">
+        <a class="btn btn-primary" href="https://github.com/ruoyu0088/Astur/releases/latest">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 3v12m0 0 4-4m-4 4-4-4M5 21h14"/></svg>
+          Download for Windows
+        </a>
+        <a class="btn" href="docs.html">Read the docs</a>
+      </div>
+      <div class="hero-meta">
+        <span>Latest release v2.7.0</span>
+        <span>Portable .exe, no installer</span>
+        <span>No admin required</span>
+        <span>Apache-2.0</span>
+      </div>
+
+      <div class="hero-visual">
+        <div class="desktop" role="img" aria-label="Preview of Astur tiling an editor, a browser and a terminal, with a floating window and the Astur status bar.">
+          <div class="astur-bar">
+            <div class="ws-pills" aria-hidden="true">
+              <span class="ws-pill active">1</span>
+              <span class="ws-pill occupied">2</span>
+              <span class="ws-pill">3</span>
+              <span class="ws-pill">4</span>
+              <span class="ws-pill">5</span>
+            </div>
+            <div class="bar-app">src/main.rs <span>— Visual Studio Code</span></div>
+            <div class="bar-right" aria-hidden="true">
+              <span class="hide-sm">layout dwindle</span>
+              <span>CPU 12%</span>
+              <span>RAM 38%</span>
+              <span class="clock">14:32</span>
+            </div>
+          </div>
+          <div class="tiles">
+            <div class="win win-editor focused">
+              <div class="win-bar"><span class="dots"><i></i><i></i><i></i></span><span class="name">src/main.rs — Astur</span></div>
+              <div class="win-body">
+                <div class="ln"><span class="no">1</span><span><span class="kw">use</span> astur::layout::Layout;</span></div>
+                <div class="ln"><span class="no">2</span><span></span></div>
+                <div class="ln"><span class="no">3</span><span><span class="kw">fn</span> <span class="fn">main</span>() {</span></div>
+                <div class="ln"><span class="no">4</span><span>    <span class="kw">let</span> <span class="kw">mut</span> wm = Astur::new();</span></div>
+                <div class="ln"><span class="no">5</span><span>    wm.<span class="fn">tile</span>(Layout::Dwindle);</span></div>
+                <div class="ln"><span class="no">6</span><span>    wm.<span class="fn">gap</span>(<span class="st">8</span>);</span></div>
+                <div class="ln"><span class="no">7</span><span>    wm.<span class="fn">animate</span>(<span class="st">140</span>);</span></div>
+                <div class="ln"><span class="no">8</span><span>}</span></div>
+                <div class="ln"><span class="no">9</span><span></span></div>
+                <div class="ln"><span class="no">10</span><span><span class="cm">// every window is placed</span></span></div>
+                <div class="ln"><span class="no">11</span><span><span class="cm">// instantly; the glide is</span></span></div>
+                <div class="ln"><span class="no">12</span><span><span class="cm">// drawn on top.</span><span class="cursor"></span></span></div>
+              </div>
+            </div>
+            <div class="win">
+              <div class="win-bar"><span class="dots"><i></i><i></i><i></i></span><span class="name">Astur — Documentation</span></div>
+              <div class="win-body browser-body">
+                <div class="browser-page">
+                  <div class="headline"></div>
+                  <div class="line"></div>
+                  <div class="line short"></div>
+                  <div class="card-row"><div class="card"></div><div class="card"></div><div class="card"></div></div>
+                </div>
+              </div>
+            </div>
+            <div class="win term">
+              <div class="win-bar"><span class="dots"><i></i><i></i><i></i></span><span class="name">PowerShell</span></div>
+              <div class="win-body">
+                <div><span class="prompt">PS</span> <span class="path">~</span>&gt; cargo run -p astur</div>
+                <div>   Compiling astur v2.7.0</div>
+                <div>    Finished release [optimized]</div>
+                <div>     Running target\release\astur.exe</div>
+              </div>
+            </div>
+          </div>
+          <div class="float-demo">
+            <div class="win-bar"><span class="dots"><i></i><i></i><i></i></span><span class="name">Settings — Astur</span><span class="badge">floating</span></div>
+            <div class="win-body">theme      = dark<br>gap        = 8<br>animation  = 140 ms<br>layout     = dwindle</div>
+          </div>
+        </div>
+      </div>
+      <div class="hero-caption">
+        <span><b>dwindle</b> · three tiled windows · one floating</span>
+        <span>Hold <b>Right Alt</b> and drag anywhere to move a window.</span>
+      </div>
+    </div>
+  </section>
+
+  <div class="wrap">
+    <div class="trust">
+      <span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="m5 12 4 4L19 6"/></svg> One portable executable</span>
+      <span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="m5 12 4 4L19 6"/></svg> No installer, no admin</span>
+      <span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="m5 12 4 4L19 6"/></svg> Under 1 MB download</span>
+      <span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="m5 12 4 4L19 6"/></svg> Config hot-reloads on save</span>
+      <span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="m5 12 4 4L19 6"/></svg> Open source, Apache-2.0</span>
+    </div>
+  </div>
+
+  <!-- features -->
+  <section class="section" id="features">
+    <div class="wrap">
+      <div class="section-head center">
+        <span class="kicker">What it does</span>
+        <h2>A window manager, not another window.</h2>
+        <p>Astur adds tiling to the Windows you already use. It does not replace Explorer, skin the taskbar or ask you to learn a new desktop. Run it, and the next window you open has a place.</p>
+      </div>
+      <div class="grid-3">
+        <article class="card">
+          <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M5 9 2 12l3 3M9 5l3-3 3 3M15 19l-3 3-3-3M19 15l3-3-3-3M2 12h20M12 2v20"/></svg></span>
+          <h3>Alt-drag from anywhere</h3>
+          <p>Grab a window by any pixel, not just its title bar. Alt + right-drag resizes from the nearest corner, with a red bracket showing which one. It works on windows that never had a usable title bar.</p>
+          <a class="more" href="docs.html#floating">Mouse controls</a>
+        </article>
+        <article class="card">
+          <span class="icon green"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg></span>
+          <h3>Six layouts, per monitor</h3>
+          <p>Dwindle, master, columns, grid, monocle and a Niri-style scrolling strip. Pick one for the whole desktop, one per monitor, or one per workspace. Every layout is a keypress away in Settings or IPC.</p>
+          <a class="more" href="#layouts">Compare layouts</a>
+        </article>
+        <article class="card">
+          <span class="icon purple"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="m12 3 9 5-9 5-9-5 9-5Z"/><path d="m3 12 9 5 9-5M3 16l9 5 9-5"/></svg></span>
+          <h3>Up to 20 workspaces</h3>
+          <p>Keep one workspace per project, or one per mood. Switch with the number row, move a window with Shift, or swap two entire workspaces. Names, icons and wallpapers are optional.</p>
+          <a class="more" href="#workspaces">How workspaces work</a>
+        </article>
+        <article class="card">
+          <span class="icon orange"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M3 7h7v10H3zM10 7h4v10h-4zM14 7h7v10h-7z"/><path d="M2 12h1M21 12h1"/></svg></span>
+          <h3>Scrolling, the Niri way</h3>
+          <p>Columns live on an endless horizontal strip. Open as many as you need, resize them, stack windows in a column, or turn one into tabs. Off-screen columns park themselves instead of leaking onto another monitor.</p>
+          <a class="more" href="#scrolling">Explore scrolling</a>
+        </article>
+        <article class="card">
+          <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><rect x="3" y="4" width="18" height="5" rx="1"/><path d="M6 6.5h.01M9 6.5h.01M16 6.5h2M6 6.5h4"/><rect x="3" y="12" width="18" height="8" rx="1"/><path d="M7 16h4M7 18h7"/></svg></span>
+          <h3>A bar that earns its space</h3>
+          <p>A per-monitor status bar with three widget zones: workspaces, title, app buttons, CPU, RAM, battery, network, volume, keyboard layout, disk, uptime, music and your own command output. Seven palettes, four shapes.</p>
+          <a class="more" href="#bar">Meet the bar</a>
+        </article>
+        <article class="card">
+          <span class="icon green"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="m7 8 2 2-2 2M11 12h4"/></svg></span>
+          <h3>Launcher and system menu</h3>
+          <p>Alt + Space opens a fuzzy launcher over apps, open windows, files, clipboard history and a calculator. Alt + M opens power and setup actions. Both are keyboard-first, and both stay out of the way until called.</p>
+          <a class="more" href="docs.html#launcher">Launcher and menu</a>
+        </article>
+      </div>
+    </div>
+  </section>
+
+  <!-- real desktop screenshot -->
+  <section class="section-tight" id="desktop">
+    <div class="wrap">
+      <div class="section-head center">
+        <span class="kicker">On a real desktop</span>
+        <h2>Windows, arranged.</h2>
+        <p>No mock desktop, no theme installed over Explorer: this is Astur tiling ordinary Windows applications.</p>
+      </div>
+      <figure class="shot">
+        <img src="assets/screens/hero-desktop.png" alt="A full Windows desktop tiled by Astur, with several application windows and the Astur status bar." width="2560" height="1440" loading="lazy">
+        <figcaption><span><b>hero-desktop.png</b> — the view most people see first</span><span>2560 × 1440</span></figcaption>
+      </figure>
+    </div>
+  </section>
+
+  <!-- layouts -->
+  <section class="section" id="layouts">
+    <div class="wrap">
+      <div class="section-head">
+        <span class="kicker">Layouts</span>
+        <h2>Six ways to share a screen.</h2>
+        <p>Layout is data, not a mode you get stuck in. Set a default, override it for one monitor, or override it again for one workspace. Windows re-tile as soon as the layout changes.</p>
+      </div>
+      <div class="layout-grid">
+        <article class="layout-card">
+          <div class="diagram d-dwindle" aria-hidden="true">
+            <div class="pane accent"></div>
+            <div class="d-col"><div class="pane"></div><div class="d-row"><div class="pane"></div><div class="pane"></div></div></div>
+          </div>
+          <h3>Dwindle</h3>
+          <p>Each new window splits the largest free space, spiralling toward a corner. The default: quick to fill, no configuration.</p>
+        </article>
+        <article class="layout-card">
+          <div class="diagram d-master" aria-hidden="true">
+            <div class="pane accent"></div>
+            <div class="d-col"><div class="pane"></div><div class="pane"></div></div>
+          </div>
+          <h3>Master</h3>
+          <p>One large window on the left, the rest stacked on the right. Alt + Z and Alt + C resize the master area.</p>
+        </article>
+        <article class="layout-card">
+          <div class="diagram d-columns" aria-hidden="true">
+            <div class="pane accent"></div><div class="pane"></div><div class="pane"></div>
+          </div>
+          <h3>Columns</h3>
+          <p>Equal-width columns, one window each. Predictable, easy to scan, and a good fit for wide monitors.</p>
+        </article>
+        <article class="layout-card">
+          <div class="diagram d-grid" aria-hidden="true">
+            <div class="pane accent"></div><div class="pane"></div><div class="pane"></div><div class="pane"></div>
+          </div>
+          <h3>Grid</h3>
+          <p>A balanced rows-and-columns grid. Useful for dashboards, monitoring and many windows of the same size.</p>
+        </article>
+        <article class="layout-card">
+          <div class="diagram d-monocle" aria-hidden="true">
+            <div class="pane accent"></div><div class="pane"></div><div class="pane"></div>
+          </div>
+          <h3>Monocle</h3>
+          <p>Every tiled window fills the workspace and the focused one sits on top. Switch with Alt + D / Alt + A.</p>
+        </article>
+        <article class="layout-card">
+          <div class="diagram d-scroll" aria-hidden="true">
+            <div class="col c1"><div class="pane"></div><div class="pane"></div></div>
+            <div class="col c2"><div class="tabbar"><i></i><i></i><i></i></div><div class="pane accent"></div></div>
+            <div class="col c3"><div class="pane"></div></div>
+          </div>
+          <h3>Scrolling</h3>
+          <p>A horizontal strip of columns. Keep opening windows; the ones past the edge are a scroll away, not hidden.</p>
+        </article>
+      </div>
+    </div>
+  </section>
+
+  <!-- workspaces -->
+  <section class="section" id="workspaces">
+    <div class="wrap split">
+      <div class="split-text">
+        <span class="kicker">Workspaces</span>
+        <h2>Ten desks, one keyboard.</h2>
+        <p>A workspace is a whole set of windows, not a virtual desktop bolted on top. Astur keeps each one's layout, focus and scroll position, and switching is instant even when the animation is on.</p>
+        <ul>
+          <li><b>Up to 20 workspaces.</b> Ten by default, numbered 1 to 0 on the keyboard.</li>
+          <li><b>Alt + 1…0 switches; add Shift to move the focused window there.</b> No dragging windows between desktops.</li>
+          <li><b>Shared or independent.</b> Number workspaces across all monitors, or give every monitor its own set.</li>
+          <li><b>Alt + P swaps two workspaces.</b> The next key picks the other one; digits, workspace keys, or Alt + A / Alt + D work.</li>
+          <li><b>Names, icons and wallpapers.</b> The bar can show a number, a name, an icon, or the apps open in each workspace.</li>
+        </ul>
+        <a class="btn" href="docs.html#workspaces">Workspaces in detail</a>
+      </div>
+      <div class="split-visual">
+        <div class="ws-panel">
+          <div class="bar-line" aria-hidden="true">
+            <span class="pill has">1</span>
+            <span class="pill on">2</span>
+            <span class="pill has">3</span>
+            <span class="pill has">4</span>
+            <span class="pill">5</span>
+            <span class="pill has">6</span>
+            <span class="pill">7</span>
+            <span class="pill">8</span>
+            <span class="pill">9</span>
+            <span class="pill">0</span>
+          </div>
+          <div class="ws-names" aria-hidden="true">
+            <span>web</span><span>code</span><span>chat</span><span>files</span><span>media</span>
+          </div>
+          <p class="ws-caption">The active workspace is filled; occupied ones keep a subtle outline. Names and icons are optional.</p>
+          <div class="mini-code"><span class="c"># %USERPROFILE%\.astur\astur.conf</span>
+<span class="k">workspace_mode</span>  = <span class="v">per_monitor</span>
+<span class="k">workspaces</span>      = <span class="v">10</span>
+<span class="k">workspace_names</span> = <span class="v">Web, Code, Chat, Files, Media</span></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- floating -->
+  <section class="section" id="floating">
+    <div class="wrap split reverse">
+      <div class="split-text">
+        <span class="kicker">Floating</span>
+        <h2>Float one window.<br>Keep the rest tiled.</h2>
+        <p>Tiling is the default, not a prison. Alt + F lifts the focused window out of the layout; the windows behind it close the gap and re-tile immediately. Press it again to drop it back in.</p>
+        <ul>
+          <li><b>Move and resize it anywhere.</b> Alt + left-drag moves a floating window; Alt + right-drag resizes from the nearest corner.</li>
+          <li><b>Its own border colour.</b> Floating and focused can look different from tiled windows, so a dialog never disappears into the layout.</li>
+          <li><b>Automatic exceptions.</b> Per-app rules float dialogs, ignore tool windows, or send an app straight to a workspace and monitor.</li>
+          <li><b>Alt + T turns tiling off entirely.</b> The current layout is remembered when you turn it back on.</li>
+        </ul>
+        <a class="btn" href="docs.html#floating">Floating and rules</a>
+      </div>
+      <div class="split-visual">
+        <div class="float-visual" role="img" aria-label="A floating settings window over a tiled layout, with a red resize corner.">
+          <div class="tiled" aria-hidden="true"><div class="pane"></div><div class="pane"></div><div class="pane"></div></div>
+          <div class="float-window">
+            <div class="head">Settings — Astur <span class="tag">floating</span></div>
+            <div class="body">theme      dark<br>gap        8 px<br>focus      follows cursor<br>border     #7AA2F7</div>
+            <span class="resize-corner"></span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- scrolling -->
+  <section class="section" id="scrolling">
+    <div class="wrap split">
+      <div class="split-text">
+        <span class="kicker">Scrolling layout</span>
+        <h2>More columns than screen.</h2>
+        <p>Scrolling lays windows out like <a href="https://github.com/YaLTeR/niri">Niri</a>: a column strip that extends past the display. Instead of squeezing another window into the same space, you add a column and scroll to it.</p>
+        <ul>
+          <li><b>Widths are fractions of the screen.</b> Two half-width columns, three at a third, or one full-width window.</li>
+          <li><b>Stack and tab.</b> Put several windows in one column, split its height, or turn the column into a tab bar.</li>
+          <li><b>Peek, don't leak.</b> A partially visible column peeks only where there is no neighbouring monitor; otherwise it parks outside the virtual screen.</li>
+          <li><b>Focus drives the view.</b> Alt + Left / Right moves between columns; Alt + X centres the focused one.</li>
+        </ul>
+        <a class="btn" href="docs.html#scrolling">Scrolling reference</a>
+      </div>
+      <div class="split-visual">
+        <figure class="shot">
+          <img src="assets/screens/scrolling-layout.png" alt="Astur's scrolling layout with several columns, a tabbed column and a column peeking in from the right edge." width="2560" height="1440" loading="lazy">
+          <figcaption><span><b>scrolling-layout.png</b></span><span>2560 × 1440</span></figcaption>
+        </figure>
+      </div>
+    </div>
+  </section>
+
+  <!-- bar -->
+  <section class="section" id="bar">
+    <div class="wrap split reverse">
+      <div class="split-text">
+        <span class="kicker">Status bar</span>
+        <h2>One bar per monitor.<br>Three zones, your rules.</h2>
+        <p>The bar is optional, but it is where Astur stops being invisible. Each monitor gets its own bar showing that monitor's workspaces and focused window, with widgets split into left, centre and right zones.</p>
+        <ul>
+          <li><b>Widgets:</b> workspaces, apps, title, layout, CPU, RAM, network, volume, battery, date, clock, media, keyboard, disk, uptime, custom command, media controls and the logo.</li>
+          <li><b>Shapes:</b> a full-width strip, a floating rounded bar, rounded islands per zone, or a pill per widget. Seven palettes, each with a light and dark variant.</li>
+          <li><b>Clicks do things.</b> Every widget has left, right and middle actions: calendar, volume mixer, Task Manager, Windows Settings, or any command.</li>
+          <li><b>Auto-hide and per-monitor.</b> Hide it until the screen edge is touched, or show it only on the screens you choose.</li>
+        </ul>
+        <a class="btn" href="docs.html#bar">Configure the bar</a>
+      </div>
+      <div class="split-visual">
+        <div class="bar-visual">
+          <div class="bar-mock" aria-hidden="true">
+            <div class="zone">
+              <span class="ws-pill active">1</span><span class="ws-pill occupied">2</span><span class="ws-pill occupied">3</span><span class="ws-pill">4</span>
+            </div>
+            <div class="zone"><span class="title">main.rs <span>— Code</span></span></div>
+            <div class="zone" style="margin-left:auto">
+              <span class="stat">layout <b>dwindle</b></span><span class="sep"></span>
+              <span class="stat">CPU <b>12%</b></span><span class="stat">RAM <b>38%</b></span>
+              <span class="stat">VOL <b>42%</b></span><span class="stat clock"><b>14:32</b></span>
+            </div>
+          </div>
+          <div class="bar-legend"><span><b>left</b> workspaces</span><span><b>centre</b> title</span><span><b>right</b> layout · stats · clock</span></div>
+          <p class="ws-caption">Every zone is a list of widget names in <code>navbar.conf</code>. A widget appears when it is listed and its <code>show_*</code> toggle is on.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- launcher -->
+  <section class="section" id="launcher">
+    <div class="wrap split">
+      <div class="split-text">
+        <span class="kicker">Launcher and menu</span>
+        <h2>Everything within one keystroke.</h2>
+        <p>Alt + Space opens a launcher that searches as you type: installed apps, open windows, indexed files, custom commands, a calculator and optional clipboard or emoji providers. Enter launches; Shift + Enter reveals a file; Tab shows size, path and modified time.</p>
+        <p style="margin-top:14px">Alt + M opens the system menu: lock, sleep, restart and shut down, plus Astur's own setup actions, screenshots, reload and quit. Both menus are theme-aware, keyboard-driven and configurable down to their categories.</p>
+        <ul>
+          <li><b>Alt + Enter</b> launches your terminal. <b>Alt + Shift + Enter</b> launches your browser.</li>
+          <li><b>Alt + K</b> reveals the taskbar for a moment when taskbar hiding is enabled.</li>
+          <li><b>Alt + Q</b> minimises the focused window; press it again to bring back everything it minimised.</li>
+        </ul>
+      </div>
+      <div class="split-visual">
+        <div class="launcher-visual" role="img" aria-label="The Astur launcher showing a search field and matching applications.">
+          <div class="launcher">
+            <div class="search">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+              <span class="q">term</span><span class="caret"></span>
+            </div>
+            <div class="results">
+              <div class="result on"><span class="ico">&gt;_</span><span class="txt">Windows Terminal<small>Application</small></span><span class="key">Enter</span></div>
+              <div class="result"><span class="ico">PS</span><span class="txt">PowerShell 7<small>Application</small></span><span class="key">2</span></div>
+              <div class="result"><span class="ico">&#8599;</span><span class="txt">terminal — search the web<small>Web</small></span><span class="key">3</span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- keyboard -->
+  <section class="section" id="hotkeys">
+    <div class="wrap">
+      <div class="section-head">
+        <span class="kicker">Keyboard</span>
+        <h2>The whole keyboard is the window manager.</h2>
+        <p>Every shortcut is held with one <b>main key</b>. It is Right Alt by default, so Left Alt stays available to applications. Pick Left Alt, Win, Ctrl + Win or Caps Lock instead if you prefer; every label and cheat sheet follows the choice.</p>
+      </div>
+
+      <div class="kb-wrap">
+        <input type="radio" name="kb-mode" id="kb-tiling" checked>
+        <input type="radio" name="kb-mode" id="kb-scrolling">
+        <div class="kb-controls">
+          <label for="kb-tiling">Tiling layouts</label>
+          <label for="kb-scrolling">Scrolling layout</label>
+          <span class="kb-hint">Labels show the default bindings. <b>Alt</b> means your main key.</span>
+        </div>
+
+        <div class="kb-scroll">
+          <div class="keyboard" role="img" aria-label="A keyboard diagram marking Astur's default shortcuts. Press Alt plus a marked key.">
+            <div class="kb-fn-row" aria-hidden="true">
+              <div class="key small"><span class="cap">Esc</span></div>
+              <div class="key small"><span class="cap">F1</span></div>
+              <div class="key small"><span class="cap">F2</span></div>
+              <div class="key small"><span class="cap">F3</span></div>
+              <div class="key small"><span class="cap">F4</span></div>
+              <div class="key small"><span class="cap">F5</span></div>
+              <div class="key small"><span class="cap">F6</span></div>
+              <div class="key small"><span class="cap">F7</span></div>
+              <div class="key small"><span class="cap">F8</span></div>
+              <div class="key small"><span class="cap">F9</span></div>
+              <div class="key small"><span class="cap">F10</span></div>
+              <div class="key small"><span class="cap">F11</span></div>
+              <div class="key small"><span class="cap">F12</span></div>
+            </div>
+
+            <div class="kb-row">
+              <div class="key u1"><span class="cap">`</span></div>
+              <div class="key u1 mark k-green"><span class="cap">1</span><span class="fn">ws 1</span></div>
+              <div class="key u1 mark k-green"><span class="cap">2</span><span class="fn">ws 2</span></div>
+              <div class="key u1 mark k-green"><span class="cap">3</span><span class="fn">ws 3</span></div>
+              <div class="key u1 mark k-green"><span class="cap">4</span><span class="fn">ws 4</span></div>
+              <div class="key u1 mark k-green"><span class="cap">5</span><span class="fn">ws 5</span></div>
+              <div class="key u1 mark k-green"><span class="cap">6</span><span class="fn">ws 6</span></div>
+              <div class="key u1 mark k-green"><span class="cap">7</span><span class="fn">ws 7</span></div>
+              <div class="key u1 mark k-green"><span class="cap">8</span><span class="fn">ws 8</span></div>
+              <div class="key u1 mark k-green"><span class="cap">9</span><span class="fn">ws 9</span></div>
+              <div class="key u1 mark k-green"><span class="cap">0</span><span class="fn">ws 10</span></div>
+              <div class="key u1"><span class="cap">-</span></div>
+              <div class="key u1"><span class="cap">=</span></div>
+              <div class="key u2"><span class="cap">Backspace</span></div>
+            </div>
+
+            <div class="kb-row">
+              <div class="key u15"><span class="cap">Tab</span></div>
+              <div class="key u1 mark k-blue"><span class="cap">Q</span><span class="fn">minimise</span></div>
+              <div class="key u1 mark k-blue"><span class="cap">W</span><span class="fn">close</span></div>
+              <div class="key u1 mark k-blue"><span class="cap">E</span><span class="fn">fill</span></div>
+              <div class="key u1 mark k-purple scroll"><span class="cap">R</span><span class="fn tile">width</span><span class="fn scroll">width</span></div>
+              <div class="key u1 mark k-blue"><span class="cap">T</span><span class="fn">tiling</span></div>
+              <div class="key u1"><span class="cap">Y</span></div>
+              <div class="key u1"><span class="cap">U</span></div>
+              <div class="key u1"><span class="cap">I</span></div>
+              <div class="key u1"><span class="cap">O</span></div>
+              <div class="key u1 mark k-green"><span class="cap">P</span><span class="fn">swap ws</span></div>
+              <div class="key u1 mark k-purple scroll"><span class="cap">[</span><span class="fn tile">—</span><span class="fn scroll">stack L</span></div>
+              <div class="key u1 mark k-purple scroll"><span class="cap">]</span><span class="fn tile">—</span><span class="fn scroll">stack R</span></div>
+              <div class="key u15"><span class="cap">\</span></div>
+            </div>
+
+            <div class="kb-row">
+              <div class="key u175"><span class="cap">Caps Lock</span></div>
+              <div class="key u1 mark k-blue"><span class="cap">A</span><span class="fn tile">previous</span><span class="fn scroll">prev col</span></div>
+              <div class="key u1 mark k-blue dual"><span class="cap">S</span><span class="fn tile">promote</span><span class="fn scroll">full</span></div>
+              <div class="key u1 mark k-blue"><span class="cap">D</span><span class="fn tile">next</span><span class="fn scroll">next col</span></div>
+              <div class="key u1 mark k-blue"><span class="cap">F</span><span class="fn">float</span></div>
+              <div class="key u1"><span class="cap">G</span></div>
+              <div class="key u1"><span class="cap">H</span></div>
+              <div class="key u1"><span class="cap">J</span></div>
+              <div class="key u1 mark k-orange"><span class="cap">K</span><span class="fn">taskbar</span></div>
+              <div class="key u1 mark k-green"><span class="cap">L</span><span class="fn">next<br>ws 1</span></div>
+              <div class="key u1 mark k-green"><span class="cap">;</span><span class="fn">next<br>ws 2</span></div>
+              <div class="key u1 mark k-green"><span class="cap">'</span><span class="fn">next<br>ws 3</span></div>
+              <div class="key u225"><span class="cap">Enter</span><span class="fn">terminal</span></div>
+            </div>
+
+            <div class="kb-row">
+              <div class="key u225 shift"><span class="cap">Shift</span><span class="fn">move / swap</span></div>
+              <div class="key u1 mark k-blue dual"><span class="cap">Z</span><span class="fn tile">shrink</span><span class="fn scroll">narrower</span></div>
+              <div class="key u1 mark k-purple scroll"><span class="cap">X</span><span class="fn tile">—</span><span class="fn scroll">centre</span></div>
+              <div class="key u1 mark k-blue dual"><span class="cap">C</span><span class="fn tile">grow</span><span class="fn scroll">wider</span></div>
+              <div class="key u1"><span class="cap">V</span></div>
+              <div class="key u1"><span class="cap">B</span></div>
+              <div class="key u1"><span class="cap">N</span></div>
+              <div class="key u1"><span class="cap">M</span><span class="fn">menu</span></div>
+              <div class="key u1 mark k-green"><span class="cap">,</span><span class="fn">this<br>ws 1</span></div>
+              <div class="key u1 mark k-green"><span class="cap">.</span><span class="fn">this<br>ws 2</span></div>
+              <div class="key u1 mark k-green"><span class="cap">/</span><span class="fn">this<br>ws 3</span></div>
+              <div class="key u275 shift"><span class="cap">Shift</span><span class="fn">move / swap</span></div>
+            </div>
+
+            <div class="kb-row">
+              <div class="key u125"><span class="cap">Ctrl</span></div>
+              <div class="key u125"><span class="cap">Win</span></div>
+              <div class="key u125"><span class="cap">Alt</span><span class="fn">left</span></div>
+              <div class="key u625 space mark k-orange"><span class="cap">Space · launcher</span></div>
+              <div class="key u125 main"><span class="cap">Alt</span><span class="fn">main key</span></div>
+              <div class="key u125"><span class="cap">Win</span></div>
+              <div class="key u125"><span class="cap">Menu</span></div>
+              <div class="key u125"><span class="cap">Ctrl</span></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="kb-extra">
+          <div class="kb-card">
+            <h4>Arrow keys</h4>
+            <p>Focus by direction. Hold Shift to move the focused window; on a scrolling monitor, it moves the column.</p>
+            <div class="arrow-pad" aria-hidden="true">
+              <div class="key up mark k-blue"><span class="cap">&#8593;</span><span class="fn tile">focus</span><span class="fn scroll">prev tab</span></div>
+              <div class="key left mark k-blue"><span class="cap">&#8592;</span><span class="fn tile">focus</span><span class="fn scroll">prev col</span></div>
+              <div class="key down mark k-blue"><span class="cap">&#8595;</span><span class="fn tile">focus</span><span class="fn scroll">next tab</span></div>
+              <div class="key right mark k-blue"><span class="cap">&#8594;</span><span class="fn tile">focus</span><span class="fn scroll">next col</span></div>
+            </div>
+          </div>
+          <div class="kb-card">
+            <h4>Mouse</h4>
+            <p>No title bar needed. The nearest corner is chosen from where the pointer is, not from which edge you grabbed.</p>
+            <div class="mouse-card">
+              <div class="mouse" aria-hidden="true"><span class="btn-l"></span><span class="btn-r"></span></div>
+              <div class="mouse-legend">
+                <span><b>Alt + left-drag</b> — move</span>
+                <span><b>Alt + right-drag</b> — resize</span>
+                <span><b>Alt + wheel</b> — cycle columns (scrolling)</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="kb-legend">
+          <span><i class="l-blue"></i> Window</span>
+          <span><i class="l-green"></i> Workspace</span>
+          <span><i class="l-orange"></i> Launch / menu</span>
+          <span><i class="l-purple"></i> Scrolling only</span>
+          <span><i class="l-yellow"></i> Shift layer</span>
+        </div>
+      </div>
+
+      <p style="margin-top:22px;color:var(--muted);font-size:.9rem">Green keys switch workspaces. <b>1–0</b> go to a workspace; <b>, . /</b> jump to the first three workspaces of the monitor you are on, and <b>L ; '</b> to the first three of the next monitor. Shift + a workspace number moves the focused window there. Some keys change meaning on a scrolling monitor: Z / C resize columns, R cycles widths, X centres, and [ / ] stack windows. <a href="docs.html#hotkeys">See the complete hotkey table</a>.</p>
+    </div>
+  </section>
+
+  <!-- motion -->
+  <section class="section" id="motion">
+    <div class="wrap">
+      <div class="section-head">
+        <span class="kicker">Motion</span>
+        <h2>Instant underneath. Smooth on top.</h2>
+        <p>The layout switch happens immediately and correctly; the animation is a composited overlay drawn over the result. A dropped frame can never lose a window, and a slow application cannot make the switch late.</p>
+      </div>
+      <div class="motion-grid">
+        <article class="motion-card slide">
+          <div class="visual" aria-hidden="true"><span class="sq a"></span><span class="sq b"></span><span class="sq c"></span></div>
+          <h3>Slide</h3>
+          <p>A directional push between workspaces. The default, and the one that reads most like a physical desktop.</p>
+        </article>
+        <article class="motion-card spring">
+          <div class="visual" aria-hidden="true"><span class="sq a"></span><span class="sq b"></span><span class="sq c"></span></div>
+          <h3>Spring</h3>
+          <p>Overshoot and settle, Hyprland-style. Configurable duration and easing; off is always one setting away.</p>
+        </article>
+        <article class="motion-card fade">
+          <div class="visual" aria-hidden="true"><span class="sq a"></span><span class="sq b"></span><span class="sq c"></span></div>
+          <h3>Fade</h3>
+          <p>A cross-fade between the old and new workspace. Quiet, and easy on low-powered machines.</p>
+        </article>
+      </div>
+      <p style="margin-top:22px;color:var(--muted);font-size:.92rem;max-width:820px">Windows also glide to their new slots on open, close, re-tile, resize and scroll. Astur places every window instantly, then draws the move with live DWM thumbnails over the wallpaper. Another hotkey re-aims the glide from where it is; a click reveals the result at once.</p>
+    </div>
+  </section>
+
+  <!-- install -->
+  <section class="section" id="install">
+    <div class="wrap">
+      <div class="install">
+        <div>
+          <span class="kicker">Install</span>
+          <h2>Unzip. Run. That is the install.</h2>
+          <p>Astur ships as a portable zip. There is no service, no driver and no admin prompt. Put it anywhere you like, run <code>astur.exe</code>, and your configuration appears in <code>%USERPROFILE%\.astur\</code> on first launch.</p>
+          <div class="actions">
+            <a class="btn btn-primary" href="https://github.com/ruoyu0088/Astur/releases/latest">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 3v12m0 0 4-4m-4 4-4-4M5 21h14"/></svg>
+              Download latest release
+            </a>
+            <a class="btn" href="docs.html#getting-started">Setup notes</a>
+          </div>
+        </div>
+        <ol class="steps">
+          <li><b>Download and unzip</b> the latest release anywhere. The zip holds <code>astur.exe</code> and the settings editor.</li>
+          <li><b>Run astur.exe.</b> The tray icon appears; the window manager starts with sensible defaults. No console window.</li>
+          <li><b>Try Alt + left-drag</b> on any window, then <b>Alt + Space</b> and <b>Alt + M</b>. Open Settings from the tray when you want to change something.</li>
+          <li><b>Keep it running.</b> Quit from the tray when you need to; Astur restores every window it moved or hid before exiting.</li>
+        </ol>
+      </div>
+      <p style="margin-top:16px;color:var(--dim);font-size:.79rem">Windows SmartScreen may warn about an unsigned executable the first time. Choose “More info” and “Run anyway”. Astur is open source; the release is built from this repository.</p>
+    </div>
+  </section>
+
+  <!-- faq -->
+  <section class="section" id="faq">
+    <div class="wrap">
+      <div class="section-head">
+        <span class="kicker">FAQ</span>
+        <h2>Reasonable questions.</h2>
+      </div>
+      <div class="faq">
+        <details>
+          <summary>Is Astur really free?</summary>
+          <p>Yes. Astur is open source under Apache-2.0. There is no paid tier, account or telemetry. The source, releases and issue tracker are on GitHub.</p>
+        </details>
+        <details>
+          <summary>Does it need administrator rights?</summary>
+          <p>No. Windows does not let a normal process move or hide elevated windows, so an admin terminal or Task Manager stays where it is and remains visible on every workspace. Run Astur as admin too if you need those tiled.</p>
+        </details>
+        <details>
+          <summary>Does it replace Explorer or the taskbar?</summary>
+          <p>No. Astur is a window manager, not a shell. Explorer, the taskbar and the Start menu keep working. Taskbar hiding is optional and reversible; quitting Astur always puts the taskbar back.</p>
+        </details>
+        <details>
+          <summary>What happens with multiple monitors?</summary>
+          <p>Each monitor can have its own layout, its own workspaces, and its own bar. Workspaces can be shared across monitors or independent per monitor. Full-screen and maximised windows are handled per monitor, not stretched across the virtual screen.</p>
+        </details>
+        <details>
+          <summary>Will it interfere with games?</summary>
+          <p>Alt + T turns tiling off, and window rules can ignore a game or leave it floating. Astur does not inject into applications or hook their rendering; it moves windows with the normal Win32 APIs.</p>
+        </details>
+        <details>
+          <summary>Where are the settings?</summary>
+          <p>Two commented files in <code>%USERPROFILE%\.astur\</code>: <code>astur.conf</code> for the window manager and <code>navbar.conf</code> for the bar. Save either one and Astur reloads it about 0.1 seconds later. The tray menu opens a settings editor if you prefer widgets to text.</p>
+        </details>
+        <details>
+          <summary>Can I use it on Windows 10?</summary>
+          <p>Yes. Astur targets Windows 10 and 11, is per-monitor DPI aware, and falls back to Segoe MDL2 Assets for bar icons on Windows 10.</p>
+        </details>
+        <details>
+          <summary>How do I uninstall it?</summary>
+          <p>Quit from the tray, delete the executable, and remove <code>%USERPROFILE%\.astur\</code> if you want the configuration gone too. There is no installer, service or registry entry to clean up.</p>
+        </details>
+      </div>
+    </div>
+  </section>
+
+</main>
+
+<footer class="site-footer">
+  <div class="wrap">
+    <div class="footer-top">
+      <div class="footer-brand">
+        <img src="assets/astur.svg" alt="" width="26" height="26">
+        <span>Astur — a tiling window manager for Windows.</span>
+      </div>
+      <nav class="footer-links" aria-label="Footer">
+        <a href="docs.html">Documentation</a>
+        <a href="https://github.com/ruoyu0088/Astur">Source</a>
+        <a href="https://github.com/ruoyu0088/Astur/releases/latest">Releases</a>
+        <a href="https://github.com/ruoyu0088/Astur/blob/main/LICENSE">Apache-2.0</a>
+        <a href="https://github.com/Page011/Astur">Original project</a>
+      </nav>
+    </div>
+    <div class="footer-bottom">
+      <p>Astur is free software under the Apache License 2.0. Windows is a trademark of Microsoft Corporation. Astur is not affiliated with Microsoft.</p>
+      <p>Built by the Astur contributors. This site is static, has no trackers and makes no external requests.</p>
+    </div>
+  </div>
+</footer>
+
+</body>
+</html>

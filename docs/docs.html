@@ -1,0 +1,858 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Documentation — Astur</title>
+  <meta name="description" content="The Astur manual: tiling, six layouts, scrolling columns, workspaces, floating windows, the status bar, launcher, system menu, every default hotkey and the configuration files.">
+  <meta name="theme-color" content="#0b0d14">
+  <link rel="canonical" href="https://ruoyu0088.github.io/Astur/docs.html">
+  <link rel="icon" href="assets/astur.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+
+<header class="site-nav">
+  <div class="wrap nav-inner">
+    <a class="brand" href="index.html" aria-label="Astur home">
+      <img src="assets/astur.svg" alt="" width="30" height="30">
+      <span>Astur</span>
+    </a>
+    <nav class="nav-links" aria-label="Primary">
+      <a href="index.html#features">Features</a>
+      <a href="index.html#layouts">Layouts</a>
+      <a href="index.html#workspaces">Workspaces</a>
+      <a href="index.html#hotkeys">Hotkeys</a>
+      <a href="docs.html" class="active">Docs</a>
+    </nav>
+    <div class="nav-actions">
+      <a class="nav-github" href="https://github.com/ruoyu0088/Astur" aria-label="Astur on GitHub">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 .5a12 12 0 0 0-3.8 23.4c.6.1.8-.3.8-.6v-2.1c-3.3.7-4-1.6-4-1.6-.6-1.4-1.4-1.8-1.4-1.8-1.1-.8.1-.8.1-.8 1.2.1 1.9 1.3 1.9 1.3 1.1 1.9 2.9 1.3 3.6 1 .1-.8.4-1.3.8-1.6-2.7-.3-5.5-1.3-5.5-5.9 0-1.3.5-2.4 1.2-3.2-.1-.3-.5-1.5.1-3.2 0 0 1-.3 3.3 1.2a11.5 11.5 0 0 1 6 0c2.3-1.5 3.3-1.2 3.3-1.2.6 1.7.2 2.9.1 3.2.8.8 1.2 1.9 1.2 3.2 0 4.6-2.8 5.6-5.5 5.9.4.4.8 1.1.8 2.2v3.3c0 .3.2.7.8.6A12 12 0 0 0 12 .5Z"/></svg>
+        <span>GitHub</span>
+      </a>
+      <a class="btn btn-primary btn-sm" href="https://github.com/ruoyu0088/Astur/releases/latest">Download</a>
+    </div>
+  </div>
+</header>
+
+<main id="main">
+
+  <section class="docs-hero">
+    <div class="wrap">
+      <span class="kicker">Documentation</span>
+      <h1>Astur, end to end.</h1>
+      <p>Every feature, every default shortcut, and the two text files that control it all. Written for people who want to use Astur, not build it.</p>
+      <div class="docs-meta">
+        <span>For Astur v2.7.0</span>
+        <span>Windows 10 and 11</span>
+        <span>6 layouts</span>
+        <span>Up to 20 workspaces</span>
+      </div>
+    </div>
+  </section>
+
+  <div class="wrap docs-layout">
+    <aside class="docs-side">
+      <nav class="docs-toc" aria-label="Documentation contents">
+        <div class="toc-group">
+          <span class="toc-title">Start</span>
+          <a href="#getting-started">Getting started</a>
+          <a href="#first-five-minutes">First five minutes</a>
+        </div>
+        <div class="toc-group">
+          <span class="toc-title">Windows</span>
+          <a href="#tiling">Tiling</a>
+          <a href="#layouts">Layouts</a>
+          <a href="#workspaces">Workspaces</a>
+          <a href="#scrolling">Scrolling layout</a>
+          <a href="#floating">Floating windows</a>
+        </div>
+        <div class="toc-group">
+          <span class="toc-title">Interface</span>
+          <a href="#bar">Status bar</a>
+          <a href="#launcher">Launcher and menu</a>
+        </div>
+        <div class="toc-group">
+          <span class="toc-title">Controls</span>
+          <a href="#hotkeys">Hotkeys</a>
+          <a href="#mouse">Mouse</a>
+        </div>
+        <div class="toc-group">
+          <span class="toc-title">Configuration</span>
+          <a href="#settings">Settings editor</a>
+          <a href="#config-files">Config files</a>
+          <a href="#window-rules">Window rules</a>
+          <a href="#troubleshooting">Troubleshooting</a>
+        </div>
+      </nav>
+      <div class="docs-side-card">
+        <b>New here?</b>
+        <p>Download the zip, unzip it anywhere and run <code>astur.exe</code>. Alt-drag works immediately; no configuration is required.</p>
+        <a class="btn btn-primary btn-sm" href="https://github.com/ruoyu0088/Astur/releases/latest">Download</a>
+      </div>
+    </aside>
+
+    <article class="docs-main">
+
+      <section id="getting-started" class="doc-section">
+        <h2>Getting started</h2>
+        <p class="doc-lead">Astur is one portable executable. There is no installer, no service and no driver: unzip it, run it, and it starts managing windows with sensible defaults.</p>
+
+        <h3>What you need</h3>
+        <div class="table-wrap">
+          <table>
+            <tbody>
+              <tr><th>Windows</th><td>Windows 10 (64-bit, 22H2 or later) or Windows 11</td></tr>
+              <tr><th>Disk</th><td>About 1 MB for the executable, plus your configuration files</td></tr>
+              <tr><th>Privileges</th><td>None. Astur runs as a normal user; admin windows are simply left alone</td></tr>
+              <tr><th>Runtimes</th><td>None. The executable is self-contained</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <h3>Install in four steps</h3>
+        <ol class="doc-steps">
+          <li><b>Download</b> the latest zip from the <a href="https://github.com/ruoyu0088/Astur/releases/latest">releases page</a>.</li>
+          <li><b>Unzip</b> it wherever you keep portable tools, for example <code>C:\Tools\Astur\</code>. Keep <code>astur.exe</code> and the settings editor together.</li>
+          <li><b>Run <code>astur.exe</code>.</b> A tray icon appears and the tiling behaviour starts. There is no console window.</li>
+          <li><b>Open Settings</b> from the tray when you want to change something. Configuration is optional; the defaults are usable as they are.</li>
+        </ol>
+
+        <div class="callout">
+          <b>SmartScreen.</b> The executable is unsigned, so Windows may show “Windows protected your PC” the first time. Choose <b>More info</b> then <b>Run anyway</b>. The release is built from this repository and the source is public.
+        </div>
+
+        <h3>Where things live</h3>
+        <p>On first launch Astur creates two commented files in <code>%USERPROFILE%\.astur\</code>:</p>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>File</th><th>What it controls</th></tr></thead>
+            <tbody>
+              <tr><td><code>astur.conf</code></td><td>Layouts, workspaces, gaps, borders, focus, motion, hotkeys, window rules, launcher, system menu, desktop extras.</td></tr>
+              <tr><td><code>navbar.conf</code></td><td>The status bar: shape, palette, font, widget zones, per-widget click actions, monitors, auto-hide.</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p>Both files reload about 0.1 seconds after you save them. A malformed file is reported, not applied; Astur keeps the settings it already has and never overwrites a file it cannot read.</p>
+
+        <h3>Starting with Windows</h3>
+        <p>Put a shortcut to <code>astur.exe</code> in <code>shell:startup</code> (press <kbd>Win</kbd>+<kbd>R</kbd>, type <code>shell:startup</code> and press Enter). Astur has no service and does not register itself anywhere else. To update, quit it from the tray, replace the executable and run the new one; your configuration is untouched.</p>
+
+        <h3>Quitting</h3>
+        <p>Use <b>Quit</b> in the tray menu. Astur restores every window it moved, showed or hid before it exits. If it is killed instead, the next launch offers the same recovery from its rescue file. There is no “uninstall” step: quit, delete the executable, and remove <code>%USERPROFILE%\.astur\</code> if you also want the configuration gone.</p>
+      </section>
+
+      <section id="first-five-minutes" class="doc-section">
+        <h2>First five minutes</h2>
+        <p class="doc-lead">You do not need the rest of this page to start. These eight things show almost everything Astur does.</p>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Try this</th><th>What should happen</th></tr></thead>
+            <tbody>
+              <tr><td><kbd>Alt</kbd> + left-drag a window by its content area</td><td>The window moves, even though you never touched its title bar.</td></tr>
+              <tr><td><kbd>Alt</kbd> + right-drag near a corner</td><td>The window resizes from that corner; a red bracket marks it.</td></tr>
+              <tr><td><kbd>Alt</kbd> + <kbd>Space</kbd></td><td>The launcher opens. Type a few letters of an app and press Enter.</td></tr>
+              <tr><td><kbd>Alt</kbd> + <kbd>M</kbd></td><td>The system menu opens: lock, sleep, restart, shutdown, settings and Astur actions.</td></tr>
+              <tr><td><kbd>Alt</kbd> + <kbd>1</kbd>, then <kbd>Alt</kbd> + <kbd>2</kbd></td><td>Two separate workspaces. Each keeps its own windows and layout.</td></tr>
+              <tr><td><kbd>Alt</kbd> + <kbd>T</kbd></td><td>Tiling turns off; windows stop being placed. Press it again to re-tile.</td></tr>
+              <tr><td><kbd>Alt</kbd> + <kbd>F</kbd></td><td>The focused window floats; the tiled windows close the gap behind it.</td></tr>
+              <tr><td><kbd>Alt</kbd> + <kbd>P</kbd>, then a workspace number</td><td>Swap mode: the two workspaces exchange all their windows.</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p>Everything in that table uses the <b>main key</b>, which is Right Alt by default. Left Alt remains the applications' Alt, so Alt+F4 and menu bars still work. If you choose a different main key, read every “Alt” below as that key.</p>
+      </section>
+
+      <section id="tiling" class="doc-section">
+        <h2>Tiling</h2>
+        <p class="doc-lead">Tiling means Astur chooses where a window goes instead of letting windows pile up on top of each other. The windows remain ordinary Windows windows: they keep their taskbar buttons, their Alt+Tab entries and their own menus.</p>
+
+        <h3>What happens when a window opens</h3>
+        <p>A new top-level window takes the next free slot in the current layout. The windows already there shrink or move to make room, and focus follows the newcomer. Close a window and the remaining ones expand into the space. Nothing is hidden behind anything else unless you are in <a href="#layouts">monocle</a> or a tabbed column.</p>
+        <p>Some windows are deliberately left alone: elevated processes (Task Manager, an admin terminal, UAC), windows whose class is in <code>ignore_classes</code>, and Windows shell surfaces such as the taskbar and tooltips. They behave exactly as they would without Astur.</p>
+
+        <h3>Focus and selection</h3>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Shortcut</th><th>Action</th></tr></thead>
+            <tbody>
+              <tr><td><kbd>Alt</kbd> + arrow keys</td><td>Focus the window in that direction. The mouse cursor follows the focus by default.</td></tr>
+              <tr><td><kbd>Alt</kbd> + <kbd>D</kbd> / <kbd>A</kbd></td><td>Focus the next / previous window in layout order.</td></tr>
+              <tr><td><kbd>Alt</kbd> + <kbd>Shift</kbd> + <kbd>D</kbd> / <kbd>A</kbd></td><td>Swap the focused window with the next / previous one.</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <h3>Moving and resizing inside the layout</h3>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Shortcut</th><th>Action</th></tr></thead>
+            <tbody>
+              <tr><td><kbd>Alt</kbd> + <kbd>Shift</kbd> + arrows</td><td>Move the focused window in that direction; at a monitor edge it crosses to the neighbouring monitor.</td></tr>
+              <tr><td><kbd>Alt</kbd> + <kbd>Z</kbd> / <kbd>C</kbd></td><td>Shrink / grow the master column in the <code>master</code> layout. On a scrolling monitor these resize the column instead.</td></tr>
+              <tr><td><kbd>Alt</kbd> + <kbd>S</kbd></td><td>Promote the focused window to master.</td></tr>
+              <tr><td><kbd>Alt</kbd> + <kbd>E</kbd></td><td>Fill the whole workspace with the focused window (on top of the others), or restore the layout.</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <h3>Closing, minimising, floating</h3>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Shortcut</th><th>Action</th></tr></thead>
+            <tbody>
+              <tr><td><kbd>Alt</kbd> + <kbd>W</kbd></td><td>Close the focused window.</td></tr>
+              <tr><td><kbd>Alt</kbd> + <kbd>Q</kbd></td><td>Minimise the focused window. Press it again within a moment to restore everything that key minimised.</td></tr>
+              <tr><td><kbd>Alt</kbd> + <kbd>F</kbd></td><td>Toggle floating for the focused window. The rest of the layout re-tiles at once.</td></tr>
+              <tr><td><kbd>Alt</kbd> + <kbd>T</kbd></td><td>Turn tiling on or off for the current state. Press again to re-tile.</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <h3>Borders and dimming</h3>
+        <p>Tiled windows can carry a coloured border, and unfocused windows can be dimmed so the focused one is obvious at a glance. A floating window can take its own border colour, separate from the tiled colour, which makes dialogs and settings windows easy to pick out. Both are appearance settings; they never affect placement.</p>
+      </section>
+
+      <section id="layouts" class="doc-section">
+        <h2>Layouts</h2>
+        <p class="doc-lead">Six layouts share the same windows and the same shortcuts. Switching layout re-tiles the current monitor immediately; it does not reopen or move windows to another workspace.</p>
+
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Layout</th><th>Where windows go</th><th>Good for</th><th>Useful keys</th></tr></thead>
+            <tbody>
+              <tr>
+                <td><b>dwindle</b> <span class="tag">default</span></td>
+                <td>Each new window splits the largest free rectangle, spiralling toward a corner.</td>
+                <td>General use. Fills a screen quickly without decisions.</td>
+                <td><kbd>Alt</kbd>+arrows to navigate the spiral</td>
+              </tr>
+              <tr>
+                <td><b>master</b></td>
+                <td>One large master column on the left, the remaining windows stacked on the right. The master ratio is 55% by default.</td>
+                <td>One main document or editor beside reference windows.</td>
+                <td><kbd>Z</kbd>/<kbd>C</kbd> ratio, <kbd>S</kbd> promote</td>
+              </tr>
+              <tr>
+                <td><b>columns</b></td>
+                <td>Equal-width columns, one window per column.</td>
+                <td>Wide monitors, comparing several documents side by side.</td>
+                <td>Arrows, <kbd>Shift</kbd>+arrows</td>
+              </tr>
+              <tr>
+                <td><b>grid</b></td>
+                <td>A balanced rows-and-columns grid.</td>
+                <td>Dashboards, monitors, many similar windows.</td>
+                <td>Arrows, <kbd>Shift</kbd>+arrows</td>
+              </tr>
+              <tr>
+                <td><b>monocle</b></td>
+                <td>Every tiled window fills the work area; the focused one is on top.</td>
+                <td>Presentations, reading, one thing at a time.</td>
+                <td><kbd>D</kbd>/<kbd>A</kbd> cycle windows</td>
+              </tr>
+              <tr>
+                <td><b>scrolling</b></td>
+                <td>Columns on an endless horizontal strip. Columns past the edge are a scroll away.</td>
+                <td>Many windows in a linear workflow, Niri-style.</td>
+                <td><a href="#scrolling">See the scrolling reference</a></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <h3>Choosing a layout</h3>
+        <p>There are three levels, and the most specific one wins:</p>
+        <div class="config-block"><span class="file">astur.conf</span>
+<span class="c"># The default for every monitor and workspace</span>
+<span class="k">layout</span> = <span class="v">dwindle</span>
+
+<span class="c"># Per monitor, numbered from the left: scrolling, inherit, master</span>
+<span class="k">monitor_layouts</span> = <span class="v">scrolling, , master</span>
+
+<span class="c"># Per workspace, by workspace number. Empty = that monitor's layout.</span>
+<span class="k">workspace_layouts</span> = <span class="v">, grid, , , , scrolling</span></div>
+        <p>An empty entry or <code>default</code> means “inherit the level below”. So workspace 2 uses grid, workspace 6 uses scrolling, and every other workspace uses its monitor's layout, which in turn falls back to <code>layout</code>.</p>
+        <p>Switching layout at runtime changes the <b>focused monitor only</b> and lasts until the next configuration reload, which puts the file back in charge. The bar's layout widget always shows each monitor's current layout, including the focused column number on scrolling monitors (<code>scrolling 2/5</code>).</p>
+      </section>
+
+      <section id="workspaces" class="doc-section">
+        <h2>Workspaces</h2>
+        <p class="doc-lead">A workspace is a complete set of windows, not a stretched virtual desktop. Each one keeps its layout, its focus and — on a scrolling monitor — its own column strip and scroll position.</p>
+
+        <h3>How many, and where</h3>
+        <p>Astur supports up to <b>20</b> workspaces. Ten are enabled by default and bound to the number row. The count and the keys are ordinary configuration:</p>
+        <div class="config-block"><span class="file">astur.conf</span>
+<span class="k">workspaces</span> = <span class="v">10</span>
+<span class="k">workspace_keys</span> = <span class="v">1 2 3 4 5 6 7 8 9 0</span></div>
+        <p>You can bind more than ten keys (<code>... 0 G H</code>) or fewer. A workspace without a key is still reachable from its bar pill, from swap mode, or from a custom shortcut.</p>
+
+        <h3>Shared or per monitor</h3>
+        <p><code>workspace_mode</code> decides whether the numbered workspaces are global or belong to each screen:</p>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Mode</th><th>Behaviour</th></tr></thead>
+            <tbody>
+              <tr><td><code>shared</code> <span class="tag">default</span></td><td>One numbered set for the whole desktop. Each workspace belongs to one monitor (workspace 1 on the main screen, 2 on the next, and so on); its key switches to it and focuses that monitor. The other screens keep what they were showing.</td></tr>
+              <tr><td><code>per_monitor</code></td><td>Each monitor has its own numbered set. Monitor 1 on workspace 2 and monitor 2 on workspace 5 can be visible at the same time.</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <h3>Switching and moving windows</h3>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Shortcut</th><th>Action</th></tr></thead>
+            <tbody>
+              <tr><td><kbd>Alt</kbd> + <kbd>1</kbd>…<kbd>9</kbd>, <kbd>0</kbd></td><td>Switch to workspace 1…10.</td></tr>
+              <tr><td><kbd>Alt</kbd> + <kbd>Shift</kbd> + <kbd>1</kbd>…<kbd>0</kbd></td><td>Move the focused window to that workspace; you stay where you are.</td></tr>
+              <tr><td><kbd>Alt</kbd> + <kbd>,</kbd> / <kbd>.</kbd> / <kbd>/</kbd></td><td>Go to the <b>focused monitor's</b> 1st / 2nd / 3rd workspace (in that monitor's own order).</td></tr>
+              <tr><td><kbd>Alt</kbd> + <kbd>L</kbd> / <kbd>;</kbd> / <kbd>'</kbd></td><td>Go to the <b>next monitor's</b> 1st / 2nd / 3rd workspace.</td></tr>
+              <tr><td><kbd>Alt</kbd> + <kbd>Shift</kbd> + those six keys</td><td>Move the focused window to that workspace instead of following it.</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p>The comma and letter shortcuts are easy to miss because they are not on the number row: they exist so a laptop or a keyboard without a convenient number row can still reach every workspace on every monitor without counting.</p>
+
+        <h3>Swap mode</h3>
+        <p><kbd>Alt</kbd> + <kbd>P</kbd> puts the screen into <b>SWAP MODE</b>. The next key chooses the other workspace:</p>
+        <ul>
+          <li>A digit <kbd>1</kbd>…<kbd>0</kbd> swaps the two workspaces and leaves swap mode.</li>
+          <li>A workspace key does the same.</li>
+          <li><kbd>Alt</kbd> + <kbd>A</kbd> / <kbd>D</kbd> (or Left / Right) swaps with the previous / next workspace and <b>stays</b> in swap mode, so you can keep going.</li>
+          <li>Any other key leaves the mode without swapping.</li>
+        </ul>
+        <p>Every workspace keeps its own layout, so a swap moves the windows but not the layouts. This is the quickest way to put a full workspace on another screen or another number.</p>
+
+        <h3>Names, icons and wallpapers</h3>
+        <p>Workspaces can be labelled in the bar. Names are comma-separated and fall back to the number when a position is empty. Icons are optional short labels, symbols or glyphs. Per-workspace wallpapers use the same order, separated by <code>;;</code>; an empty slot changes nothing.</p>
+        <div class="config-block"><span class="file">astur.conf</span>
+<span class="k">workspace_names</span> = <span class="v">Web, Code, Chat, Files, Media</span>
+<span class="k">workspace_icons</span> =
+<span class="k">workspace_wallpapers</span> =</div>
+        <p>The bar chooses what a workspace mark shows: numbers, names, icons or both (<code>workspace_label</code>), plus optional app icons for the windows inside (<code>workspace_apps</code>).</p>
+
+        <h3>Persistence</h3>
+        <p>By default Astur remembers the active workspace and the order in which you used windows (<code>persist_state = true</code>), so a restart puts you back where you were rather than on workspace 1. Quitting still restores every window first.</p>
+      </section>
+
+      <section id="scrolling" class="doc-section">
+        <h2>Scrolling layout</h2>
+        <p class="doc-lead">Scrolling is a Niri-style workspace: windows sit in columns on an endless horizontal strip, and the view scrolls along it. Instead of squeezing a fifth window into the same screen, you add a fifth column and scroll to it.</p>
+
+        <figure class="doc-figure">
+          <img src="assets/screens/scrolling-layout.png" alt="A scrolling workspace with several columns, one tabbed column and another column peeking in from the edge." width="2560" height="1440" loading="lazy">
+          <figcaption><b>scrolling-layout.png</b> — three columns, a tabbed column, and the next column peeking in.</figcaption>
+        </figure>
+
+        <h3>Columns and widths</h3>
+        <p>Each column is a fraction of the screen width. A new window opens as a new column to the right of the focused one at <code>scroll_default_width</code> (0.5, so two fit side by side). Widths are not pixel values, so the same layout works on a laptop and an ultrawide.</p>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Shortcut</th><th>Action</th></tr></thead>
+            <tbody>
+              <tr><td><kbd>Alt</kbd> + <kbd>R</kbd></td><td>Cycle the width presets: 1/3, 1/2, 2/3, full.</td></tr>
+              <tr><td><kbd>Alt</kbd> + <kbd>Z</kbd> / <kbd>C</kbd></td><td>Narrow / widen the focused column by 0.1.</td></tr>
+              <tr><td><kbd>Alt</kbd> + <kbd>S</kbd></td><td>Toggle the focused column between full width and its previous width.</td></tr>
+              <tr><td><kbd>Alt</kbd> + <kbd>Shift</kbd> + <kbd>R</kbd></td><td>Cycle the height presets for windows inside a column.</td></tr>
+              <tr><td><kbd>Alt</kbd> + <kbd>Shift</kbd> + <kbd>Z</kbd> / <kbd>C</kbd></td><td>Make the focused window shorter / taller inside its column.</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <h3>Moving around the strip</h3>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Shortcut</th><th>Action</th></tr></thead>
+            <tbody>
+              <tr><td><kbd>Alt</kbd> + <kbd>Left</kbd> / <kbd>Right</kbd></td><td>Focus the previous / next column; at the end of the strip, move to the next monitor.</td></tr>
+              <tr><td><kbd>Alt</kbd> + <kbd>Up</kbd> / <kbd>Down</kbd></td><td>Focus the window above / below inside the column; in a tabbed column, the previous / next tab.</td></tr>
+              <tr><td><kbd>Alt</kbd> + <kbd>Shift</kbd> + <kbd>Left</kbd> / <kbd>Right</kbd></td><td>Move the focused column; at the end, the window moves to the next monitor.</td></tr>
+              <tr><td><kbd>Alt</kbd> + <kbd>Shift</kbd> + <kbd>Up</kbd> / <kbd>Down</kbd></td><td>Move a window up / down in its column; reorder tabs in a tabbed column.</td></tr>
+              <tr><td><kbd>Alt</kbd> + <kbd>D</kbd> / <kbd>A</kbd></td><td>Focus the next / previous window.</td></tr>
+              <tr><td><kbd>Alt</kbd> + <kbd>Shift</kbd> + <kbd>D</kbd> / <kbd>A</kbd></td><td>Move the column right / left.</td></tr>
+              <tr><td><kbd>Alt</kbd> + <kbd>Home</kbd> / <kbd>End</kbd></td><td>Focus the first / last column. Add Shift to move the column there.</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <h3>Stacking and tabs</h3>
+        <p><kbd>Alt</kbd> + <kbd>[</kbd> pulls the focused window into the column on its left; <kbd>Alt</kbd> + <kbd>]</kbd> pushes it into the column on its right. If the window already shares a column, the same key pushes it back out into a column of its own. Windows sharing a column split its height.</p>
+        <p><kbd>Alt</kbd> + <kbd>Shift</kbd> + <kbd>T</kbd> turns a column into tabs: one window at a time under a tab bar, with an icon and title per tab. Click a tab to switch; Alt-drag the bar to move the whole column. Press it again to go back to stacked windows.</p>
+
+        <h3>Peek, park, and other monitors</h3>
+        <p>A column partly past the screen edge <b>peeks</b>: it is left where it is, even when a monitor sits on that side, so it can hang onto the neighbouring display. A column completely outside its own monitor is <b>parked</b> outside the virtual screen. Parked windows keep their taskbar button and Alt+Tab entry; activating one scrolls it into view.</p>
+        <p>Parking is not a hiding place you can lose windows in. Quitting, relaunching after a crash, turning tiling off, or switching the monitor to another layout brings every parked window back on screen.</p>
+
+        <h3>Centring</h3>
+        <p><kbd>Alt</kbd> + <kbd>X</kbd> centres the focused column once. The permanent behaviour is <code>scroll_center</code>:</p>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Value</th><th>When focus moves to a column</th></tr></thead>
+            <tbody>
+              <tr><td><code>never</code> <span class="tag">default</span></td><td>Scroll only as far as needed to show it completely.</td></tr>
+              <tr><td><code>always</code></td><td>Keep the focused column centred.</td></tr>
+              <tr><td><code>on-overflow</code></td><td>Stay put if it fits; centre it only when it does not.</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <h3>Mouse and touchpad</h3>
+        <ul>
+          <li><kbd>Alt</kbd> + wheel focuses columns; wheel down moves right. Add Shift to move the column instead.</li>
+          <li><kbd>Alt</kbd> + horizontal wheel or a touchpad swipe focuses left / right, one column per gesture.</li>
+          <li>While Alt-dragging a window, drop it on the left or right quarter to create a new column beside the target; drop it in the middle to stack it into that column.</li>
+          <li>While Alt-right-dragging, the side edges resize the column width; the top and bottom edges resize the window's height.</li>
+        </ul>
+
+        <div class="config-block"><span class="file">astur.conf</span>
+<span class="k">layout</span> = <span class="v">scrolling</span>
+<span class="k">scroll_default_width</span> = <span class="v">0.5</span>
+<span class="k">scroll_width_presets</span> = <span class="v">0.333, 0.5, 0.667, 1.0</span>
+<span class="k">scroll_height_presets</span> = <span class="v">0.333, 0.5, 0.667</span>
+<span class="k">scroll_center</span> = <span class="v">never</span>
+<span class="k">tab_bar_height</span> = <span class="v">26</span></div>
+        <p>To use scrolling on one monitor only, leave <code>layout</code> as it is and set that monitor's entry in <code>monitor_layouts</code>, for example <code>monitor_layouts = scrolling, , dwindle</code>.</p>
+      </section>
+
+      <section id="floating" class="doc-section">
+        <h2>Floating windows</h2>
+        <p class="doc-lead">Tiling is the default, not a rule. Any window can leave the layout, keep its own size and position, and still be moved with the same Alt-drag that works everywhere else.</p>
+
+        <p><kbd>Alt</kbd> + <kbd>F</kbd> toggles floating for the focused window. The tiled windows behind it close the gap immediately; the floating window stays on top of the layout and is not resized when other windows open or close. Press <kbd>Alt</kbd> + <kbd>F</kbd> again to drop it back into the next free slot.</p>
+
+        <h3>Moving and resizing</h3>
+        <p><kbd>Alt</kbd> + left-drag moves the window by any part of its surface. <kbd>Alt</kbd> + right-drag resizes from the nearest corner — Astur picks the corner from the pointer's position, not from which edge you grabbed. A red bracket shows the corner in use.</p>
+
+        <div class="figure-grid">
+          <figure class="doc-figure">
+            <img src="assets/screens/floating-window.png" alt="A floating window above a tiled layout." width="1600" height="1000" loading="lazy">
+            <figcaption><b>floating-window.png</b> — a floating window over a tiled workspace.</figcaption>
+          </figure>
+          <figure class="doc-figure">
+            <img src="assets/screens/resize-bracket.png" alt="The red corner bracket shown while Alt-right-dragging a window." width="800" height="600" loading="lazy">
+            <figcaption><b>resize-bracket.png</b> — the corner marker during an Alt-right-drag.</figcaption>
+          </figure>
+        </div>
+
+        <h3>A separate border colour</h3>
+        <p>Floating windows can use their own focused and unfocused border colours, so a dialog or a video player does not look like part of the tiling:</p>
+        <div class="config-block"><span class="file">astur.conf</span>
+<span class="k">float_focused_border</span> = <span class="v">#7AA2F7</span>
+<span class="k">float_unfocused_border</span> = <span class="v">#3B4261</span></div>
+
+        <h3>Floating by rule</h3>
+        <p>Some windows should never tile: dialogs, tool palettes, splash screens, a video player. Two lists handle the common cases, and the richer <a href="#window-rules">window rules</a> handle everything else:</p>
+        <div class="config-block"><span class="file">astur.conf</span>
+<span class="c"># Class names that are never managed at all</span>
+<span class="k">ignore_classes</span> = <span class="v">TaskManagerWindow, MyOverlayClass</span>
+
+<span class="c"># Managed, but always left floating</span>
+<span class="k">float_classes</span> = <span class="v">#32770, MsiDialogCloseClass</span></div>
+        <p><code>#32770</code> is the standard Windows dialog class, so it floats message boxes and many app dialogs in one line. Rules apply to windows that open later and to windows that are already open when Astur starts.</p>
+
+        <h3>Tiling off entirely</h3>
+        <p><kbd>Alt</kbd> + <kbd>T</kbd> turns tiling off without closing or moving anything. New windows are left where the application puts them. Turn it back on and the current workspace is tiled again. This is the quick way to step out of the layout for a game, a presentation or a one-off task.</p>
+      </section>
+
+      <section id="bar" class="doc-section">
+        <h2>Status bar</h2>
+        <p class="doc-lead">The bar is optional, but it is where Astur becomes visible. Each monitor can have its own bar showing that monitor's workspaces and focused window, with widgets split into three zones.</p>
+
+        <figure class="doc-figure">
+          <img src="assets/screens/bar.png" alt="The Astur status bar with workspace pills on the left, a window title in the centre, and layout, CPU, memory, volume and clock widgets on the right." width="2560" height="120" loading="lazy">
+          <figcaption><b>bar.png</b> — the default strip: workspace pills, title, and system widgets. A wide crop works best.</figcaption>
+        </figure>
+
+        <h3>Three zones, one bar per monitor</h3>
+        <p><code>left</code>, <code>center</code> and <code>right</code> are ordered lists of widget names. A widget appears when it is listed in a zone; <code>workspaces</code>, <code>apps</code>, <code>title</code>, <code>layout</code>, <code>cpu</code>, <code>mem</code>, <code>net</code>, <code>volume</code>, <code>battery</code>, <code>date</code>, <code>clock</code> and <code>media</code> also honour their own <code>show_*</code> toggle, while <code>keyboard</code> and the widgets after it are shown purely by being listed. The bar reserves screen space so tiled windows never sit underneath it; auto-hide releases that space.</p>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Widget</th><th>What it shows</th></tr></thead>
+            <tbody>
+              <tr><td><code>workspaces</code></td><td>A pill per workspace: number, name, icon or app icons. Click to switch; scroll to cycle.</td></tr>
+              <tr><td><code>apps</code></td><td>Buttons for the open windows on this monitor. Click to focus.</td></tr>
+              <tr><td><code>title</code></td><td>The focused window's title or app name.</td></tr>
+              <tr><td><code>layout</code></td><td>The monitor's layout, and the focused column on scrolling monitors.</td></tr>
+              <tr><td><code>cpu</code>, <code>mem</code></td><td>Processor and memory use, updated about every two seconds.</td></tr>
+              <tr><td><code>net</code></td><td>Network speed, or a wifi / ethernet glyph.</td></tr>
+              <tr><td><code>volume</code></td><td>Volume level and mute. Scroll to adjust; click to mute.</td></tr>
+              <tr><td><code>battery</code></td><td>Charge level and charging state; turns red when low.</td></tr>
+              <tr><td><code>keyboard</code></td><td>The active keyboard language.</td></tr>
+              <tr><td><code>disk</code></td><td>Free space on the chosen drive (<code>disk_drive</code>).</td></tr>
+              <tr><td><code>uptime</code></td><td>Time since the last boot.</td></tr>
+              <tr><td><code>date</code>, <code>clock</code></td><td>Date and time, with configurable formats and optional seconds.</td></tr>
+              <tr><td><code>media</code>, <code>media_controls</code></td><td>The current track and transport buttons.</td></tr>
+              <tr><td><code>custom</code></td><td>The output of your own command, refreshed on its own interval.</td></tr>
+              <tr><td><code>logo</code></td><td>The Astur mark.</td></tr>
+              <tr><td><code>separator</code>, <code>spacer</code></td><td>A line, dot or powerline arrow; a fixed gap (not flexible space).</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <h3>Shapes, palettes and presets</h3>
+        <p>Four shapes change the bar's construction without changing its contents:</p>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Shape</th><th>Look</th></tr></thead>
+            <tbody>
+              <tr><td><code>strip</code> <span class="tag">default</span></td><td>Full-width bar along the screen edge.</td></tr>
+              <tr><td><code>floating</code></td><td>A detached rounded bar with a margin, waybar/Hyprland style.</td></tr>
+              <tr><td><code>islands</code></td><td>A rounded island behind each of the three zones.</td></tr>
+              <tr><td><code>pills</code></td><td>A capsule behind every widget, each with its own colour if you want.</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p>Seven palettes (classic, Catppuccin, Nord, Gruvbox, Rose Pine, mono and system, which follows your Windows accent), each with a light and a dark variant. Nine preset looks are defined in the config crate as data; the settings editor is schema-driven, so the same look is set through the individual <code>navbar.conf</code> keys.</p>
+
+        <h3>Click actions</h3>
+        <p>Every widget has left, right and middle actions. The syntax is one line per button:</p>
+        <div class="config-block"><span class="file">navbar.conf</span>
+<span class="k">clock_click</span> = <span class="v">calendar</span>
+<span class="k">cpu_right_click</span> = <span class="v">launch wt</span>
+<span class="k">volume_click</span> = <span class="v">mute</span></div>
+        <p>Out of the box, the clock and date open the calendar, volume mutes, battery and network open the Windows quick settings, CPU and RAM open Task Manager, and right-clicking most widgets opens the matching Windows Settings page. Settings exposes the same actions as drop-downs, including “Go to workspace…” and “Open an app or command…”.</p>
+
+        <h3>Per monitor and auto-hide</h3>
+        <p><code>monitors = all</code>, <code>primary</code> or a list such as <code>1 3</code> decides which screens get a bar. <code>autohide = true</code> slides the bar away and releases its reserved space; move the pointer to that screen edge to reveal it. On a mixed-DPI setup the bar is scaled per monitor, so a 100% and a 150% screen both look right.</p>
+
+        <h3>A minimal navbar.conf</h3>
+        <div class="config-block"><span class="file">navbar.conf</span>
+<span class="k">enabled</span> = <span class="v">true</span>
+<span class="k">height</span> = <span class="v">28</span>
+<span class="k">shape</span> = <span class="v">islands</span>
+<span class="k">palette</span> = <span class="v">catppuccin</span>
+<span class="k">monitors</span> = <span class="v">all</span>
+
+<span class="k">left</span> = <span class="v">workspaces, apps</span>
+<span class="k">center</span> = <span class="v">title</span>
+<span class="k">right</span> = <span class="v">layout, cpu, mem, volume, battery, date, clock</span></div>
+
+        <h3>Custom text and commands</h3>
+        <p>The <code>custom</code> widget runs a command in the background on its own interval and shows the first line of output. It never blocks the bar: a slow command is killed after five seconds and the previous text stays. <code>disk</code> shows the free space of <code>disk_drive</code>. Both are ordinary widgets, so they can sit in any zone and have click actions like the rest.</p>
+
+        <h3>Taskbar hiding</h3>
+        <p><code>hide_taskbar = true</code> makes the Windows taskbar invisible and click-through on every monitor, so tiles reach the screen edge. <kbd>Alt</kbd> + <kbd>K</kbd> reveals it for a moment. Quitting Astur always puts it back, whatever state it was in. This is opt-in and off by default.</p>
+      </section>
+
+      <section id="launcher" class="doc-section">
+        <h2>Launcher and system menu</h2>
+        <p class="doc-lead">Two keyboard-first popups cover the things you would otherwise reach for the Start menu or the power button to do. Both follow the light or dark theme, open on the monitor you are using, and never take focus away until you dismiss them.</p>
+
+        <h3>The launcher</h3>
+        <p><kbd>Alt</kbd> + <kbd>Space</kbd> opens a fuzzy, MRU-ranked search. Type a few letters; the best match is selected. <kbd>Enter</kbd> launches it, <kbd>Esc</kbd> closes the launcher.</p>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Source</th><th>What it searches</th></tr></thead>
+            <tbody>
+              <tr><td>Apps</td><td>Start Menu shortcuts, including Store and UWP apps.</td></tr>
+              <tr><td>Files</td><td>An index of your profile (or <code>launcher_file_scope</code>), with excludes such as <code>.git</code>, <code>node_modules</code> and <code>target</code>.</td></tr>
+              <tr><td>Windows</td><td>Open top-level windows; choosing one focuses it. Off by default; enable it with <code>launcher_source_windows = true</code>.</td></tr>
+              <tr><td>Calculator</td><td>Type an expression and see the result inline.</td></tr>
+              <tr><td>Web</td><td>A fallback search on <code>launcher_web_url</code> when nothing local matches.</td></tr>
+              <tr><td>Clipboard / emoji</td><td>Optional prefix providers: <code>&gt;</code> for clipboard history, <code>:</code> for emoji.</td></tr>
+              <tr><td>Custom entries</td><td>Your own labels, commands, URLs and icons in <code>launcher_entries</code>.</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p><kbd>Tab</kbd> shows the selected file's modified time, size and path. <kbd>Shift</kbd> + <kbd>Enter</kbd> reveals a file in Explorer; <kbd>F5</kbd> refreshes the app and custom entries. Placement, width, height, row height, icon size, corner radius, opacity, result limit and mouse navigation are all configurable.</p>
+
+        <figure class="doc-figure narrow">
+          <img src="assets/screens/launcher.png" alt="The Astur launcher with a query and matching applications." width="1200" height="800" loading="lazy">
+          <figcaption><b>launcher.png</b> — a query with app, file and web results.</figcaption>
+        </figure>
+
+        <h3>The system menu</h3>
+        <p><kbd>Alt</kbd> + <kbd>M</kbd> opens the power and setup menu. The default power category contains <b>lock, sleep, hibernate, sign out, restart and shutdown</b>; the setup category contains <b>Settings, open config, reload, restart Astur, exit Astur, screenshot and wallpapers</b>. Order, width, icons and confirmation are configuration.</p>
+        <p>Custom entries use one record per action, with fields separated by <code>|</code> and records by <code>;;</code>:</p>
+        <div class="config-block"><span class="file">astur.conf</span>
+<span class="c"># category|label|target|icon|confirm</span>
+<span class="k">system_actions</span> = <span class="v">Tools|Open notes|notepad.exe|auto|false ;; Web|Astur docs|https://ruoyu0088.github.io/Astur/|auto|false</span></div>
+
+        <figure class="doc-figure narrow">
+          <img src="assets/screens/system-menu.png" alt="The Astur system menu showing power actions and setup actions." width="800" height="900" loading="lazy">
+          <figcaption><b>system-menu.png</b> — power and setup categories in one menu.</figcaption>
+        </figure>
+
+        <div class="callout">
+          <b>A note on Alt+M.</b> The shipped default is <code>key_system_menu = M</code>, so this page says Alt+M. Some older documentation says Alt+. — that was an earlier default. If your menu opens on a different key, look at <code>key_system_menu</code> in <code>astur.conf</code>; the shortcut is fully rebindable.
+        </div>
+
+        <h3>Terminal, browser and taskbar</h3>
+        <p><kbd>Alt</kbd> + <kbd>Enter</kbd> launches <code>terminal</code> (Windows Terminal by default); <kbd>Alt</kbd> + <kbd>Shift</kbd> + <kbd>Enter</kbd> launches <code>browser</code>, or the system default browser when that is empty. <kbd>Alt</kbd> + <kbd>K</kbd> reveals the taskbar for a moment when taskbar hiding is on.</p>
+      </section>
+
+      <section id="hotkeys" class="doc-section">
+        <h2>Hotkeys</h2>
+        <p class="doc-lead">Every shortcut is held with the main key. It is Right Alt by default, which leaves Left Alt to applications for menu bars and Alt+F4.</p>
+
+        <h3>The main key</h3>
+        <p>Set <code>main_key</code> in <code>astur.conf</code>, or use <b>Settings → Shortcuts → Astur key</b>. The choices:</p>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th><code>main_key</code></th><th>Behaviour</th></tr></thead>
+            <tbody>
+              <tr><td><code>ralt</code> <span class="tag">default</span></td><td>Right Alt is reserved. Left Alt stays the application Alt. Right Alt no longer types AltGr characters (on a German layout, <code>@</code> and <code>€</code>).</td></tr>
+              <tr><td><code>lalt</code></td><td>Left Alt is reserved; Right Alt stays untouched. Use this if you need AltGr.</td></tr>
+              <tr><td><code>win</code></td><td>The Windows key becomes the main key. Astur's shortcuts replace Windows' own Win shortcuts; Start does not pop up afterwards.</td></tr>
+              <tr><td><code>alt</code></td><td>Either Alt works, GlazeWM-style. Apps keep the Alt shortcuts Astur does not use.</td></tr>
+              <tr><td><code>ctrl+win</code></td><td>Ctrl and Win held together.</td></tr>
+              <tr><td><code>capslock</code></td><td>Caps Lock becomes the main key and stops turning capitals on. It still works as Caps Lock where Astur cannot see it: UAC, the lock screen and elevated windows.</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p>Changing <code>main_key</code> takes effect on save like any other setting; there is no confirmation step. If you pick a key your keyboard cannot produce, edit <code>main_key</code> back in <code>astur.conf</code> or delete the line to return to Right Alt.</p>
+
+        <h3>All default shortcuts</h3>
+        <p>“Alt” below means your main key. Arrow keys, Home, End and Enter are fixed and cannot be rebound.</p>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Shortcut</th><th>Action</th></tr></thead>
+            <tbody>
+              <tr><td><kbd>Alt</kbd> + left-drag</td><td>Move a window by any part of it.</td></tr>
+              <tr><td><kbd>Alt</kbd> + right-drag</td><td>Resize from the nearest corner.</td></tr>
+              <tr><td><kbd>Alt</kbd> + <kbd>Space</kbd></td><td>Launcher and file search.</td></tr>
+              <tr><td><kbd>Alt</kbd> + <kbd>M</kbd></td><td>System menu.</td></tr>
+              <tr><td><kbd>Alt</kbd> + <kbd>T</kbd></td><td>Toggle tiling on / off.</td></tr>
+              <tr><td><kbd>Alt</kbd> + <kbd>D</kbd> / <kbd>A</kbd></td><td>Focus next / previous window.</td></tr>
+              <tr><td><kbd>Alt</kbd> + <kbd>Shift</kbd> + <kbd>D</kbd> / <kbd>A</kbd></td><td>Swap with next / previous window.</td></tr>
+              <tr><td><kbd>Alt</kbd> + arrows</td><td>Focus by direction.</td></tr>
+              <tr><td><kbd>Alt</kbd> + <kbd>Shift</kbd> + arrows</td><td>Move the window by direction (across monitors).</td></tr>
+              <tr><td><kbd>Alt</kbd> + <kbd>Z</kbd> / <kbd>C</kbd></td><td>Shrink / grow the master column; resize columns when scrolling.</td></tr>
+              <tr><td><kbd>Alt</kbd> + <kbd>S</kbd></td><td>Promote to master; full-width column when scrolling.</td></tr>
+              <tr><td><kbd>Alt</kbd> + <kbd>E</kbd></td><td>Fill the workspace / restore the layout.</td></tr>
+              <tr><td><kbd>Alt</kbd> + <kbd>K</kbd></td><td>Reveal the taskbar, if hiding is enabled.</td></tr>
+              <tr><td><kbd>Alt</kbd> + <kbd>F</kbd></td><td>Toggle floating.</td></tr>
+              <tr><td><kbd>Alt</kbd> + <kbd>W</kbd></td><td>Close the focused window.</td></tr>
+              <tr><td><kbd>Alt</kbd> + <kbd>Q</kbd></td><td>Minimise; press again to restore what it minimised.</td></tr>
+              <tr><td><kbd>Alt</kbd> + <kbd>P</kbd></td><td>Swap-workspace mode.</td></tr>
+              <tr><td><kbd>Alt</kbd> + <kbd>Enter</kbd></td><td>Launch the terminal.</td></tr>
+              <tr><td><kbd>Alt</kbd> + <kbd>Shift</kbd> + <kbd>Enter</kbd></td><td>Launch the browser.</td></tr>
+              <tr><td><kbd>Alt</kbd> + <kbd>1</kbd>…<kbd>0</kbd></td><td>Switch workspace.</td></tr>
+              <tr><td><kbd>Alt</kbd> + <kbd>Shift</kbd> + <kbd>1</kbd>…<kbd>0</kbd></td><td>Move the focused window to that workspace.</td></tr>
+              <tr><td><kbd>Alt</kbd> + <kbd>,</kbd> / <kbd>.</kbd> / <kbd>/</kbd></td><td>Focused monitor's 1st / 2nd / 3rd workspace.</td></tr>
+              <tr><td><kbd>Alt</kbd> + <kbd>L</kbd> / <kbd>;</kbd> / <kbd>'</kbd></td><td>Next monitor's 1st / 2nd / 3rd workspace.</td></tr>
+              <tr><td><kbd>Alt</kbd> + <kbd>Tab</kbd></td><td>The Windows switcher; the optional Astur switcher is workspace-aware.</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <h3>Scrolling monitor</h3>
+        <p>On a monitor running the scrolling layout, these keys act on columns. The full table is in <a href="#scrolling">Scrolling layout</a>.</p>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Shortcut</th><th>Action</th></tr></thead>
+            <tbody>
+              <tr><td><kbd>Alt</kbd> + <kbd>Left</kbd> / <kbd>Right</kbd></td><td>Previous / next column.</td></tr>
+              <tr><td><kbd>Alt</kbd> + <kbd>Up</kbd> / <kbd>Down</kbd></td><td>Previous / next window (tab) in the column.</td></tr>
+              <tr><td><kbd>Alt</kbd> + <kbd>Shift</kbd> + <kbd>Left</kbd> / <kbd>Right</kbd></td><td>Move the column.</td></tr>
+              <tr><td><kbd>Alt</kbd> + <kbd>Shift</kbd> + <kbd>Up</kbd> / <kbd>Down</kbd></td><td>Move the window in its column; reorder tabs.</td></tr>
+              <tr><td><kbd>Alt</kbd> + <kbd>R</kbd> / <kbd>Shift</kbd> + <kbd>R</kbd></td><td>Width / height presets.</td></tr>
+              <tr><td><kbd>Alt</kbd> + <kbd>X</kbd></td><td>Centre the column.</td></tr>
+              <tr><td><kbd>Alt</kbd> + <kbd>[</kbd> / <kbd>]</kbd></td><td>Stack into the left / right column, or push back out.</td></tr>
+              <tr><td><kbd>Alt</kbd> + <kbd>Shift</kbd> + <kbd>T</kbd></td><td>Toggle tabbed column.</td></tr>
+              <tr><td><kbd>Alt</kbd> + <kbd>Home</kbd> / <kbd>End</kbd></td><td>First / last column.</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <h3>Rebinding</h3>
+        <p>Letter keys and the scrolling keys are single settings in <code>astur.conf</code>: <code>key_focus_next</code>, <code>key_focus_prev</code>, <code>key_shrink_master</code>, <code>key_grow_master</code>, <code>key_promote_master</code>, <code>key_toggle_tiling</code>, <code>key_toggle_float</code>, <code>key_close_window</code>, <code>key_minimize_window</code>, <code>key_cycle_width</code>, <code>key_center_column</code>, <code>key_consume_left</code>, <code>key_consume_right</code>, <code>key_fill_desktop</code>, <code>key_system_menu</code> and <code>key_swap_workspace</code>. The workspace keys are <code>workspace_keys</code> and the six monitor-local keys are <code>key_switch_ws_1</code>…<code>key_switch_ws_6</code>.</p>
+        <p>Extra chords use <code>extra_hotkeys</code>, with the main key written as <code>MOD</code> and modifiers joined by <code>+</code>:</p>
+        <div class="config-block"><span class="file">astur.conf</span>
+<span class="c"># chord|action|argument</span>
+<span class="k">extra_hotkeys</span> = <span class="v">MOD+CTRL+S|layout|scrolling ;; MOD+CTRL+W|launch|wt.exe</span></div>
+        <p>A shortcut that collides with a fixed binding loses: for example, binding a workspace to <kbd>D</kbd> does nothing because <kbd>D</kbd> already focuses the next window. Settings warns about collisions and offers a copyable cheat sheet.</p>
+      </section>
+
+      <section id="mouse" class="doc-section">
+        <h2>Mouse</h2>
+        <p class="doc-lead">Astur's mouse controls do not need a title bar, a grab handle or a particular theme. They work on the whole window surface, including apps that draw their own chrome.</p>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Input</th><th>Action</th></tr></thead>
+            <tbody>
+              <tr><td><kbd>Alt</kbd> + left-drag</td><td>Move any window from anywhere on it.</td></tr>
+              <tr><td><kbd>Alt</kbd> + right-drag</td><td>Resize from the nearest corner; a red bracket marks the corner.</td></tr>
+              <tr><td><kbd>Alt</kbd> + wheel</td><td>On a scrolling monitor: focus columns; Shift moves the column.</td></tr>
+              <tr><td><kbd>Alt</kbd> + horizontal wheel / touchpad swipe</td><td>Scroll the column strip left / right.</td></tr>
+              <tr><td>Drop on the left / right quarter</td><td>While Alt-dragging on a scrolling monitor: create a new column there.</td></tr>
+              <tr><td>Drop in the middle</td><td>Stack the dragged window into that column.</td></tr>
+              <tr><td>Wheel over the bar</td><td>Cycle workspaces; over the volume widget, adjust volume.</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p>Alt-dragging is also how you move a floating window, so there is one gesture to remember whether a window is tiled or not. If a drag starts on a monitor running scrolling, the drop semantics follow that monitor's strip.</p>
+      </section>
+
+      <section id="settings" class="doc-section">
+        <h2>Settings editor</h2>
+        <p class="doc-lead">The settings editor is a Windows 11-style form over the same two text files. Edit fields and press <b>Save</b> (<kbd>Ctrl</kbd> + <kbd>S</kbd>); the window manager hot-reloads about 0.1 seconds later. <b>Reload</b> (<kbd>F5</kbd>) discards unsaved edits and reads the files again.</p>
+
+        <figure class="doc-figure">
+          <img src="assets/screens/settings.png" alt="The Astur settings editor showing a settings page with sections and controls." width="1400" height="900" loading="lazy">
+          <figcaption><b>settings.png</b> — the settings editor.</figcaption>
+        </figure>
+
+        <p>Open it from the tray menu (left-click or right-click → Settings). It covers shortcuts, layouts, workspaces, rules, appearance, motion, the status bar, the launcher, the power menu, desktop extras and integrations. Useful details:</p>
+        <ul>
+          <li><b>Ctrl+F</b> searches every setting, not just the visible page.</li>
+          <li><b>Save</b> writes both files atomically and keeps a <code>.bak</code> of the previous text. Unsaved changes are flagged, and closing asks before discarding them.</li>
+          <li><b>Record keys</b> open a table editor: window rules, launcher entries, system actions and extra hotkeys. The window-rule editor can fill the executable, class and title from a live window with <b>Pick window…</b>.</li>
+          <li><b>Status bar</b> exposes the <code>navbar.conf</code> keys as fields: shape, palette, the three zones, widget colours, separators, click actions, monitors and auto-hide.</li>
+        </ul>
+        <p>The editor is a single-file Python 3 + tkinter program, shipped next to <code>astur.exe</code>. If <code>python</code> is not on PATH, set <code>settings_python</code> to the full path of <code>python.exe</code> or <code>pythonw.exe</code>. You never have to use the editor: <code>astur.conf</code> and <code>navbar.conf</code> remain the source of truth, and editing them by hand is fully supported.</p>
+      </section>
+
+      <section id="config-files" class="doc-section">
+        <h2>Config files</h2>
+        <p class="doc-lead">Two plain-text files in <code>%USERPROFILE%\.astur\</code>. Both are created on first run, fully commented, and hot-reloaded on save. UTF-8 only.</p>
+
+        <h3>Rules of the format</h3>
+        <ul>
+          <li>One <code>key = value</code> per line. <code>#</code> starts a comment; blank lines are ignored.</li>
+          <li>Lists are comma-separated. Records (window rules, launcher entries, system actions) are separated by <code>;;</code> and their fields by <code>|</code>.</li>
+          <li>Colours are <code>#RRGGBB</code>. Sizes are logical pixels at 100% scaling; Astur scales them per monitor.</li>
+          <li>Booleans are <code>true</code> / <code>false</code>. Empty means “inherit” or “off”, depending on the key; the comment above each key says which.</li>
+          <li>Save as UTF-8 without a BOM. A UTF-16 “Unicode” save is not readable, so Astur keeps its current settings and logs the error rather than overwriting your file.</li>
+        </ul>
+
+        <h3>Hot reload</h3>
+        <p>A save triggers a reload about 0.1 seconds later. Only what changed is applied: editing a colour does not re-tile windows. The system menu's <b>Reload</b> forces everything to be re-applied, which also repairs a window left mis-styled. If a value is invalid, the rest of the file still loads; the bad line is reported in <code>%USERPROFILE%\.astur\astur.log</code> and in Settings → Troubleshooting.</p>
+
+        <h3>A small astur.conf</h3>
+        <div class="config-block"><span class="file">astur.conf</span>
+<span class="k">main_key</span> = <span class="v">ralt</span>
+<span class="k">layout</span> = <span class="v">dwindle</span>
+<span class="k">workspaces</span> = <span class="v">10</span>
+<span class="k">workspace_mode</span> = <span class="v">shared</span>
+<span class="k">outer_gap</span> = <span class="v">8</span>
+<span class="k">inner_gap</span> = <span class="v">8</span>
+<span class="k">animations</span> = <span class="v">true</span>
+<span class="k">animation_ms</span> = <span class="v">140</span>
+<span class="k">workspace_anim</span> = <span class="v">slide</span>
+<span class="k">focus_follows_mouse</span> = <span class="v">false</span>
+<span class="k">cursor_follows_focus</span> = <span class="v">true</span></div>
+
+        <h3>Diagnostics</h3>
+        <p><code>astur.exe --check</code> prints a paste-ready diagnostic dump: version, monitors and DPI, config paths, parsed settings and the last errors. The log at <code>%USERPROFILE%\.astur\astur.log</code> rotates at 1 MB and is set by <code>log_level</code> (<code>off</code>, <code>error</code>, <code>info</code>, <code>debug</code>). Use <code>debug</code> only while reproducing a problem; it is verbose.</p>
+
+        <h3>Backups</h3>
+        <p>Keep a copy of both files before a large hand edit. The settings editor writes a <code>.bak</code> of the previous text on Save. Since every setting is a line of text, restoring is a copy back into place followed by a save.</p>
+      </section>
+
+      <section id="window-rules" class="doc-section">
+        <h2>Window rules</h2>
+        <p class="doc-lead">Rules decide what happens to a window before it ever reaches the layout: whether it is managed, whether it floats, and which workspace and monitor it belongs to.</p>
+
+        <h3>The two simple lists</h3>
+        <p><code>ignore_classes</code> names window classes Astur should never touch. <code>float_classes</code> names classes that are managed but always float. Both take class names, not titles — titles change with the document, classes do not.</p>
+        <div class="config-block"><span class="file">astur.conf</span>
+<span class="k">ignore_classes</span> = <span class="v">TaskManagerWindow, MyOverlayClass</span>
+<span class="k">float_classes</span> = <span class="v">#32770, MsiDialogCloseClass</span></div>
+
+        <h3>Rich rules</h3>
+        <p>A rich rule has six fields, in this order:</p>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Field</th><th>Meaning</th></tr></thead>
+            <tbody>
+              <tr><td><code>action</code></td><td><code>tile</code>, <code>float</code> or <code>ignore</code>.</td></tr>
+              <tr><td><code>exe</code></td><td>Executable name, for example <code>Code.exe</code>.</td></tr>
+              <tr><td><code>class</code></td><td>Window class, for example <code>#32770</code>.</td></tr>
+              <tr><td><code>title</code></td><td>Window title (use sparingly; titles are localized and change).</td></tr>
+              <tr><td><code>workspace</code></td><td>1-based workspace number, or empty / <code>0</code> for any.</td></tr>
+              <tr><td><code>monitor</code></td><td>1-based monitor number from the left, or empty / <code>0</code> for any.</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p>Empty match fields are wildcards. All records go on the one <code>window_rules</code> line, separated by <code>;;</code>, and their fields by <code>|</code>:</p>
+        <div class="config-block"><span class="file">astur.conf</span>
+<span class="c"># Ignore PowerToys popups, float standard Windows dialogs,</span>
+<span class="c"># and send Code to workspace 2 on monitor 1 when it opens</span>
+<span class="k">window_rules</span> = <span class="v">ignore|PowerToys.AdvancedPaste.exe ;; float||#32770 ;; tile|Code.exe|||2|1</span></div>
+
+        <h3>When rules apply</h3>
+        <p>Rules are evaluated when a window opens, and they are also applied to windows that are already open when Astur starts. A rule that routes a window to another workspace hides it until you switch there, which is the intended behaviour: the window is not lost, it is waiting on its workspace.</p>
+        <p>Rules cannot override Windows itself. An elevated window cannot be moved or hidden by a non-elevated Astur, so a rule that targets one will not appear to work until both run at the same level.</p>
+
+        <h3>Finding a class or executable</h3>
+        <p>Use the Settings editor's window picker: open the target window, click <b>Pick window…</b> in the rule editor, and it fills the executable, class and title for you. Alternatively use Spy++ or a similar tool. Prefer <code>exe</code> over <code>title</code>: titles change between documents and languages.</p>
+      </section>
+
+      <section id="troubleshooting" class="doc-section">
+        <h2>Troubleshooting</h2>
+        <p class="doc-lead">The short list of things that surprise people first, and where to look when something does not behave like this page.</p>
+
+        <details open>
+          <summary>An admin window is not tiled</summary>
+          <p>Windows does not let a normal process move or hide an elevated window. Task Manager, an admin terminal and UAC prompts stay where they are. Run Astur as administrator as well if you need those managed. The same applies in reverse: an elevated Astur can manage elevated windows, but a normal app cannot.</p>
+        </details>
+        <details>
+          <summary>My AltGr characters stopped working</summary>
+          <p>The default main key is Right Alt, and it is reserved, so it no longer produces AltGr characters. Set <code>main_key = lalt</code> in <code>astur.conf</code> (or choose Left Alt in Settings) if you need AltGr. Left Alt is then the reserved key and Right Alt is untouched.</p>
+        </details>
+        <details>
+          <summary>A game is being tiled or resized</summary>
+          <p>Press <kbd>Alt</kbd> + <kbd>T</kbd> to turn tiling off, or add the game to <code>ignore_classes</code> / <code>float_classes</code> so it is always left alone. Borderless windowed mode behaves best; exclusive fullscreen is controlled by the game and by Windows.</p>
+        </details>
+        <details>
+          <summary>The bar is missing</summary>
+          <p>Check <code>enabled = true</code>, a non-zero <code>height</code>, and that <code>monitors</code> includes the screen you are looking at. If <code>autohide = true</code>, move the pointer to the configured edge. A bar can also be hidden behind a fullscreen window by design.</p>
+        </details>
+        <details>
+          <summary>My config change did nothing</summary>
+          <p>Save the file as UTF-8, check the spelling of the key, and look at Settings → Troubleshooting or <code>%USERPROFILE%\.astur\astur.log</code>. Values are validated: an out-of-range number or an unknown enum is reported and the previous value stays. The system menu's <b>Reload</b> forces a full re-read.</p>
+        </details>
+        <details>
+          <summary>Alt+Tab looks different</summary>
+          <p>By default Astur leaves the Windows switcher alone. The workspace-aware Astur switcher is opt-in (<code>alt_tab_replacement = true</code>); turn it off to get the Windows one back. Alt+Tab always passes through to Windows, even when the main key is Right Alt.</p>
+        </details>
+        <details>
+          <summary>Windows warned about the executable</summary>
+          <p>SmartScreen warns about unsigned executables. Choose <b>More info</b> → <b>Run anyway</b>. The source is public and the release is built from it; there is no installer or background updater.</p>
+        </details>
+        <details>
+          <summary>Astur crashed or was killed</summary>
+          <p>Run it again. On startup it reads its rescue file and restores windows it had hidden or moved, then re-tiles. Quitting normally from the tray does the same restore immediately. If windows are left in an odd place, <b>Reload</b> re-applies the layout.</p>
+        </details>
+        <details>
+          <summary>Reporting a problem</summary>
+          <p>Include the output of <code>astur.exe --check</code> and the relevant lines from <code>astur.log</code> (set <code>log_level = debug</code> only while reproducing). Say which layout, workspace mode and monitors were involved; those three explain most placement reports.</p>
+        </details>
+      </section>
+
+      <div class="doc-foot">
+        <p>This page describes Astur v2.7.0. The configuration templates in <code>astur.conf</code> and <code>navbar.conf</code> are the final authority for defaults; if they disagree with this page, the files are right.</p>
+        <a class="btn" href="#main">Back to top</a>
+      </div>
+
+    </article>
+  </div>
+</main>
+
+<footer class="site-footer">
+  <div class="wrap">
+    <div class="footer-top">
+      <div class="footer-brand">
+        <img src="assets/astur.svg" alt="" width="26" height="26">
+        <span>Astur — a tiling window manager for Windows.</span>
+      </div>
+      <nav class="footer-links" aria-label="Footer">
+        <a href="index.html">Home</a>
+        <a href="https://github.com/ruoyu0088/Astur">Source</a>
+        <a href="https://github.com/ruoyu0088/Astur/releases/latest">Releases</a>
+        <a href="https://github.com/ruoyu0088/Astur/blob/main/LICENSE">Apache-2.0</a>
+        <a href="https://github.com/Page011/Astur">Original project</a>
+      </nav>
+    </div>
+    <div class="footer-bottom">
+      <p>Astur is free software under the Apache License 2.0. Windows is a trademark of Microsoft Corporation. Astur is not affiliated with Microsoft.</p>
+      <p>Built by the Astur contributors. This site is static, has no trackers and makes no external requests.</p>
+    </div>
+  </div>
+</footer>
+
+</body>
+</html>

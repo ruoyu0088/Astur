@@ -12,11 +12,11 @@ i3-style alternative to
 [GlazeWM](https://github.com/glzr-io/glazewm), and PowerToys FancyZones on
 Windows 10 and 11.
 
-[![GitHub release](https://img.shields.io/github/v/release/Page011/Astur)](https://github.com/Page011/Astur/releases/latest)
+[![GitHub release](https://img.shields.io/github/v/release/ruoyu0088/Astur)](https://github.com/ruoyu0088/Astur/releases/latest)
 [![License: Apache-2.0](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
-[![Website](https://img.shields.io/badge/website-astur.app-366382)](https://astur.app)
+[![Website](https://img.shields.io/badge/website-ruoyu0088.github.io%2FAstur-366382)](https://ruoyu0088.github.io/Astur/)
 [![Built with Rust](https://img.shields.io/badge/built%20with-Rust-orange.svg)](https://www.rust-lang.org)
-[![Platform: Windows 10/11](https://img.shields.io/badge/platform-Windows%2010%20%2F%2011-0078D6.svg)](https://github.com/Page011/Astur/releases/latest)
+[![Platform: Windows 10/11](https://img.shields.io/badge/platform-Windows%2010%20%2F%2011-0078D6.svg)](https://github.com/ruoyu0088/Astur/releases/latest)
 
 > **Keywords:** tiling window manager Windows · komorebi alternative · GlazeWM
 > alternative · FancyZones alternative · i3 for Windows · Alt-drag windows ·
@@ -51,7 +51,7 @@ menu, tray, and a settings GUI — with the same motion polish and core tiling.
 ## Install
 
 - **Astur** — grab `astur-windows-x64.zip` from the
-  [latest stable release](https://github.com/Page011/Astur/releases/latest) and
+  [latest stable release](https://github.com/ruoyu0088/Astur/releases/latest) and
   unzip it anywhere: no install, no admin. The zip holds `astur.exe` and the
   settings editor, `astur_settings.py`.
 - **Settings editor** — it is a Python 3 script (tkinter, no extra packages), so
@@ -388,7 +388,7 @@ records write a pipe as `\|`.
 Requires [Rust stable](https://rustup.rs). The repo is a Cargo workspace.
 
 ```bash
-git clone https://github.com/Page011/Astur
+git clone https://github.com/ruoyu0088/Astur
 cd Astur
 cargo build --release -p astur
 # binary: target/release/astur.exe

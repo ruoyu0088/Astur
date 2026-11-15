@@ -54,8 +54,8 @@ single Rust `.exe` with no installer and no required config. Core hooks:
   powerline segments, hover highlight; per-widget left/right/middle click
   actions from astur-config `BAR_ACTIONS` run by the manager
   (`Cmd::BarAction` -> `run_bar_action`, sharing `run_action` with extra
-  hotkeys); `monitors` picks the screens; 9 presets as data in astur-config
-  `BAR_PRESETS`, stamped by Settings).
+  hotkeys); `monitors` picks the screens; 9 preset looks as data in
+  astur-config `BAR_PRESETS`, set through the editor's individual keys).
 - **Workspace-switch animation** — overlay compositor: off/slide/spring/fade.
 - **Window glide** — windows animate to their tile slot on open/move/resize/
   re-tile/scroll via an overlay of live DWM thumbnails (off/glide).
@@ -151,6 +151,32 @@ Toolchain wrinkles:
 
 `main.rs` is large but sectioned with `// ====` banners. Use the function map
 (`grep -n "^fn \|^unsafe extern\|^struct \|^static " crates/astur/src/main.rs`).
+
+## Website (GitHub Pages)
+
+`docs/` is the project site, published from `main` / `docs` at
+`https://ruoyu0088.github.io/Astur/`. It is deliberately plain: no build step,
+no JavaScript, no external requests, and every local path relative (the project
+page lives under `/Astur/`).
+
+- `docs/index.html` — landing page: hero mock, six feature cards, layout
+  diagrams (including scrolling), bar/launcher/keyboard sections, install, FAQ.
+- `docs/docs.html` — the user manual: getting started, tiling, layouts,
+  workspaces, scrolling, floating, bar, launcher/menu, hotkeys, settings,
+  config files, window rules, troubleshooting. No build-from-source or
+  internals sections.
+- `docs/style.css` — all styling, including the CSS-only keyboard tabs.
+- `docs/assets/screens/` — screenshot slots plus `README.md`, the Chinese
+  shot list the owner follows when replacing the placeholders. Replace a PNG
+  with the same filename and size; do not rename the files or edit the HTML.
+- Preview with `python -m http.server -d docs 8123`.
+
+When a release changes a default, a config key or the settings editor, update
+`docs/docs.html` and the landing claims as part of the release audit, then
+check `python tools/gen_schema.py` still agrees with the templates. The
+keyboard diagram is hand-written: keep its labels short (a 1u key fits about
+six characters at the rendered size) and keep the tiling/scrolling tabs in
+sync with the real bindings.
 
 ## Threads (mental model)
 
