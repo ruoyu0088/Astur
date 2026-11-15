@@ -2,6 +2,37 @@
 
 Guidance for AI agents (and humans) working on this repo. Read this first.
 
+## Who keeps these docs
+
+The repository owner does not edit `AGENTS.md`, `CLAUDE.md` or
+`CONTRIBUTING.md`, and does not log their changes here: they commit code. The
+coding assistant owns these three files — keep them true, and fold whatever it
+learns about the project (a new thread, a trap, a deliberate oddity) into them
+so the next session starts from the map, not from the source.
+
+Two kinds of docs, two rules:
+
+- **Assistant docs** — this file, `CLAUDE.md`, `CONTRIBUTING.md`. Edit freely
+  when they drift from the code.
+- **User-facing docs** — `README.md`, the config templates in
+  `crates/astur-config/src/lib.rs`, and the schema `tools/gen_schema.py` writes
+  into `tools/astur_settings.py`. After the owner commits, check these against
+  the code; if they disagree, ask the owner before changing them.
+
+Audit after every owner commit:
+
+1. `git log --oneline <last-audited>..HEAD`, then read the diffs.
+2. New or renamed config key / hotkey? Then README's hotkey table and feature
+   list, the template comment, `Config::defaults()`, the parser, and the
+   regenerated schema all need to know. `python tools/gen_schema.py` must report
+   as many keys as the templates carry (count both).
+3. Defaults still agree? The test
+   `reload_groups(&Config::defaults(), &default_config()).is_empty()` covers the
+   live-reload fields; for the rest, compare the template's values with
+   `defaults()`.
+4. `cargo build` / `test --workspace` / `fmt --check` / `clippy -D warnings`,
+   then ask before touching user-facing docs.
+
 ## What Astur is
 
 A fast, free, portable **tiling window manager for Windows 10/11**, shipped as a
@@ -52,13 +83,21 @@ menu bars don't open (`needs_mask`). Every hotkey is one load from the lock-free
 2. **Tiny + fast.** Single portable exe. The global mouse hook is the hottest path
    in the whole OS input stream — it must never block, allocate, or lock
    needlessly. Latency over features.
-3. **Never break window management.** Cosmetics (animations, bar) are layered
+3. **Hooks are sacred.** `mouse_proc` / `keyboard_proc` sit on the OS-wide input
+   path: no lock without an atomic guard, no allocation, no `SetWindowPos`. Push a
+   `Cmd` and let the manager or a worker do the work.
+4. **Never break window management.** Cosmetics (animations, bar) are layered
    *over* a switch/tile that already happened correctly and instantly. A dropped
    or failed animation must never lose or misplace a window.
-4. **Smooth.** Beat komorebi/GlazeWM/Seelen on motion polish — that is the
+5. **Tile placement is INSTANT.** `animate_to` is a historical name — it places,
+   it does not animate. Real glide goes through the snapshot overlay, never
+   per-frame real-window `SetWindowPos` (tried, removed).
+6. **Smooth.** Beat komorebi/GlazeWM/Seelen on motion polish — that is the
    headline differentiator (see `README.md` comparison table).
-5. **Honest docs.** If a feature is staged or removed, the README must not claim
+7. **Honest docs.** If a feature is staged or removed, the README must not claim
    it.
+8. **Keep the testable parts Win32-free.** `astur-config` has zero Win32;
+   `layout.rs` is `RECT` maths only. That is what makes them unit-testable.
 
 ## Build / run / quit
 
@@ -80,11 +119,28 @@ process (the next launch's crash rescue does the same from
 Config lives in `%USERPROFILE%\.astur\astur.conf` + `navbar.conf`, both created
 on first run, fully commented, **hot-reloaded on save**.
 
+Toolchain wrinkles:
+
+- Default toolchain is MSVC. If `link.exe` / `vcvars` is not reachable in the
+  shell, verify compilation with the self-contained GNU toolchain instead:
+  `cargo +stable-x86_64-pc-windows-gnu build --target x86_64-pc-windows-gnu`
+  (add `-p astur` for the WM alone).
+- Crate downloads failing with a cert-revocation error
+  (`CRYPT_E_NO_REVOCATION_CHECK`): prefix with `CARGO_HTTP_CHECK_REVOKE=false`.
+- Do not build the MSVC target from Git Bash: MSYS `link` shadows the real
+  `link.exe`.
+- The release profile is LTO + strip + `panic = "abort"`, and `codegen-units = 1`
+  is what makes "one compilation unit" literal.
+- Rebuilding while Astur runs fails with "Access is denied" on
+  `target\release\astur.exe`: close it first (tray Quit, or `WM_CLOSE` to the
+  `astur_marker` / `astur_bar` / `astur_sink` windows so it restores the
+  windows it hid).
+
 ## File map (workspace)
 
 | File | Lines (approx) | What |
 |---|---|---|
-| `crates/astur/src/main.rs` | ~28700 | Everything Win32: hooks, worker threads, manager, scrolling strip model, bar, tab bars, compositors, launcher, file search, system menu. One big file by preference (see CLAUDE.md; splitting would not change build time). |
+| `crates/astur/src/main.rs` | ~28700 | Everything Win32: hooks, worker threads, manager, scrolling strip model, bar, tab bars, compositors, launcher, file search, system menu. One big file by preference: splitting a crate into modules does not change Rust build time (still one compilation unit, and `codegen-units = 1` in release makes it literal). |
 | `crates/astur/src/layout.rs` | ~1300 | Pure tiling geometry (dwindle, master, columns, grid, monocle, scrolling strip: spans, offset clamp, peek/park `classify`, `park_spot`) + tests. `RECT` type only, no Win32 calls. |
 | `crates/astur/src/yasb.rs` | ~800 | GlazeWM-compatible workspace WebSocket API for YASB (loopback only, off by default). |
 | `crates/astur-config/src/lib.rs` | ~5800 | `Config` struct, `LAYOUTS` (the one list of layout names), bar `PALETTES`, `BAR_PRESETS`, `BAR_ACTIONS` / `BAR_CLICK_DEFAULTS` and the shared bar formatters (`format_clock`, `format_date`, `workspace_label`, `bar_on`), documented-default file templates, key/value parser. **No Win32** — pure data, shared with the settings GUI (aliased `config` in the WM). |
@@ -159,3 +215,6 @@ queues. Keep it that way — do not move work onto the hooks (main thread).
   every hand-off.
 - Prefer the simplest built-in Win32 path first; document alternatives + tradeoffs
   in code comments before adding complexity.
+- **Writing style.** In chat: lead with the judgement, then the why; terse is
+  fine. In code, comments, commit messages and docs: normal prose, no filler.
+  Flag every real flaw you see instead of smoothing it over.
