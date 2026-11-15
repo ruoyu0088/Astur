@@ -3119,7 +3119,7 @@ enum Cmd {
     /// normal title rates the queue never grows; it bounds kHz title spam and
     /// renames piling up behind a long command (BAR-10).
     BarRefresh,
-    // Scrolling-layout keys (plan/scrolling.md "Keys"). No-ops off scrolling
+    // Scrolling-layout keys. No-ops off scrolling
     // monitors, except ResizeTile, which is Alt+Shift+H/L's old ResizeMaster
     // there. Signed counts and directions: < 0 left/up, > 0 right/down.
     ScrollFocus(i32), // focus the column n columns over (extra hotkeys)
@@ -4644,7 +4644,7 @@ impl Workspace {
     }
 }
 
-/// Scrolling-layout state of one workspace (plan/scrolling.md "WM contract").
+/// Scrolling-layout state of one workspace.
 /// A column is a maximal run of consecutive TILED windows (`tiled_windows`)
 /// sharing a column id; a window with no id is a column of its own at
 /// `scroll_default_width`. Keyed by window and column id, never by position,
@@ -5047,7 +5047,7 @@ fn column_target(from: Option<usize>, n: i32, len: usize) -> Option<usize> {
 }
 
 /// The scrolling drop zone of an Alt+left-drag released at `pt`
-/// (plan/scrolling.md "Keys"). On window `t` (rect `r`): the left quarter is
+/// On window `t` (rect `r`): the left quarter is
 /// a new column before it, the right quarter one after it, the middle its own
 /// column right under it. On no window: None (stay put) inside the dragged
 /// window's own slot `own`, since a drag that went nowhere must not reorder;
@@ -5109,8 +5109,7 @@ fn scroll_label(focus_col: Option<usize>, cols: usize) -> String {
     }
 }
 
-/// The scrolling actions of `extra_hotkeys` and the IPC (plan/scrolling.md
-/// "Keys"): one list for both.
+/// The scrolling actions of `extra_hotkeys` and the IPC: one list for both.
 fn scroll_action(name: &str) -> Option<Cmd> {
     Some(match name {
         "focus_column_left" => Cmd::ScrollFocus(-1),
@@ -5439,7 +5438,7 @@ impl Manager {
     /// it that workspace's focus: the one way a window joins a workspace
     /// (Cmd::Add, move_window). On a scrolling monitor a tiled window goes
     /// where a drop zone in `at` says, else becomes a new column right of the
-    /// focused column (plan/scrolling.md "Defaults"), scrolled into view
+    /// focused column, scrolled into view
     /// either way; elsewhere it goes before `windows` index `at`, or at the
     /// end.
     fn insert_window(
@@ -7801,7 +7800,7 @@ fn slot_forget(h: isize) {
 /// (Full or Peek) while shown since they were last hidden or minimised. DWM
 /// drops a window's surface on SW_HIDE and minimise, and a window shown or
 /// created at a park spot never repaints it, so a thumbnail of a COLD parked
-/// tile is blank white (plan/animations.md, measured). One parked by a move
+/// tile is blank white. One parked by a move
 /// keeps its last frame and stays warm (an inactive tab, a column scrolled
 /// off). Absent = cold, so an unknown window is never thumbnailed blank: a
 /// false cold costs a snapshot, a false warm a white slide. Manager thread
@@ -7973,7 +7972,7 @@ unsafe fn tiled_windows(ws: &Workspace) -> Vec<isize> {
         .collect()
 }
 
-/// The peek/park step of placement (plan/scrolling.md "Placement"), built
+/// The peek/park step of placement, built
 /// once per pass over one workspace so every path that places tiles (retile,
 /// workspace reveal, hidden layout, cursor warp) maps them the same way. Off
 /// a scrolling monitor it is the border correction alone.
@@ -9025,7 +9024,7 @@ unsafe fn tile_slot(mgr: &Manager, h: isize) -> Option<(RECT, Vis)> {
 /// Scroll `h`'s tile fully into view when it sits on an ACTIVE scrolling
 /// workspace and is not Full: a click on a peeking window, a parked one
 /// picked from the taskbar or Alt+Tab, an app activating itself
-/// (plan/scrolling.md "Focus"). `h` becomes that workspace's focus first, so
+/// `h` becomes that workspace's focus first, so
 /// the strip scrolls to it and a hidden tab shows. The retile is the
 /// animated one. A cheap no-op on every other layout.
 unsafe fn strip_reveal(mgr: &mut Manager, h: isize) {
@@ -10457,7 +10456,7 @@ fn slide_cancel_pending() -> bool {
 // and frozen pixels cannot show a window scrolling in from off screen). No
 // current wallpaper crop degrades to instant. A cold window (blank DWM
 // surface) is drawn from its snapshot instead, or left out ("Cold-window
-// snapshots" below). plan/animations.md "Motion compositor" has the design
+// snapshots" below). The motion compositor has the design
 // and its measurements.
 // =========================================================================
 
@@ -11675,7 +11674,7 @@ unsafe fn run_window_glide(mut req: GlideReq, wpc: &mut WpCache) {
 // is blank.
 //
 // A window shown or created at a park spot, or minimised, has a blank DWM
-// surface until it is on screen again (plan/animations.md, measured), so its
+// surface until it is on screen again, so its
 // thumbnail would slide in white. The manager tracks which tiles are warm
 // (WARM). After every command it queues a request here for each cold tile
 // parked near the view of an active scrolling workspace (cold_request), and
@@ -13900,7 +13899,7 @@ unsafe fn untrack_window(mgr: &mut Manager, h: isize) {
             retile_monitor(mgr, mi);
             // Scrolling: the strip neighbour detach_window picked gets the
             // real focus too, not whichever window Windows activates next
-            // (plan/scrolling.md "Defaults"). Its stale FOREGROUND event then
+            // Its stale FOREGROUND event then
             // fails Cmd::Focused's foreground check.
             if was_focus && mgr.is_scrolling(mi, wi) {
                 let f = mgr.monitors[mi].workspaces[wi].focused;
@@ -13914,7 +13913,7 @@ unsafe fn untrack_window(mgr: &mut Manager, h: isize) {
 
 unsafe fn process(mgr: &mut Manager, cmd: Cmd) {
     // A key command on a scrolling monitor acts on the strip instead
-    // (plan/scrolling.md "Keys"); every other command and layout falls
+    // Every other command and layout falls
     // through to the arms below untouched.
     if process_strip(mgr, &cmd) {
         return;
@@ -14181,7 +14180,7 @@ unsafe fn process(mgr: &mut Manager, cmd: Cmd) {
             // Focus-follows-mouse: only act on a tracked window on a visible
             // workspace that isn't already the focused one.
             if let Some((mi, wi)) = mgr.locate(h) {
-                // Never scrolls (plan/scrolling.md "Focus"): hovering a
+                // Never scrolls: hovering a
                 // peeking tile does not focus it. Off scrolling every tile
                 // is Full, and the layout check keeps that free.
                 if mgr.is_scrolling(mi, wi)
@@ -14746,8 +14745,8 @@ unsafe fn process(mgr: &mut Manager, cmd: Cmd) {
             let pt = POINT { x, y };
             let to_mi = monitor_index_for_point(mgr, pt);
             let target = window_under_point(mgr, to_mi, pt, h);
-            // Dropped on a scrolling monitor: a drop zone (plan/scrolling.md
-            // "Keys"), which part of a window it landed on or which end of
+            // Dropped on a scrolling monitor: a drop zone, which part of a window it
+            // landed on or which end of
             // the strip; None when it landed back in its own slot.
             let scrolling = mgr.is_scrolling(to_mi, mgr.monitors[to_mi].active);
             let zone = if scrolling {
@@ -14861,7 +14860,7 @@ unsafe fn process(mgr: &mut Manager, cmd: Cmd) {
             let wa = mgr.monitors[mi].work_area;
             if mgr.is_scrolling(mi, wi) {
                 // A horizontal edge sets the column width, a vertical one the
-                // tile's share of its column (plan/scrolling.md "Keys").
+                // tile's share of its column.
                 if let Some((slot, _)) = tile_slot(mgr, h) {
                     let placed = adjust_for_border(hwnd_from(h), slot);
                     let (new_w, new_h) = strip_resize(r, placed, slot);
@@ -15097,7 +15096,7 @@ unsafe fn move_to_adjacent_monitor(mgr: &mut Manager, mi: usize, h: isize, dir: 
     bump_follow_settle();
 }
 
-/// The scrolling branch of a key command (plan/scrolling.md "Keys"): runs
+/// The scrolling branch of a key command: runs
 /// when the focused monitor is scrolling and tiling is on, and returns true
 /// when it handled `cmd`. False sends `cmd` to its usual arm in `process`:
 /// any other command or layout, and Alt+arrows from a focus outside the
@@ -15992,8 +15991,7 @@ unsafe fn tracked_exe(hwnd: HWND) -> Option<String> {
 /// Return cached app icon without shell work on manager thread. Cache misses are
 /// queued to icon workers and temporarily render a placeholder.
 /// `px` is the physical size the caller will draw at — icons are resolved at
-/// exactly that size and never rescaled in DrawIconEx (see
-/// plan/known-issues.md 2026-07-10), so it is part of the cache key.
+/// exactly that size and never rescaled in DrawIconEx, so it is part of the cache key.
 /// Stamp 0: this runs per window on every bar update, too hot for a metadata
 /// read, so an app updated mid-session keeps its old bar icon until restart.
 unsafe fn bar_app_icon(hwnd: HWND, px: i32) -> isize {
@@ -17864,7 +17862,7 @@ fn pill_pad(shape: BarShape, wgt: BarWidget, ipad: i32) -> i32 {
 /// `surface`, and the
 /// `border` outline, round a floating bar or each island / pill (a strip
 /// gets a line along its inner edge). Islands and pills sit on the bar
-/// background: a solid rail, not the desktop (plan/decisions.md).
+/// background: a solid rail, not the desktop.
 #[allow(clippy::too_many_arguments)]
 unsafe fn bar_backdrop(
     cv: &BarCanvas,
@@ -18836,7 +18834,6 @@ unsafe fn render_bar(
         .and_then(|x| hover_target(&lay, active, x))
     {
         // Under the widget, so its text stays crisp; instant, not faded
-        // (plan/animations.md).
         let inset = (h_px / 6).clamp(2, 6) as f32;
         cv.shape(
             [l as f32, inset, r as f32, h_px as f32 - inset],
@@ -19179,7 +19176,7 @@ unsafe extern "system" fn bar_wndproc(h: HWND, msg: u32, w: WPARAM, l: LPARAM) -
 }
 
 // =========================================================================
-// Tab bars (scrolling layout, plan/scrolling.md "Tabbed columns")
+// Tab bars (scrolling layout, tabbed columns)
 // =========================================================================
 //
 // One Astur window (class `astur_tabs`) over each tabbed column whose shown
@@ -21304,7 +21301,6 @@ unsafe extern "system" fn win_event_proc(
 // focus (no foreground-lock dance): the hook posts intents to the launcher
 // window, whose wndproc owns all state and repaints. v1 source is Start Menu
 // .lnk/.url shortcuts; file search (Windows Search index) is planned — see
-// plan/launcher.md.
 // =========================================================================
 
 // Custom message: wParam = action (LA_*), lParam = char (for LA_CHAR).
@@ -25009,7 +25005,6 @@ fn launcher_thread() {
 // =========================================================================
 // System / power menu (key_system_menu, Alt+. by default): omarchy-style power
 // actions, same hook-driven no-focus model as the launcher. See
-// plan/system-menu.md.
 // =========================================================================
 
 const WM_SYSMENU: u32 = WM_USER + 11;
@@ -25927,7 +25922,7 @@ fn focus_sink_thread() {
 // =========================================================================
 // System tray icon (Astur Full): the control surface when there's no console.
 // Left/double-click -> Settings; right-click -> Settings / Quit. Quit restores
-// all managed windows then exits. See plan/editions.md.
+// all managed windows then exits.
 // =========================================================================
 
 const WM_TRAY: u32 = WM_USER + 20;
@@ -27010,7 +27005,7 @@ fn main() {
         // Resolve launcher app icons to HBITMAPs off the UI thread, in parallel so
         // the whole list is iconned fast (each worker is a COM STA; they idle on a
         // condvar once the queue drains). Count is a speed/RAM trade — see
-        // plan/optimization.md. RAM is no longer the constraint, so one per core
+        // RAM is no longer the constraint, so one per core
         // from 3 up to 8: preload and new-DPI bursts finish sooner, unless the
         // shell serialises extraction internally (not measured).
         let icon_workers = std::thread::available_parallelism()
@@ -30891,8 +30886,7 @@ mod tests {
     /// workspace keys), with Left Alt held. Reads `c` where the old code
     /// read its three Mutexes. `c` comes from the new parser (and chords from
     /// the new key_to_vk), so 2.3.0's parse differences (key names it did not
-    /// read, WIN-only chords it dropped) are not covered here: they are the
-    /// documented edge cases in plan/known-issues.md.
+    /// read, WIN-only chords it dropped) are not covered here.
     fn old_lookup(c: &Config, vk: u32, shift: bool, ctrl: bool) -> Option<String> {
         if vk == c.key_system_menu && !shift && c.system_menu_enabled {
             return Some("SystemMenu".into());

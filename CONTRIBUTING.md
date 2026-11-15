@@ -65,7 +65,7 @@ Read [README.md](README.md) for features and usage, and [AGENTS.md](AGENTS.md) a
 - **Keep pull requests focused.** One bug fix or feature per PR is much easier to review than a broad rewrite.
 - Follow the surrounding Rust style; use `cargo fmt` rather than formatting everything by hand.
 - Add or update tests where practical, particularly for layout calculations and configuration parsing.
-- Update the README and relevant `plan/` documentation when behaviour, configuration, architecture, or supported functionality changes.
+- Update the README and `AGENTS.md` when behaviour, configuration, or supported functionality changes.
 - Don't add dependencies or restructure large parts of the codebase without a clear reason.
 - Explain any important Win32 safety assumptions near the code that relies on them.
 

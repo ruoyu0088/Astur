@@ -1,7 +1,6 @@
 # AGENTS.md — Astur
 
-Guidance for AI agents (and humans) working on this repo. Read this first, then
-the relevant file in `plan/`.
+Guidance for AI agents (and humans) working on this repo. Read this first.
 
 ## What Astur is
 
@@ -12,7 +11,7 @@ single Rust `.exe` with no installer and no required config. Core hooks:
 - **Alt + right-drag** — resize from the nearest corner (red bracket marker).
 - **Tiling** — `dwindle` (spiral, default), `master`, `columns`, `grid`,
   `monocle`, or Niri-style `scrolling` (column strip, off-screen columns
-  parked outside the virtual screen, tabbed columns; `plan/scrolling.md`).
+  parked outside the virtual screen, tabbed columns).
   Layout is per monitor (`monitor_layouts`).
 - **Up to 20 virtual workspaces** (`MAX_WORKSPACES`), shared or per-monitor.
 - **Per-monitor status bar** (workspace pills, title, clock, CPU/RAM/battery,
@@ -28,7 +27,7 @@ single Rust `.exe` with no installer and no required config. Core hooks:
 - **Window glide** — windows animate to their tile slot on open/move/resize/
   re-tile/scroll via an overlay of live DWM thumbnails (off/glide).
 - **App launcher** — Alt+Space opens a fuzzy app picker (Start Menu shortcuts),
-  hook-driven with no foreground focus. See `plan/launcher.md`.
+  hook-driven with no foreground focus.
 - **Swap-workspace mode** — main+P: the bar says SWAP MODE, the next key
   picks the workspace to swap this one's windows with (digit, workspace key,
   or main+A / main+D for previous / next); layouts stay per workspace.
@@ -59,12 +58,12 @@ menu bars don't open (`needs_mask`). Every hotkey is one load from the lock-free
 4. **Smooth.** Beat komorebi/GlazeWM/Seelen on motion polish — that is the
    headline differentiator (see `README.md` comparison table).
 5. **Honest docs.** If a feature is staged or removed, the README must not claim
-   it. (See `plan/known-issues.md`.)
+   it.
 
 ## Build / run / quit
 
 Cargo workspace (v2). Astur Lite = the frozen `v1.0.0` tag; this tree is the full
-"Astur". See `plan/roadmap-v2.md`.
+"Astur".
 
 ```bash
 cargo build --release -p astur # target/release/astur.exe  (LTO, strip, panic=abort)
@@ -159,21 +158,4 @@ queues. Keep it that way — do not move work onto the hooks (main thread).
   (no `Clone`) enforces it for snapshots. Deselect, then `GdiFlush`, before
   every hand-off.
 - Prefer the simplest built-in Win32 path first; document alternatives + tradeoffs
-  in `plan/` before adding complexity.
-
-## Where to go next
-
-- `plan/architecture.md` — deeper component + data-flow notes.
-- `plan/scrolling.md` — scrolling layout spec + contract: keys, config,
-  geometry, peek/park, safety, manual test checklist.
-- `plan/animations.md` — animation design: desktop-switch modes (off/slide/spring/
-  fade) and the honest analysis of window open/close/move/resize animation.
-- `plan/win32-reference.md` — APIs used, doc links, gotchas (slow/buggy calls).
-- `plan/competitors.md` — komorebi, GlazeWM, Seelen UI: what they do, links.
-- `plan/known-issues.md` — known traps, doc/reality mismatches, code to avoid.
-- `plan/launcher.md` — Alt+Space picker: v1/v2 shipped + Phase 3 file-search plan.
-- `plan/optimization.md` — Phase 4 optimization pass plan (in progress backlog).
-- `plan/mods.md` — modding/extensibility architecture (declarative + IPC mods + security).
-- `plan/system-menu.md` — main+M power menu (shipped; key_system_menu) + backlog.
-- `plan/roadmap-v2.md` — v2 strategy: GUI config, installer, packaging, MFT search.
-- `plan/ideas.md` — backlog / discussion.
+  in code comments before adding complexity.

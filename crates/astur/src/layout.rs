@@ -311,7 +311,7 @@ pub(crate) fn resize_dwindle(
 }
 
 // ---- scrolling strip (Niri-style) --------------------------------------------
-// Contract: plan/scrolling.md, "Geometry contract". Strip x 0 is the view's left
+// Contract: strip x 0 is the view's left
 // edge at offset 0 and column 0 starts at `outer`; screen x = area.left +
 // strip_x - offset. Unlike the layouts above, strip rects may be off-screen on
 // purpose: the WM decides per rect (`classify`) whether to place it where it
@@ -428,7 +428,7 @@ pub(crate) fn scroll_to_show(
     };
     // Clamped in every mode, `Always` included: centring the first or last
     // column would otherwise show empty space past the strip end. Niri allows
-    // that; we chose a full view over exact centring (plan/scrolling.md).
+    // that; we chose a full view over exact centring.
     clamp_offset(view_w, spans, outer, want)
 }
 

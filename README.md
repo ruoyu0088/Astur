@@ -111,8 +111,7 @@ them.
   a low battery turns red (`glyph_only`: the icons alone). Nine **presets**
   (classic, retro, minimal, floating, islands, pills, Mac style, fluent,
   powerline), which Settings applies by writing their keys into
-  `navbar.conf`. The bar is opaque: no blur behind it (see
-  `plan/decisions.md`). Font
+  `navbar.conf`. The bar is opaque: no blur behind it. Font
   weight, widget gaps, app labels/tooltips, stat labels, formats and media text
   are configurable.
 - **Animations** — workspace switches animate with a composited overlay:

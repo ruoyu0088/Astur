@@ -4355,7 +4355,7 @@ fn refusal(main: MainKey, mods: u8, vk: u32) -> Option<&'static str> {
     if mods & (MOD_ALT | MOD_WIN | MOD_HYPER) == 0 {
         // Ctrl/Shift-only chords stay ignored, as in the old WM. WIN-only and
         // MOD chords, which the old WM dropped for lacking an ALT token, now
-        // bind (plan/known-issues.md, "Old files").
+        // bind.
         return Some(
             "needs the Astur key, Alt or Win: Ctrl and Shift shortcuts belong to apps, \
              and a key on its own is typing",

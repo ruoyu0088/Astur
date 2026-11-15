@@ -1,24 +1,22 @@
 # CLAUDE.md — Astur
 
-Read this first, every session. Then read `AGENTS.md` and the relevant file in
-`plan/` before touching code.
+Read this first, every session. `AGENTS.md` has the map of the code, the
+threads and the conventions.
 
-## Standing order: keep the docs alive
+## Standing order: keep the docs true
 
-**Every prompt that changes behaviour, decisions, or traps → update `plan/` in the
-same turn as the code.** Docs are not a final step; they move with the work.
+**A change that makes the docs wrong is not finished until the docs are right.**
 
-- Made a design/architecture call → one line in `plan/decisions.md` (newest on
-  top, dated), detail in the relevant file.
-- Touched anything visual (animation, overlay, easing, flash) → `plan/animations.md`.
-  **Read it before any visual change.**
-- Found a slow/buggy/"don't use X because Y" Win32 call → `plan/win32-reference.md`
-  + `plan/known-issues.md`, with the measurement/reason.
-- Fixed a bug or resolved a doc/reality mismatch → flip the `plan/known-issues.md`
-  entry to RESOLVED (don't delete history — note the supersede).
-- Changed threads/state ownership/hot paths → `plan/architecture.md`.
+- Behaviour, a key, or a config option changed -> update `README.md` (hotkey
+  table, feature list) and, for a key, the template comments in
+  `crates/astur-config/src/lib.rs`; then run `python tools/gen_schema.py` so
+  the settings editor shows it.
+- Design or tradeoff worth remembering -> a comment next to the code that
+  makes the choice, not a separate document.
+- New thread, ownership rule, or hot path -> a line in `AGENTS.md`.
+- Win32 call that is slow, buggy, or misleading -> comment it where it is
+  used, with the measurement or the reason.
 
-If a change makes a doc wrong, the change is not done until the doc is right.
 Honest docs are a project goal (see `AGENTS.md` "bar to hold" #5).
 
 ## What Astur is
@@ -42,15 +40,14 @@ reserved (apps never see it); Left Alt (also reserved), Win / Alt / Ctrl+Win
    Silky over feature-count.
 4. **Tile placement is INSTANT.** `animate_to` is a historical name — leave it
    instant. Real glide goes through the snapshot overlay, never per-frame
-   real-window `SetWindowPos` (tried, removed — see `plan/known-issues.md`).
+   real-window `SetWindowPos` (tried, removed).
 5. Keep `astur-config` (+ `layout.rs`) Win32-free / Win32-light — the trivially
    testable parts. `astur-config` is its own crate now and has zero Win32.
 
 ## Code layout (Cargo workspace, v2)
 
 The repo is a Cargo workspace. Astur Lite = the frozen `v1.0.0` git tag (single exe,
-pre-workspace); the workspace below is the evolving full "Astur" (v2). See
-`plan/roadmap-v2.md`.
+pre-workspace); the workspace below is the evolving full "Astur" (v2).
 
 - `crates/astur/src/main.rs` — everything Win32: hooks, manager loop, compositors,
   bar, launcher, system menu, file search. The binary users run. It is one file
@@ -70,8 +67,6 @@ pre-workspace); the workspace below is the evolving full "Astur" (v2). See
   Saving keeps the file's comments and line order and leaves a `.bak`. The WM
   starts it through `settings_python` / `python` (see `tray_open_settings`).
 
-NOTE: plan/ docs written before the workspace say `src/main.rs` / `src/config.rs` —
-those now map to `crates/astur/src/main.rs` / `crates/astur-config/src/lib.rs`.
 
 ## Build / verify
 
