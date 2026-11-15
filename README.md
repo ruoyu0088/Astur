@@ -5,7 +5,7 @@
 (including a Niri-style scrolling layout, chosen per monitor), a
 per-monitor status bar, up to 20 virtual workspaces, and silky composited
 animations. Full edition adds a configurable **app launcher + file search**
-(Alt+Space), **system menu** (Alt+. by default), desktop tools, settings GUI, and
+(Alt+Space), **system menu** (Alt+M by default), desktop tools, settings editor, and
 tray icon. A keyboard-driven,
 i3-style alternative to
 [komorebi](https://github.com/LGUG2Z/komorebi),
@@ -33,20 +33,20 @@ Astur comes in two editions from the same project:
 
 | | **Astur Lite** | **Astur** |
 |---|---|---|
-| Format | single portable `.exe`, no install | **installer** + tray app; WM-only portable option |
+| Format | single portable `.exe`, no install | portable `.zip` (`astur.exe` + `astur_settings.py`), no install |
 | Stop / control | console window (`Ctrl+C`) | **tray icon** — Settings / Quit |
-| Configuration | hand-edit `.conf` files | **settings GUI** + `.conf` |
+| Configuration | hand-edit `.conf` files | **settings editor** + `.conf` |
 | RAM | ~1 MB, minimal | higher (launcher, search) |
 | Tiling · Alt-drag · bar · workspaces · animations | ✓ | ✓ |
 | **Scrolling layout** · tabbed columns · per-monitor layouts | — | ✓ |
 | **App launcher + file search + calculator** (Alt+Space) | — | ✓ |
-| **Power menu** (Alt+. by default) | — | ✓ |
+| **System menu** (Alt+M by default) | — | ✓ |
 | **Bar widgets** (volume · network · app buttons) + light/dark theme | — | ✓ |
 | Optional switcher · scratchpad · clipboard · emoji · wallpapers · media · IPC | — | ✓ |
 
 **Astur Lite** is the lean ~1 MB keyboard/console WM for power users who want text
-config. **Astur** is the friendlier, installable app — launcher, file search, power
-menu, tray, and a settings GUI — with the same motion polish and core tiling.
+config. **Astur** is the friendlier app — launcher, file search, system menu,
+tray, and a settings editor — with the same motion polish and core tiling.
 
 ## Install
 
@@ -108,10 +108,11 @@ them.
   pill, underline, dots). Stats can show **Windows icons** (`icon_mode = glyph`:
   Segoe Fluent Icons, or Segoe MDL2 Assets on Windows 10, no install) with the
   battery level and charging, the volume level and mute, and wifi or ethernet;
-  a low battery turns red (`glyph_only`: the icons alone). Nine **presets**
+  a low battery turns red (`glyph_only`: the icons alone). Nine **preset looks**
   (classic, retro, minimal, floating, islands, pills, Mac style, fluent,
-  powerline), which Settings applies by writing their keys into
-  `navbar.conf`. The bar is opaque: no blur behind it. Font
+  powerline) are defined as data in the config crate; the settings editor
+  exposes the same `navbar.conf` keys individually rather than applying a
+  preset in one click. The bar is opaque: no blur behind it. Font
   weight, widget gaps, app labels/tooltips, stat labels, formats and media text
   are configurable.
 - **Animations** — workspace switches animate with a composited overlay:
@@ -134,7 +135,7 @@ them.
   file scope/excludes, result limit, placement, size, rows, font, colours, opacity,
   radius, icons, and mouse navigation are configurable. `Tab` shows Modified / Size /
   Path columns; `Shift+Enter` reveals a file; `F5` refreshes app/custom entries.
-- **System menu** *(Astur)* — `Alt+.` by default (rebindable as `key_system_menu`) opens configurable Power and Setup
+- **System menu** *(Astur)* — `Alt+M` by default (rebindable as `key_system_menu`) opens configurable Power and Setup
   categories with lock/sleep/hibernate/sign-out/restart/shutdown, settings, config,
   reload, restart-Astur, screenshot, and wallpaper actions. Order, width, icons,
   confirmation, custom categories, commands, URLs, and scripts are data-driven.
@@ -146,39 +147,14 @@ them.
 - **Desktop tools** *(Astur, opt-in)* — workspace-aware Alt+Tab picker, Alt+Grave
   scratchpad, clipboard/emoji launcher providers, workspace-triggered wallpaper,
   media title widget, active-workspace/MRU persistence, and local named-pipe IPC.
-- **Settings GUI** *(Astur)* — Windows 11 style editor for shortcuts, layouts,
-  workspaces, rules, appearance, motion, the status bar, launcher, power menu,
-  desktop extras and integrations, with Ctrl+F search across every setting.
-  Changes apply **as you make them** (no Save button; Ctrl+Z undoes) — the window
-  manager hot-reloads, no restart. Home has a one-click **Quick setup** (theme,
-  layout, bar style, animations, gap size) and a short how-to built from your
-  own keys. Nothing needs typing: the terminal, browser and scratchpad app are
-  picked from the ones installed (or any app, with the Windows file picker),
-  fonts from the installed fonts with a sample, the web search from a list of
-  sites, folders and pictures with Browse, and an app rule from a window that
-  is open now; a value typed by hand stays editable under More options.
-  Window rules, launcher entries, power-menu
-  items, workspaces and extra hotkeys are tables (a row that isn't valid yet
-  shows in red with the reason and is not written); shortcuts are set by
-  pressing the key, with a warning when two share one, and a copyable cheat
-  sheet. The Status bar page has a preset gallery with drawn previews, Mac
-  style and Powerline included (Apply
-  backs up `navbar.conf` to `navbar.conf.bak` first, once per session, and
-  shows which preset your bar is closest to and what you changed), palettes
-  with swatches, shape, separators, hover highlight and font (warning when
-  the font is not installed), and a drag-and-drop editor for the left /
-  centre / right zones: dropping a widget into a zone shows it, dragging it
-  out hides it, and clicking one opens its settings. Formats are picked by
-  what they show (`14:05`, `2:05:09 PM`, `Sun 4 Oct`, App name, `ENG-US`;
-  Custom… types one), the disk widget's drive from the drives on the PC, and
-  the custom widget's command says plainly that it runs in the background.
-  A Workspaces section sets the active-workspace style, labels (numbers,
-  names, icons) and app icons in each mark; Click actions gives every widget
-  on the bar a drop-down per mouse button ("Open the calendar (default)",
-  "Go to workspace…" with a number, "Open an app or command…" with the app
-  picker); Behaviour picks which screens show the bar (all, the main one, or
-  ticked screens). Troubleshooting lists config lines it did not understand,
-  with a did-you-mean fix.
+- **Settings editor** *(Astur)* — a single-file Python 3 + tkinter program
+  (`tools/astur_settings.py`) that edits both `.conf` files as text, preserving
+  comments and order. Values are schema-driven; structured `;;` records
+  (window rules, extra hotkeys, launcher entries, system actions, widget
+  colours) open in a table dialog, and `Pick window…` fills exe/class/title
+  from an open window. `Save` / `Ctrl+S` writes both files and keeps a `.bak`;
+  `Reload` / `F5` re-reads; `Ctrl+F` searches every section; closing with
+  unsaved changes prompts. The window manager hot-reloads on save.
 - **Tray icon** *(Astur)* — no console window; left-click for Settings, right-click for
   Settings / Quit.
 - **Light / dark theme** *(Astur)* — the launcher and menus follow `theme = dark |
@@ -212,13 +188,10 @@ Ctrl+Alt is not offered: on German, French and similar keyboards it types
 characters (AltGr), and so does the default main key, Right Alt. Pick `lalt` if
 you need AltGr. Win+L and Ctrl+Alt+Del always belong to Windows.
 
-In Settings, **Shortcuts > Astur key** shows each choice with the Windows
-shortcuts it would take over with your shortcuts. A new key works at once and
-goes back by itself after 15 seconds (or when Settings is closed) unless you
-press **Keep**, so a key that doesn't work on your keyboard can't lock you out.
-Custom shortcuts written with `ALT` (the scratchpad's `ALT+GRAVE`) move to the
-new key as `MOD`. Every label, the cheat sheet and the conflict notes on each
-shortcut follow the key you picked.
+In the settings editor, `main_key` is a field. Save to apply; the window
+manager hot-reloads. There is no timed trial or Keep button: if a choice does
+not work on your keyboard, edit `main_key` back or delete the line to return to
+Right Alt.
 
 ## Hotkeys
 
@@ -227,7 +200,7 @@ shortcut follow the key you picked.
 | `Alt` + left-drag | Move window |
 | `Alt` + right-drag | Resize from nearest corner |
 | `Alt` + `Space` | **App launcher + file search** *(Astur)* |
-| `Alt` + `.` | **Power / system menu** *(Astur)* (rebindable: `key_system_menu`) |
+| `Alt` + `M` | **System menu** *(Astur)* (rebindable: `key_system_menu`) |
 | `Alt` + `T` | Toggle tiling mode on/off |
 | `Alt` + `D` / `A` | Focus next / previous window |
 | `Alt` + `Shift+D` / `Shift+A` | Swap window with next / previous |
@@ -245,6 +218,7 @@ shortcut follow the key you picked.
 | `Alt` + `Shift+Enter` | Launch browser |
 | `Alt` + `1`–`9`, `0` | Switch to workspace 1–10 |
 | `Alt` + `Shift` + `1`–`9`, `0` | Move focused window to workspace |
+| `Alt` + `,` `.` `/` / `L` `;` `'` | Switch to workspace 1/2/3 on the focused monitor / on the next monitor (`Shift` moves the focused window) |
 | `Alt` + `Tab` | Windows switcher by default; optional Astur workspace-aware switcher (Left Alt or Right Alt main key) |
 
 `Alt` here is the main key (above): with `main_key = win` read `Win` + `D`, and so on.
@@ -276,13 +250,12 @@ own strip and scroll position.
 - **Tabbed columns** — `Alt+Shift+T` shows a column's windows as tabs, one at a
   time under a tab bar (`tab_bar_height`): app icon and title per tab, click to
   switch, Alt-drag the bar to move the column.
-- **Peek and park** — a column partly past the screen edge **peeks** in only where
-  no other monitor is on that side. Otherwise, and when fully off screen, it is
-  **parked** outside the whole virtual screen, so it never bleeds onto a
-  neighbouring monitor and multi-monitor setups work. Parked windows on the current
-  workspace keep their taskbar button and Alt+Tab entry: activating one scrolls it
-  into view. Quit, a relaunch after a crash, turning tiling off, or switching the
-  monitor to another layout bring every parked window back on screen.
+- **Peek and park** — a column partly past the screen edge **peeks** and can
+  bleed onto a neighbouring monitor; only a column fully off screen is
+  **parked** outside the whole virtual screen. Parked windows on the current
+  workspace keep their taskbar button and Alt+Tab entry: activating one scrolls
+  it into view. Quit, a relaunch after a crash, turning tiling off, or switching
+  the monitor to another layout bring every parked window back on screen.
 - **View** — `scroll_center = never` (default) scrolls only as far as needed to
   show the focused column, `always` keeps it centred, `on-overflow` centres it only
   when it does not fit. `Alt+X` centres once.
@@ -354,11 +327,9 @@ everything, which also repairs any window left mis-styled:
   `workspace_label`, `workspace_apps`, `separator_style`, `hover`,
   `title_format`, `title_bold`, and the keyboard / disk / uptime / custom
   widgets' keys (`disk_drive`, `custom_command`, `custom_interval`, formats).
-  A bar preset in Settings writes these keys (look, clock/date formats and
-  zones) and turns Astur's bar on (`enabled = true`); it never writes
-  `bottom`, `autohide` or the wheel / hide-empty behaviour. The look includes icon mode, workspace style, widget colours,
-  separator style, hover and the title's format and weight.
-  A `shape` line overrides `floating`.
+  The nine preset looks are data in `astur-config` (`BAR_PRESETS`), not a
+  one-click apply in the settings editor; the editor exposes the underlying
+  keys. A `shape` line overrides `floating`.
 
 Save both as UTF-8. The window manager never overwrites a file it cannot read (a
 UTF-16 "Unicode" save, or one locked mid-save): it keeps its current settings
@@ -408,10 +379,10 @@ crate, no workspace).
 
 Use YASB's existing GlazeWM workspace widget with Astur's optional localhost
 WebSocket server: live workspace indicators, app icons, click-to-switch and wheel
-cycling, including per-monitor workspaces. Open **Settings > Integrations**
-to enable it, choose a port, and copy the widget configuration and example CSS.
-Alternatively, set `yasb_enabled = true` in `astur.conf` and connect the widget
-to `ws://127.0.0.1:6123`.
+cycling, including per-monitor workspaces. Enable it with
+`yasb_enabled = true` in `astur.conf` (and `yasb_port` if you do not want the
+default 6123), then connect the widget to `ws://127.0.0.1:6123`. The settings
+editor exposes both keys; it does not copy widget configuration or CSS.
 See [setup and ready-to-merge YASB configuration](integrations/yasb/README.md).
 
 ## How it works
@@ -463,7 +434,7 @@ See the full [comparison: Astur vs GlazeWM, komorebi & FancyZones](https://astur
 
 **Is Astur a komorebi or GlazeWM alternative?** Yes — same master-stack tiling and
 workspace idea, plus Alt-drag move/resize, an app launcher with file search, and a
-power menu, with a single-exe (Lite) option and no required config file.
+system menu, with a single-exe (Lite) option and no required config file.
 
 **Does it work on Windows 11?** Yes, on Windows 10 and 11, x64.
 
@@ -480,11 +451,11 @@ versions tiled into the top-left corner of a scaled screen — that was
 terminal. It prints and saves a short report (version, Windows build, DPI
 awareness, every monitor and its scale, config paths). For more, set
 `log_level = info` in `astur.conf` and attach
-`%USERPROFILE%\.asturstur.log`.
+`%USERPROFILE%\.astur\astur.log`.
 
 **What's the difference between Astur and Astur Lite?** See [Editions](#editions) —
 Lite is minimal ~1 MB console exe; Astur adds configurable launcher/search, system
-menu, tray, desktop tools, rich widgets/themes/rules, IPC, persistence, and settings GUI.
+menu, tray, desktop tools, rich widgets/themes/rules, IPC, persistence, and settings editor.
 
 ### Current desktop-tool limits
 
