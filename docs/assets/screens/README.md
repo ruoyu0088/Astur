@@ -78,6 +78,10 @@
 - 画面包含：搜索框、结果列表、每项图标、选中项高亮、底部键盘提示（如果有）。
 - 背景是暗色桌面/窗口，启动器面板居中；不要出现真实文件名、最近打开的个人文档。
 - 裁 1200 × 800，面板四周留出背景，不要贴边。
+- 启动器打开后会接管键盘，`Win+Shift+S` / `PrtScn` 不会触发。用延迟截图：先在仓库根目录运行
+  `powershell -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File tools\capture_launcher.ps1 -Delay 10`，
+  再按 `Alt+Space` 输入查询；10 秒后自动保存到桌面 `launcher.png`，最后裁成 1200 × 800。
+  也可以用截图工具的 5 秒延迟模式。
 
 ### 6. `system-menu.png` — 800 × 900
 
