@@ -329,6 +329,11 @@ kbd {
   line-height: 1.65;
 }
 
+.hero-key {
+  color: var(--orange);
+  font-weight: 700;
+}
+
 .hero-actions {
   display: flex;
   flex-wrap: wrap;
@@ -1782,28 +1787,30 @@ kbd {
   display: none;
 }
 
-#kb-scrolling:checked ~ .keyboard .fn.tile {
+#kb-scrolling:checked ~ .kb-scroll .keyboard .fn.tile,
+#kb-scrolling:checked ~ .kb-extra .fn.tile {
   display: none;
 }
 
-#kb-scrolling:checked ~ .keyboard .fn.scroll {
+#kb-scrolling:checked ~ .kb-scroll .keyboard .fn.scroll,
+#kb-scrolling:checked ~ .kb-extra .fn.scroll {
   display: block;
 }
 
-#kb-scrolling:checked ~ .keyboard .key.scroll {
+#kb-scrolling:checked ~ .kb-scroll .keyboard .key.scroll {
   border-color: #5d4a86;
   background: linear-gradient(180deg, #2a2340, #1a1729);
 }
 
-#kb-scrolling:checked ~ .keyboard .key.scroll::before {
+#kb-scrolling:checked ~ .kb-scroll .keyboard .key.scroll::before {
   background: var(--purple);
 }
 
-#kb-scrolling:checked ~ .keyboard .key.scroll .fn {
+#kb-scrolling:checked ~ .kb-scroll .keyboard .key.scroll .fn {
   color: var(--purple);
 }
 
-#kb-scrolling:checked ~ .keyboard .key.dual {
+#kb-scrolling:checked ~ .kb-scroll .keyboard .key.dual {
   border-color: #4a3f6c;
 }
 
@@ -2616,14 +2623,16 @@ kbd {
 }
 
 .docs-side {
+  position: sticky;
+  top: 88px;
+  align-self: start;
+  max-height: calc(100vh - 108px);
+  overflow-y: auto;
   min-width: 0;
 }
 
 .docs-toc {
-  position: sticky;
-  top: 88px;
-  max-height: calc(100vh - 108px);
-  overflow: auto;
+  position: static;
   padding-right: 6px;
   font-size: 0.83rem;
 }
@@ -3003,6 +3012,16 @@ kbd {
     background: var(--panel);
     border: 1px solid var(--line);
     border-radius: 12px;
+  }
+
+  .docs-side {
+    position: static;
+    max-height: none;
+    overflow: visible;
+  }
+
+  .docs-side-card {
+    margin-top: 24px;
   }
 
   .toc ol {
