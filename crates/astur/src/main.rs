@@ -17847,10 +17847,11 @@ unsafe fn draw_workspaces(cv: &BarCanvas, it: &BarItem, data: &BarData, mb: &Mon
 }
 
 /// Room a `pills`-shape capsule leaves around a widget's content. None for a
-/// separator or a spacer: they are the space between pills.
+/// separator or a spacer: they are the space between pills. The logo is drawn
+/// bare (it is a picture, not a chip), so it gets no capsule either.
 fn pill_pad(shape: BarShape, wgt: BarWidget, ipad: i32) -> i32 {
     match (shape, wgt) {
-        (_, BarWidget::Separator | BarWidget::Spacer) => 0,
+        (_, BarWidget::Separator | BarWidget::Spacer | BarWidget::Logo) => 0,
         (BarShape::Pills, _) => ipad,
         _ => 0,
     }
@@ -17918,7 +17919,12 @@ unsafe fn bar_backdrop(
             let cap = powerline_cap(cv.h) as f32;
             for (z, zone) in zones.iter().enumerate() {
                 let segs: Vec<&BarItem> = (zone.iter())
-                    .filter(|it| !matches!(it.wgt, BarWidget::Separator | BarWidget::Spacer))
+                    .filter(|it| {
+                        !matches!(
+                            it.wgt,
+                            BarWidget::Separator | BarWidget::Spacer | BarWidget::Logo
+                        )
+                    })
                     .collect();
                 let edge = |it: &BarItem| (it.x - ipad, it.x + it.w + ipad);
                 let mut arrows: Vec<(f32, f32, u32)> = Vec::with_capacity(segs.len());
@@ -17947,7 +17953,10 @@ unsafe fn bar_backdrop(
         }
         BarShape::Pills => {
             for it in zones.into_iter().flatten() {
-                if !matches!(it.wgt, BarWidget::Separator | BarWidget::Spacer) {
+                if !matches!(
+                    it.wgt,
+                    BarWidget::Separator | BarWidget::Spacer | BarWidget::Logo
+                ) {
                     surface(it.x - ipad, it.x + it.w + ipad, it.fill);
                 }
             }
@@ -18525,15 +18534,16 @@ fn logo_image() -> Option<&'static (Vec<u32>, usize, usize)> {
     .as_ref()
 }
 
-/// The logo's drawn size on a bar `h` px tall: the mark fitted into 1.1 h
-/// by 0.5 h, about a capital's height, and never enlarged past the 32 px
-/// source (an upscaled mark looks worse than a small one). (0, 0) without it.
+/// The logo's drawn size on a bar `h` px tall: the mark left to grow into the
+/// bar (0.9 h tall, 1.1 h wide) instead of sitting at a capital's height, and
+/// never enlarged past the source (an upscaled mark looks worse than a small
+/// one). (0, 0) without it.
 fn logo_dims(h: i32) -> (i32, i32) {
     let Some((_, w, lh)) = logo_image() else {
         return (0, 0);
     };
     let (w, lh) = (*w as f32, *lh as f32);
-    let s = (h as f32 * 1.1 / w).min(h as f32 * 0.5 / lh).min(1.0);
+    let s = (h as f32 * 1.1 / w).min(h as f32 * 0.9 / lh).min(1.0);
     ((w * s).round() as i32, (lh * s).round().max(1.0) as i32)
 }
 
@@ -29423,7 +29433,12 @@ mod tests {
         assert!(*w > 0 && *h > 0 && pixels.len() == w * h);
         assert!(pixels.iter().any(|&p| (p >> 24) > 200));
         let (lw, lh) = logo_dims(36);
-        assert!(lw > 0 && lh > 0 && lw <= *w as i32 && lh <= 18, "{lw}x{lh}");
+        // Grows into the bar (0.9 h, so 32 px on a 36 px bar) instead of
+        // sitting at a capital's height, but never past the source.
+        assert!(
+            lw > 0 && lh > 18 && lw <= *w as i32 && lh <= 33,
+            "{lw}x{lh}"
+        );
     }
 
     #[test]
