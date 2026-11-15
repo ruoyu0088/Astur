@@ -21,7 +21,9 @@ Two kinds of docs, two rules:
 
 Audit after every owner commit:
 
-1. `git log --oneline <last-audited>..HEAD`, then read the diffs.
+1. `git log --oneline <last-audited>..HEAD`, then read the diffs. `<last-audited>`
+   is the tip of `main` the previous session left behind; when unsure,
+   `git log --oneline -15` and start from the first commit you do not recognise.
 2. New or renamed config key / hotkey? Then README's hotkey table and feature
    list, the template comment, `Config::defaults()`, the parser, and the
    regenerated schema all need to know. `python tools/gen_schema.py` must report
