@@ -44,7 +44,7 @@
       <h1>Astur, end to end.</h1>
       <p>Every feature, every default shortcut, and the two text files that control it all. Written for people who want to use Astur, not build it.</p>
       <div class="docs-meta">
-        <span>For Astur v2.7.0</span>
+        <span>For Astur v2.8.0</span>
         <span>Windows 10 and 11</span>
         <span>6 layouts</span>
         <span>Up to 20 workspaces</span>
@@ -158,6 +158,7 @@
               <tr><td><kbd>Alt</kbd> + <kbd>T</kbd></td><td>Tiling turns off; windows stop being placed. Press it again to re-tile.</td></tr>
               <tr><td><kbd>Alt</kbd> + <kbd>F</kbd></td><td>The focused window floats; the tiled windows close the gap behind it.</td></tr>
               <tr><td><kbd>Alt</kbd> + <kbd>P</kbd>, then a workspace number</td><td>Swap mode: the two workspaces exchange all their windows.</td></tr>
+              <tr><td><kbd>Alt</kbd> + <kbd>V</kbd></td><td>Every minimized window on this workspace comes back and the layout closes up again.</td></tr>
             </tbody>
           </table>
         </div>
@@ -204,6 +205,7 @@
             <tbody>
               <tr><td><kbd>Alt</kbd> + <kbd>W</kbd></td><td>Close the focused window.</td></tr>
               <tr><td><kbd>Alt</kbd> + <kbd>Q</kbd></td><td>Minimise the focused window. Press it again within a moment to restore everything that key minimised.</td></tr>
+              <tr><td><kbd>Alt</kbd> + <kbd>V</kbd></td><td>Bring back <b>every</b> minimized window of this workspace, whichever way it was minimized, and re-tile. Floating windows come back in front of the tiles; the focus stays where it was unless that window was one of the minimized ones.</td></tr>
               <tr><td><kbd>Alt</kbd> + <kbd>F</kbd></td><td>Toggle floating for the focused window. The rest of the layout re-tiles at once.</td></tr>
               <tr><td><kbd>Alt</kbd> + <kbd>T</kbd></td><td>Turn tiling on or off for the current state. Press again to re-tile.</td></tr>
             </tbody>
@@ -308,12 +310,24 @@
               <tr><td><kbd>Alt</kbd> + <kbd>1</kbd>…<kbd>9</kbd>, <kbd>0</kbd></td><td>Switch to workspace 1…10.</td></tr>
               <tr><td><kbd>Alt</kbd> + <kbd>Shift</kbd> + <kbd>1</kbd>…<kbd>0</kbd></td><td>Move the focused window to that workspace; you stay where you are.</td></tr>
               <tr><td><kbd>Alt</kbd> + <kbd>,</kbd> / <kbd>.</kbd> / <kbd>/</kbd></td><td>Go to the <b>focused monitor's</b> 1st / 2nd / 3rd workspace (in that monitor's own order).</td></tr>
-              <tr><td><kbd>Alt</kbd> + <kbd>L</kbd> / <kbd>;</kbd> / <kbd>'</kbd></td><td>Go to the <b>next monitor's</b> 1st / 2nd / 3rd workspace.</td></tr>
+              <tr><td><kbd>Alt</kbd> + <kbd>L</kbd> / <kbd>;</kbd> / <kbd>'</kbd></td><td>Go to the 1st / 2nd / 3rd workspace of the next screen in <code>switch_ws_monitors</code> (the next monitor by default).</td></tr>
               <tr><td><kbd>Alt</kbd> + <kbd>Shift</kbd> + those six keys</td><td>Move the focused window to that workspace instead of following it.</td></tr>
             </tbody>
           </table>
         </div>
         <p>The comma and letter shortcuts are easy to miss because they are not on the number row: they exist so a laptop or a keyboard without a convenient number row can still reach every workspace on every monitor without counting.</p>
+
+        <h3>Keeping the letter keys on two screens</h3>
+        <p><code>switch_ws_monitors</code> decides which screens <kbd>Alt</kbd> + <kbd>L</kbd> / <kbd>;</kbd> / <kbd>'</kbd> may reach. <code>all</code> is the default and keeps the plain next-monitor rule.</p>
+        <div class="config-block"><span class="file">astur.conf</span>
+<span class="k">switch_ws_monitors</span> = <span class="v">1 2</span></div>
+        <ul>
+          <li>Numbers are screens, left to right, starting at 1 — the same numbering as <code>monitor_layouts</code> and the bar's <code>monitors</code>.</li>
+          <li>Two or more screens listed: each press goes to the next listed screen, skipping the others, and wraps around. From a screen that is not listed it still takes you into the list.</li>
+          <li>Exactly one screen listed: the three keys always go to that screen's 4th / 5th / 6th workspace, from anywhere — they become that screen's 4, 5 and 6.</li>
+          <li>Read only when the desktop has three or more screens. With one or two, the keys behave exactly as before.</li>
+          <li><kbd>Alt</kbd> + <kbd>,</kbd> / <kbd>.</kbd> / <kbd>/</kbd>, the bar pills, the wheel and the workspace numbers are never restricted.</li>
+        </ul>
 
         <h3>Swap mode</h3>
         <p><kbd>Alt</kbd> + <kbd>P</kbd> puts the screen into <b>SWAP MODE</b>. The next key chooses the other workspace:</p>
@@ -631,12 +645,13 @@
               <tr><td><kbd>Alt</kbd> + <kbd>W</kbd></td><td>Close the focused window.</td></tr>
               <tr><td><kbd>Alt</kbd> + <kbd>Q</kbd></td><td>Minimise; press again to restore what it minimised.</td></tr>
               <tr><td><kbd>Alt</kbd> + <kbd>P</kbd></td><td>Swap-workspace mode.</td></tr>
+              <tr><td><kbd>Alt</kbd> + <kbd>V</kbd></td><td>Bring back every minimized window on the workspace.</td></tr>
               <tr><td><kbd>Alt</kbd> + <kbd>Enter</kbd></td><td>Launch the terminal.</td></tr>
               <tr><td><kbd>Alt</kbd> + <kbd>Shift</kbd> + <kbd>Enter</kbd></td><td>Launch the browser.</td></tr>
               <tr><td><kbd>Alt</kbd> + <kbd>1</kbd>…<kbd>0</kbd></td><td>Switch workspace.</td></tr>
               <tr><td><kbd>Alt</kbd> + <kbd>Shift</kbd> + <kbd>1</kbd>…<kbd>0</kbd></td><td>Move the focused window to that workspace.</td></tr>
               <tr><td><kbd>Alt</kbd> + <kbd>,</kbd> / <kbd>.</kbd> / <kbd>/</kbd></td><td>Focused monitor's 1st / 2nd / 3rd workspace.</td></tr>
-              <tr><td><kbd>Alt</kbd> + <kbd>L</kbd> / <kbd>;</kbd> / <kbd>'</kbd></td><td>Next monitor's 1st / 2nd / 3rd workspace.</td></tr>
+              <tr><td><kbd>Alt</kbd> + <kbd>L</kbd> / <kbd>;</kbd> / <kbd>'</kbd></td><td>The next screen's 1st / 2nd / 3rd workspace (<code>switch_ws_monitors</code>).</td></tr>
               <tr><td><kbd>Alt</kbd> + <kbd>Tab</kbd></td><td>The Windows switcher; the optional Astur switcher is workspace-aware.</td></tr>
             </tbody>
           </table>
@@ -662,7 +677,7 @@
         </div>
 
         <h3>Rebinding</h3>
-        <p>Letter keys and the scrolling keys are single settings in <code>astur.conf</code>: <code>key_focus_next</code>, <code>key_focus_prev</code>, <code>key_shrink_master</code>, <code>key_grow_master</code>, <code>key_promote_master</code>, <code>key_toggle_tiling</code>, <code>key_toggle_float</code>, <code>key_close_window</code>, <code>key_minimize_window</code>, <code>key_cycle_width</code>, <code>key_center_column</code>, <code>key_consume_left</code>, <code>key_consume_right</code>, <code>key_fill_desktop</code>, <code>key_system_menu</code> and <code>key_swap_workspace</code>. The workspace keys are <code>workspace_keys</code> and the six monitor-local keys are <code>key_switch_ws_1</code>…<code>key_switch_ws_6</code>.</p>
+        <p>Letter keys and the scrolling keys are single settings in <code>astur.conf</code>: <code>key_focus_next</code>, <code>key_focus_prev</code>, <code>key_shrink_master</code>, <code>key_grow_master</code>, <code>key_promote_master</code>, <code>key_toggle_tiling</code>, <code>key_toggle_float</code>, <code>key_close_window</code>, <code>key_minimize_window</code>, <code>key_cycle_width</code>, <code>key_center_column</code>, <code>key_consume_left</code>, <code>key_consume_right</code>, <code>key_fill_desktop</code>, <code>key_system_menu</code>, <code>key_swap_workspace</code> and <code>key_restore_all</code>. The workspace keys are <code>workspace_keys</code>, the six monitor-local keys are <code>key_switch_ws_1</code>…<code>key_switch_ws_6</code>, and <code>switch_ws_monitors</code> limits which screens the last three of them reach.</p>
         <p>Extra chords use <code>extra_hotkeys</code>, with the main key written as <code>MOD</code> and modifiers joined by <code>+</code>:</p>
         <div class="config-block"><span class="file">astur.conf</span>
 <span class="c"># chord|action|argument</span>
@@ -828,7 +843,7 @@
       </section>
 
       <div class="doc-foot">
-        <p>This page describes Astur v2.7.0. The configuration templates in <code>astur.conf</code> and <code>navbar.conf</code> are the final authority for defaults; if they disagree with this page, the files are right.</p>
+        <p>This page describes Astur v2.8.0. The configuration templates in <code>astur.conf</code> and <code>navbar.conf</code> are the final authority for defaults; if they disagree with this page, the files are right.</p>
         <a class="btn" href="#main">Back to top</a>
       </div>
 

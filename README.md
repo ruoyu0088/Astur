@@ -76,9 +76,13 @@ them.
 - **Tiling mode** — `dwindle` (spiral), `master`, equal `columns`, balanced `grid`,
   stacked `monocle`, or Niri-style `scrolling` (see [Scrolling layout](#scrolling-layout))
   across up to 20 named/icon-labelled virtual workspaces. Each monitor can run its
-  own layout (`monitor_layouts`)
+  own layout (`monitor_layouts`); `switch_ws_monitors` keeps the "next monitor"
+  workspace keys on the screens you name
 - **Minimize with the main key** — `Alt+Q` minimizes the focused window; press it
   again to bring back everything that key minimized (`key_minimize_window`)
+- **Bring everything back** — `Alt+V` restores every minimized window of the
+  workspace, however it was minimized, re-tiles it, and raises the floating
+  windows without moving the focus (`key_restore_all`)
 - **Swap workspaces** — `Alt+P` swaps this workspace's windows with another one
   (a digit, a workspace key, or `Alt+A` / `Alt+D` for the previous / next one);
   every workspace keeps its own layout (`key_swap_workspace`)
@@ -213,12 +217,13 @@ Right Alt.
 | `Alt` + `F` | Toggle float for focused window |
 | `Alt` + `W` | Close focused window |
 | `Alt` + `Q` | Minimize focused window; press again quickly to restore what it minimized (rebindable: `key_minimize_window`) |
+| `Alt` + `V` | Bring back every minimized window of this workspace and re-tile (rebindable: `key_restore_all`) |
 | `Alt` + `P` | **Swap-workspace mode**: the screen says SWAP MODE, the next key picks the workspace to swap this one's windows with (rebindable: `key_swap_workspace`) |
 | `Alt` + `Enter` | Launch terminal |
 | `Alt` + `Shift+Enter` | Launch browser |
 | `Alt` + `1`–`9`, `0` | Switch to workspace 1–10 |
 | `Alt` + `Shift` + `1`–`9`, `0` | Move focused window to workspace |
-| `Alt` + `,` `.` `/` / `L` `;` `'` | Switch to workspace 1/2/3 on the focused monitor / on the next monitor (`Shift` moves the focused window) |
+| `Alt` + `,` `.` `/` / `L` `;` `'` | Switch to workspace 1/2/3 on the focused monitor / on the next screen `switch_ws_monitors` lists (`Shift` moves the focused window) |
 | `Alt` + `Tab` | Windows switcher by default; optional Astur workspace-aware switcher (Left Alt or Right Alt main key) |
 
 `Alt` here is the main key (above): with `main_key = win` read `Win` + `D`, and so on.
@@ -226,7 +231,7 @@ Right Alt.
 On a monitor running the scrolling layout, the arrows, `D A Z C S` and a few new
 keys work on columns instead — see [Scrolling layout](#scrolling-layout).
 
-Letter binds (`D A Z C S T F W E`, and `R X [ ]` for scrolling) plus extra
+Letter binds (`D A Z C S T F W E`, plus `Q` `P` `V`, and `R X [ ]` for scrolling) plus extra
 chords (`MOD` = the main key, with `CTRL`, `SHIFT`, `ALT`, `WIN`) are configurable
 in `%USERPROFILE%\.astur\astur.conf`, along with workspace keys, gaps, layout,
 borders, rules, launcher, menus, and desktop tools. Status bar uses `navbar.conf`

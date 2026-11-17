@@ -58,7 +58,7 @@
         <a class="btn" href="docs.html">Read the docs</a>
       </div>
       <div class="hero-meta">
-        <span>Latest release v2.7.0</span>
+        <span>Latest release v2.8.0</span>
         <span>Portable .exe, no installer</span>
         <span>No admin required</span>
         <span>Apache-2.0</span>
@@ -115,7 +115,7 @@
               <div class="win-bar"><span class="dots"><i></i><i></i><i></i></span><span class="name">PowerShell</span></div>
               <div class="win-body">
                 <div><span class="prompt">PS</span> <span class="path">~</span>&gt; cargo run -p astur</div>
-                <div>   Compiling astur v2.7.0</div>
+                <div>   Compiling astur v2.8.0</div>
                 <div>    Finished release [optimized]</div>
                 <div>     Running target\release\astur.exe</div>
               </div>
@@ -279,6 +279,7 @@
           <li><b>Alt + 1…0 switches; add Shift to move the focused window there.</b> No dragging windows between desktops.</li>
           <li><b>Shared or independent.</b> Number workspaces across all monitors, or give every monitor its own set.</li>
           <li><b>Alt + P swaps two workspaces.</b> The next key picks the other one; digits, workspace keys, or Alt + A / Alt + D work.</li>
+          <li><b>Three keys, two screens.</b> <code>switch_ws_monitors</code> keeps Alt + L / ; / ' on the monitors you list, so a laptop docked to two externals does not rotate through all three.</li>
           <li><b>Names, icons and wallpapers.</b> The bar can show a number, a name, an icon, or the apps open in each workspace.</li>
         </ul>
         <a class="btn" href="docs.html#workspaces">Workspaces in detail</a>
@@ -520,7 +521,7 @@
               <div class="key u1 mark k-blue dual"><span class="cap">Z</span><span class="fn tile">shrink</span><span class="fn scroll">narrower</span></div>
               <div class="key u1 mark k-purple scroll"><span class="cap">X</span><span class="fn tile">—</span><span class="fn scroll">centre</span></div>
               <div class="key u1 mark k-blue dual"><span class="cap">C</span><span class="fn tile">grow</span><span class="fn scroll">wider</span></div>
-              <div class="key u1"><span class="cap">V</span></div>
+              <div class="key u1 mark k-blue"><span class="cap">V</span><span class="fn">restore</span></div>
               <div class="key u1"><span class="cap">B</span></div>
               <div class="key u1"><span class="cap">N</span></div>
               <div class="key u1 mark k-orange menu"><span class="cap">M</span><span class="fn">menu</span></div>
@@ -577,7 +578,7 @@
         </div>
       </div>
 
-      <p style="margin-top:22px;color:var(--muted);font-size:.9rem">Green keys switch workspaces. <b>1–0</b> go to a workspace; <b>, . /</b> jump to the first three workspaces of the monitor you are on, and <b>L ; '</b> to the first three of the next monitor. Shift + a workspace number moves the focused window there. Some keys change meaning on a scrolling monitor: Z / C resize columns, R cycles widths, X centres, and [ / ] stack windows. <a href="docs.html#hotkeys">See the complete hotkey table</a>.</p>
+      <p style="margin-top:22px;color:var(--muted);font-size:.9rem">Green keys switch workspaces. <b>1–0</b> go to a workspace; <b>, . /</b> jump to the first three workspaces of the monitor you are on, and <b>L ; '</b> to the first three of the next monitor (or the next screen in <code>switch_ws_monitors</code>). <b>V</b> brings back every minimized window on the workspace. Shift + a workspace number moves the focused window there. Some keys change meaning on a scrolling monitor: Z / C resize columns, R cycles widths, X centres, and [ / ] stack windows. <a href="docs.html#hotkeys">See the complete hotkey table</a>.</p>
     </div>
   </section>
 
