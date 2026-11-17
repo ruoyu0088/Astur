@@ -1642,6 +1642,7 @@ fn bind_cmd(action: config::Action, arg: u16) -> Option<Cmd> {
         A::FillDesktop => Cmd::ToggleFill,
         A::CloseWindow => Cmd::CloseFocused,
         A::MinimizeWindow => Cmd::MinimizeWindow,
+        A::RestoreAll => Cmd::RestoreAll,
         A::CycleWidth => Cmd::CycleWidth,
         A::CycleHeight => Cmd::CycleHeight,
         A::CenterColumn => Cmd::CenterColumn,
@@ -3072,6 +3073,10 @@ enum Cmd {
     /// main_key + Q: minimize the focused window; a quick double press of
     /// the chord restores every window it minimized.
     MinimizeWindow,
+    /// main_key + V: bring back every minimized window of the focused
+    /// monitor's current workspace, however it was minimized, and lay the
+    /// workspace out again (floating windows end up in front).
+    RestoreAll,
     /// This window was minimized or restored: re-tile its own monitor, if it
     /// is tiled there (`retile_for_target`, resolved when processed).
     RetileFor(isize),
@@ -3183,6 +3188,7 @@ impl Cmd {
             Cmd::ToggleFill => "ToggleFill",
             Cmd::CloseFocused => "CloseFocused",
             Cmd::MinimizeWindow => "MinimizeWindow",
+            Cmd::RestoreAll => "RestoreAll",
             Cmd::RetileFor(_) => "RetileFor",
             Cmd::RefreshMonitors => "RefreshMonitors",
             Cmd::RefreshWorkAreas => "RefreshWorkAreas",
@@ -13452,6 +13458,7 @@ unsafe fn run_action(mgr: &mut Manager, action: &str, argument: &str) {
         "toggle_tiling" => Some(Cmd::ToggleTiling),
         "toggle_float" => Some(Cmd::ToggleFloat),
         "close" | "close_window" => Some(Cmd::CloseFocused),
+        "restore_all" => Some(Cmd::RestoreAll),
         "terminal" => Some(Cmd::LaunchTerminal),
         "browser" => Some(Cmd::LaunchBrowser),
         "switch_workspace" => argument
@@ -13820,6 +13827,121 @@ unsafe fn restore_minimized(mgr: &mut Manager) {
         if f != 0 {
             focus_window(f);
         }
+    }
+}
+
+/// The windows of `ws` that are minimized right now, in workspace order.
+/// `iconic` is a parameter because asking the OS needs Win32, so the rule is
+/// testable without it.
+fn minimized_in(ws: &Workspace, iconic: impl Fn(isize) -> bool) -> Vec<isize> {
+    ws.windows.iter().copied().filter(|&h| iconic(h)).collect()
+}
+
+/// Which window takes the focus after main+V restored `back`: None means
+/// leave it alone, because the window the user was on is still there. When it
+/// is not, the topmost restored window takes it -- the last float if any came
+/// back, else the last restored window. Pure.
+fn restore_focus(
+    back: &[isize],
+    floating: &[isize],
+    still_focused: Option<isize>,
+) -> Option<isize> {
+    if still_focused.is_some() {
+        return None;
+    }
+    back.iter()
+        .rev()
+        .find(|h| floating.contains(h))
+        .or(back.last())
+        .copied()
+}
+
+/// Drop the windows main+V brought back from main+Q's ledger: they are on
+/// screen again, so a later double press of Q must not restore them twice.
+/// Every other window Q minimized stays in the ledger.
+fn forget_restored(key: (usize, usize), back: &[isize]) {
+    let mut guard = MINIMIZED_BY_KEY.lock().unwrap();
+    let Some(map) = guard.as_mut() else {
+        return;
+    };
+    let empty = match map.get_mut(&key) {
+        Some(wins) => {
+            wins.retain(|h| !back.contains(h));
+            wins.is_empty()
+        }
+        None => return,
+    };
+    if empty {
+        map.remove(&key);
+    }
+}
+
+/// main_key + V: bring back every minimized window of the focused monitor's
+/// current workspace -- one this chord minimized, the taskbar's, the app's
+/// own -- and lay the workspace out once. A window hidden to the tray is
+/// SW_HIDE, not minimized, so it stays hidden.
+///
+/// Floating windows end up in front of the tiles: placing a tile is
+/// SWP_NOZORDER, so nothing else would put them there. They are raised with
+/// SWP_NOACTIVATE, because the focus stays on the window the user was using;
+/// it only moves when that window was one of the minimized ones.
+unsafe fn restore_all_minimized(mgr: &mut Manager) {
+    let (mi, a, _) = mgr.focused();
+    let Some(ws) = mgr.monitors.get(mi).and_then(|m| m.workspaces.get(a)) else {
+        return;
+    };
+    let back = minimized_in(ws, |h| IsIconic(hwnd_from(h)).as_bool());
+    if back.is_empty() {
+        return;
+    }
+    for &h in &back {
+        // Posted, never waited for (a busy app would stall the manager); the
+        // MINIMIZEEND event re-tiles once it lands, like the retile below.
+        let _ = ShowWindowAsync(hwnd_from(h), SW_RESTORE);
+    }
+    forget_restored((mi, a), &back);
+    // Restored windows may re-enter the strip off the view.
+    ensure_visible(mgr, mi, a);
+    retile_monitor(mgr, mi);
+    let ws = &mgr.monitors[mi].workspaces[a];
+    let f = ws.focused;
+    let keep = f != 0
+        && ws.windows.contains(&f)
+        && IsWindow(hwnd_from(f)).as_bool()
+        && !IsIconic(hwnd_from(f)).as_bool();
+    if let Some(h) = restore_focus(&back, &ws.floating, keep.then_some(f)) {
+        mgr.monitors[mi].workspaces[a].focused = h;
+        focus_window(h);
+    }
+    raise_floats(mgr, mi, a);
+}
+
+/// Put a workspace's floating windows above its tiles, the focused one last so
+/// it is the topmost float, without moving the focus (SWP_NOACTIVATE). Tile
+/// placement is SWP_NOZORDER, so this is the only thing keeping floats in
+/// front.
+unsafe fn raise_floats(mgr: &Manager, mi: usize, a: usize) {
+    let ws = &mgr.monitors[mi].workspaces[a];
+    let mut order: Vec<isize> = ws
+        .windows
+        .iter()
+        .copied()
+        .filter(|&h| ws.floating.contains(&h) && !IsIconic(hwnd_from(h)).as_bool())
+        .collect();
+    if let Some(p) = order.iter().position(|&h| h == ws.focused) {
+        let f = order.remove(p);
+        order.push(f);
+    }
+    for h in order {
+        let _ = SetWindowPos(
+            hwnd_from(h),
+            HWND_TOP,
+            0,
+            0,
+            0,
+            0,
+            SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE,
+        );
     }
 }
 
@@ -14725,6 +14847,7 @@ unsafe fn process(mgr: &mut Manager, cmd: Cmd) {
             }
         }
         Cmd::MinimizeWindow => toggle_minimize(mgr),
+        Cmd::RestoreAll => restore_all_minimized(mgr),
         // The loop's update_bar does the work (and clears the flag again at
         // its top). Cleared here too, before any title is read, so a rename
         // from now on queues exactly one more refresh.
@@ -27343,6 +27466,30 @@ mod tests {
     // ---- event intake (batch 8) ---------------------------------------------
 
     #[test]
+    fn restore_all_takes_every_minimized_window_of_the_workspace() {
+        let mut ws = Workspace::new();
+        ws.windows = vec![10, 20, 30, 40];
+        ws.floating.push(20);
+        // However it was minimized, it comes back; the order is the tiling's.
+        assert_eq!(minimized_in(&ws, |h| h == 20 || h == 30), vec![20, 30]);
+        assert_eq!(minimized_in(&ws, |_| true), vec![10, 20, 30, 40]);
+        assert!(minimized_in(&ws, |_| false).is_empty());
+    }
+
+    #[test]
+    fn restore_focus_leaves_a_live_focused_window_alone() {
+        let floating = [20isize];
+        // The window the user was on is still there: the focus does not move.
+        assert_eq!(restore_focus(&[20, 30], &floating, Some(10)), None);
+        // It was minimized too: the last restored float takes the focus, so
+        // the window in front has it.
+        assert_eq!(restore_focus(&[10, 20, 30], &floating, None), Some(20));
+        // No float came back: the last restored window.
+        assert_eq!(restore_focus(&[10, 30], &floating, None), Some(30));
+        assert_eq!(restore_focus(&[], &floating, None), None);
+    }
+
+    #[test]
     fn a_minimize_retiles_only_its_own_tiled_monitor() {
         let active = |mi: usize| [0usize, 2][mi];
         let never = |_: usize, _: usize| false;
@@ -31136,6 +31283,9 @@ mod tests {
         }
         if vk == c.key_minimize_window {
             return one(Cmd::MinimizeWindow);
+        }
+        if vk == c.key_restore_all {
+            return one(Cmd::RestoreAll);
         }
         if vk == c.key_fill_desktop {
             return one(Cmd::ToggleFill);

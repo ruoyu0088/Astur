@@ -433,6 +433,7 @@ SCHEMA_DATA = {
             ("key_toggle_float", "key", "F", "", "Float the focused window, or put it back into the layout."),
             ("key_close_window", "key", "W", "", "Close the focused window."),
             ("key_minimize_window", "key", "Q", "", "Minimize the focused window; press it again within a moment to bring back every window this key minimized."),
+            ("key_restore_all", "key", "V", "", "Bring back every minimized window of the focused monitor's workspace, however it was minimized, and re-tile the workspace; floating windows come back in front and the focus stays where it was."),
             ("key_cycle_width", "key", "R", "", "Step the scrolling column through scroll_width_presets; with Shift, the window height."),
             ("key_center_column", "key", "X", "", "Scroll the focused column to the middle of the screen."),
             ("key_consume_left", "key", "[", "", "Stack the window on the left into the focused column."),

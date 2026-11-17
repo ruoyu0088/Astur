@@ -58,7 +58,7 @@ KEY_BLINDS = (
     "key_close_window", "key_cycle_width", "key_center_column",
     "key_consume_left", "key_consume_right", "key_fill_desktop",
     "key_system_menu", "hide_taskbar_hotkey",
-    "key_minimize_window", "key_swap_workspace",
+    "key_minimize_window", "key_swap_workspace", "key_restore_all",
     "key_switch_ws_1", "key_switch_ws_2", "key_switch_ws_3",
     "key_switch_ws_4", "key_switch_ws_5", "key_switch_ws_6",
 )
@@ -105,6 +105,10 @@ HELP_OVERRIDES = {
     ("astur", "key_minimize_window"):
         "Minimize the focused window; press it again within a moment to bring "
         "back every window this key minimized.",
+    ("astur", "key_restore_all"):
+        "Bring back every minimized window of the focused monitor's workspace, "
+        "however it was minimized, and re-tile the workspace; floating windows "
+        "come back in front and the focus stays where it was.",
     ("astur", "key_swap_workspace"):
         "Enter swap mode: the screen shows SWAP MODE and the next key picks the "
         "workspace to swap this one's windows with (a digit, a workspace key, "

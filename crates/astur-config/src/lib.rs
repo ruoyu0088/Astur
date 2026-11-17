@@ -211,6 +211,7 @@ pub struct Config {
     pub key_toggle_float: u32,   // Alt+<key> toggle floating for focused window (default F)
     pub key_close_window: u32,   // Alt+<key> close the focused window (default W)
     pub key_minimize_window: u32, // Alt+<key> minimize the focused window (default Q)
+    pub key_restore_all: u32,    // Alt+<key> bring back every minimized window (default V)
     pub key_cycle_width: u32,    // Alt+<key> scrolling: cycle width, +Shift height (default R)
     pub key_center_column: u32,  // Alt+<key> scrolling: centre focused column (default X)
     pub key_consume_left: u32,   // Alt+<key> scrolling: consume/expel left (default [)
@@ -353,6 +354,7 @@ pub const BAR_ACTIONS: &[(&str, &str)] = &[
     ("workspace_next", "Next workspace"),
     ("workspace_prev", "Previous workspace"),
     ("next_layout", "Next layout"),
+    ("restore_all", "Restore every minimized window"),
     ("switch_workspace", "Go to workspace\u{2026}"),
     ("launch", "Open an app or command\u{2026}"),
 ];
@@ -1343,6 +1345,7 @@ impl Config {
             key_toggle_float: 0x46,    // F
             key_close_window: 0x57,    // W
             key_minimize_window: 0x51, // Q
+            key_restore_all: 0x56,     // V
             key_cycle_width: 0x52,     // R
             key_center_column: 0x58,   // X
             key_consume_left: 0xDB,    // [ (VK_OEM_4)
@@ -2006,6 +2009,11 @@ key_close_window = W
 # Alt+Q minimizes the focused window; pressing it again within a moment
 # restores every window that key minimized.  key
 key_minimize_window = Q
+# Alt+V brings back every minimized window of the focused monitor's current
+# workspace -- however it was minimized -- and lays the workspace out again.
+# Floating windows come back in front of the tiled ones; the focus stays
+# where it was unless that window was one of the minimized ones.  key
+key_restore_all = V
 key_cycle_width = R
 key_center_column = X
 key_consume_left = [
@@ -2219,7 +2227,7 @@ workspace_apps = 0
 #   language_settings next_input storage_settings display_settings
 #   windows_settings astur_settings task_manager open_drive
 #   media_play_pause media_next media_prev launcher system_menu
-#   workspace_next workspace_prev next_layout
+#   workspace_next workspace_prev next_layout restore_all
 #   switch_workspace N        (go to workspace N)
 #   launch COMMAND            (as extra_hotkeys' launch)
 # Without a line, a click does this (left / right; middle does nothing):
@@ -3265,6 +3273,11 @@ fn parse_into_from(c: &mut Config, text: &str, source: &str) {
                     c.key_minimize_window = k;
                 }
             }
+            "key_restore_all" => {
+                if let Some(k) = key_to_vk(v) {
+                    c.key_restore_all = k;
+                }
+            }
             "key_cycle_width" => {
                 if let Some(k) = key_to_vk(v) {
                     c.key_cycle_width = k;
@@ -3835,6 +3848,7 @@ pub fn reload_groups(old: &Config, new: &Config) -> ReloadGroups {
         key_toggle_float,
         key_close_window,
         key_minimize_window,
+        key_restore_all,
         key_cycle_width,
         key_center_column,
         key_consume_left,
@@ -3969,6 +3983,7 @@ pub fn reload_groups(old: &Config, new: &Config) -> ReloadGroups {
     diff!(live: ignore_classes, float_classes, key_focus_next, key_focus_prev);
     diff!(live: key_shrink_master, key_grow_master, key_promote_master);
     diff!(live: key_toggle_tiling, key_toggle_float, key_close_window, key_minimize_window);
+    diff!(live: key_restore_all);
     diff!(live: key_cycle_width, key_center_column, key_consume_left, key_consume_right);
     diff!(live: key_fill_desktop, key_system_menu, key_swap_workspace);
     diff!(live: key_switch_ws_1, key_switch_ws_2, key_switch_ws_3);
@@ -4168,6 +4183,7 @@ pub enum Action {
     ToggleFloat,
     CloseWindow,
     MinimizeWindow,
+    RestoreAll,
     CycleWidth,
     CycleHeight,
     CenterColumn,
@@ -4202,7 +4218,7 @@ pub enum Action {
 impl Action {
     /// Every action in declaration order (`ALL[a as usize] == a`), which is
     /// how a table entry stores it.
-    pub const ALL: [Action; 45] = {
+    pub const ALL: [Action; 46] = {
         use Action::*;
         [
             Launcher,
@@ -4221,6 +4237,7 @@ impl Action {
             ToggleFloat,
             CloseWindow,
             MinimizeWindow,
+            RestoreAll,
             CycleWidth,
             CycleHeight,
             CenterColumn,
@@ -4273,6 +4290,7 @@ impl Action {
             ToggleFloat => "Float or tile the window",
             CloseWindow => "Close the window",
             MinimizeWindow => "Minimize the window",
+            RestoreAll => "Restore every minimized window",
             CycleWidth => "Change the column width",
             CycleHeight => "Change the window height",
             CenterColumn => "Centre the column",
@@ -4677,6 +4695,7 @@ pub fn compile_keys(c: &Config) -> Keymap {
         (c.key_toggle_float, ToggleFloat, None),
         (c.key_close_window, CloseWindow, None),
         (c.key_minimize_window, MinimizeWindow, None),
+        (c.key_restore_all, RestoreAll, None),
         (c.key_cycle_width, CycleWidth, Some(CycleHeight)),
         (c.key_center_column, CenterColumn, None),
         (c.key_consume_left, ConsumeLeft, None),
@@ -4934,6 +4953,16 @@ outer_gap = 4
     fn workspace_wallpaper_slots_preserve_empty_positions() {
         let c = parse_text("workspace_wallpapers = one.jpg ;; ;; three.png");
         assert_eq!(c.workspace_wallpapers, vec!["one.jpg", "", "three.png"]);
+    }
+
+    #[test]
+    fn parse_into_key_restore_all() {
+        let mut c = Config::defaults();
+        assert_eq!(c.key_restore_all, 0x56); // V
+        parse_into(&mut c, "key_restore_all = G");
+        assert_eq!(c.key_restore_all, 0x47);
+        parse_into(&mut c, "key_restore_all = nonsense"); // unknown name keeps it
+        assert_eq!(c.key_restore_all, 0x47);
     }
 
     #[test]
