@@ -280,6 +280,11 @@ pub struct Config {
     /// Key (with the main key) that shows/hides the taskbar while the
     /// feature is on. A VK code, like key_system_menu.
     pub hide_taskbar_hotkey: u32,
+    /// `switch_ws_monitors`: which screens the key_switch_ws_4/5/6 keys may
+    /// reach -- all, or 1-based screen numbers left to right ("2 4"). The
+    /// template documents it under those keys; the WM reads it through
+    /// `switch_ws_monitor_mask`.
+    pub switch_ws_monitors: String,
 }
 
 /// Widget names accepted in the navbar `left` / `center` / `right` zone lists.
@@ -409,6 +414,17 @@ pub fn bar_on(mask: u64, index: usize, primary: bool) -> bool {
     } else {
         index < 63 && (mask >> index) & 1 == 1
     }
+}
+
+/// A normalised `monitors` list ("1 3") as a mask: bit i = screen i + 1, left
+/// to right. Both masks read their lists through this, so bar placement and
+/// the key_switch_ws_4/5/6 screens cannot drift apart on the numbering.
+/// Numbers outside 1..=63 are dropped (bit 63 is BAR_PRIMARY_ONLY's).
+fn monitor_list_mask(list: &str) -> u64 {
+    list.split(' ')
+        .filter_map(|n| n.parse::<u32>().ok())
+        .filter(|n| (1..=63).contains(n))
+        .fold(0, |m, n| m | 1 << (n - 1))
 }
 
 /// The clock widget's text. Tokens: HH / H (24-hour), hh / h (12-hour), mm,
@@ -1340,6 +1356,7 @@ impl Config {
             key_switch_ws_4: 0x4C,     // L
             key_switch_ws_5: 0xBA,     // ; (VK_OEM_1)
             key_switch_ws_6: 0xDE,     // ' (VK_OEM_7)
+            switch_ws_monitors: "all".to_string(),
             main_key: MainKey::RAlt,
             theme: "dark".to_string(),
             acrylic: false,
@@ -1486,11 +1503,20 @@ impl Config {
         match self.bar_monitors.as_str() {
             "primary" => BAR_PRIMARY_ONLY,
             "all" => !BAR_PRIMARY_ONLY,
-            list => list
-                .split(' ')
-                .filter_map(|n| n.parse::<u32>().ok())
-                .filter(|n| (1..=63).contains(n))
-                .fold(0, |m, n| m | 1 << (n - 1)),
+            list => monitor_list_mask(list),
+        }
+    }
+
+    /// `switch_ws_monitors` as the screens key_switch_ws_4/5/6 may reach:
+    /// bit i = screen i + 1 (left to right), the same numbering as
+    /// `bar_monitors`. 0 means every screen -- `all`, and also a list whose
+    /// numbers this machine does not have, which the WM reads as "no
+    /// restriction" rather than a dead key. There is no primary bit: the WM
+    /// keeps a one-screen list on that screen's 4/5/6 instead.
+    pub fn switch_ws_monitor_mask(&self) -> u64 {
+        match self.switch_ws_monitors.as_str() {
+            "all" => 0,
+            list => monitor_list_mask(list),
         }
     }
 }
@@ -2005,6 +2031,17 @@ key_switch_ws_3 = /
 key_switch_ws_4 = l
 key_switch_ws_5 = ;
 key_switch_ws_6 = '
+# Which screens those three keys may reach (them, their Shift variants and
+# swap mode): all (the default: the next screen, as described above), or
+# 1-based screen numbers left to right (2 4, or 1 2 3). Read the list as
+# pretend only these screens exist: with one screen listed the keys always
+# go to that screen's 4th/5th/6th workspace, from any screen; with two or
+# more, to the next listed screen's 1st/2nd/3rd. A screen that is not listed
+# is never a destination, but pressing the keys there still takes you into
+# the list. Numbers this machine does not have make the value behave as all;
+# primary is not accepted here. key_switch_ws_1/2/3, Alt+1..0, the bar's
+# workspace marks and YASB ignore this key.
+switch_ws_monitors = all
 # ============================================================================
 ";
 
@@ -3293,6 +3330,15 @@ fn parse_into_from(c: &mut Config, text: &str, source: &str) {
                     c.key_switch_ws_6 = k;
                 }
             }
+            // `primary` parses for `monitors`, then is dropped: one screen in
+            // the list already means "always that screen's 4/5/6", so the
+            // word would be ambiguous here. Any other unparseable value keeps
+            // the previous one, as every key does.
+            "switch_ws_monitors" => {
+                if let Some(m) = parse_monitors(v).filter(|m| m != "primary") {
+                    c.switch_ws_monitors = m;
+                }
+            }
             "main_key" | "mod" => {
                 if let Some(k) = MainKey::from_name(v) {
                     c.main_key = k;
@@ -3802,6 +3848,7 @@ pub fn reload_groups(old: &Config, new: &Config) -> ReloadGroups {
         key_switch_ws_4,
         key_switch_ws_5,
         key_switch_ws_6,
+        switch_ws_monitors,
         main_key,
         theme,
         acrylic,
@@ -3926,6 +3973,9 @@ pub fn reload_groups(old: &Config, new: &Config) -> ReloadGroups {
     diff!(live: key_fill_desktop, key_system_menu, key_swap_workspace);
     diff!(live: key_switch_ws_1, key_switch_ws_2, key_switch_ws_3);
     diff!(live: key_switch_ws_4, key_switch_ws_5, key_switch_ws_6);
+    // Read per command by the manager (`mgr.cfg`), so live only: it must
+    // never re-tile or re-apply the bar.
+    diff!(live: switch_ws_monitors);
     diff!(live: main_key);
     // Fail-safe: a difference none of the above caught (a field compared in
     // the wrong place, a PartialEq quirk) must still apply, so do it all.
@@ -6081,6 +6131,38 @@ floating = true"
             assert_eq!(keep(v), "primary", "{v}");
         }
         assert_eq!(parse_text("bar_monitors = Main").bar_monitors, "primary");
+    }
+
+    #[test]
+    fn switch_ws_monitors_takes_screens_but_not_the_primary() {
+        let mask =
+            |v: &str| parse_text(&format!("switch_ws_monitors = {v}")).switch_ws_monitor_mask();
+        let val = |v: &str| parse_text(&format!("switch_ws_monitors = {v}")).switch_ws_monitors;
+        assert_eq!(val("all"), "all");
+        assert_eq!(val(""), "all", "clearing the value means every screen");
+        assert_eq!(mask("all"), 0, "0 is the WM's spelling of every screen");
+        assert_eq!(mask("3, 1"), 0b101);
+        assert_eq!(mask("2 4"), 0b1010);
+        assert_eq!(mask("1 2 3"), 0b111);
+        // The list is the bar's list: the same 1-based left-to-right
+        // numbering, so a screen number means the same thing in both files.
+        for v in ["1 3", "2 4 7", "63"] {
+            assert_eq!(
+                mask(v),
+                parse_text(&format!("monitors = {v}")).bar_monitor_mask(),
+                "{v}"
+            );
+        }
+        // Deliberately not offered here: one screen in the list already means
+        // "always that screen's 4/5/6", so `primary` would be ambiguous.
+        let keep = |v: &str| {
+            parse_text(&format!("switch_ws_monitors = 2\nswitch_ws_monitors = {v}"))
+                .switch_ws_monitors
+        };
+        for v in ["primary", "main", "left", "0", "64", "1 x"] {
+            assert_eq!(keep(v), "2", "{v}");
+        }
+        assert_eq!(Config::defaults().switch_ws_monitors, "all");
     }
 
     #[test]

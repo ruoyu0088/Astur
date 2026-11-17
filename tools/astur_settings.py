@@ -446,6 +446,7 @@ SCHEMA_DATA = {
             ("key_switch_ws_4", "key", "l", "", "Go to the next monitor's first workspace (on one monitor: workspace 4); with Shift, move the focused window there."),
             ("key_switch_ws_5", "key", ";", "", "Go to the next monitor's second workspace (on one monitor: workspace 5); with Shift, move the focused window there."),
             ("key_switch_ws_6", "key", "'", "", "Go to the next monitor's third workspace (on one monitor: workspace 6); with Shift, move the focused window there."),
+            ("switch_ws_monitors", "text", "all", "", "Which screens key_switch_ws_4/5/6, their Shift variants and swap mode may reach: all, or screen numbers left to right (1 3). One screen listed always means that screen's 4th/5th/6th workspace; two or more, the next listed screen's 1st/2nd/3rd. A screen not listed is never a destination, but the keys still take you into the list from anywhere."),
         ]),
     ],
     "navbar": [

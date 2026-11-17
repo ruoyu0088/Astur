@@ -9213,6 +9213,34 @@ fn adjacent_monitor(mgr: &Manager, mi: usize, dir: Dir) -> Option<usize> {
     }
 }
 
+/// Which screen a key_switch_ws_4/5/6 command lands on, and its local
+/// workspace index. `mask` is `Config::switch_ws_monitor_mask`: bit i =
+/// screen i + 1, left to right, 0 = every screen.
+///
+/// The list is read as "pretend only these screens exist", so the arithmetic
+/// the WM always had applies to it: one reachable screen lands on its
+/// 4th/5th/6th workspace (`i + 3`, what a single-monitor setup does), two or
+/// more on the next one's 1st/2nd/3rd (`i`). `all` therefore keeps the old
+/// `(cur + 1) % n` rule bit for bit.
+///
+/// A list naming only screens this machine does not have is no restriction --
+/// there would be nothing to reach -- so it means every screen, as `all` does.
+fn switch_ws_target(mask: u64, n: usize, cur: usize, i: usize) -> (usize, usize) {
+    // n is a real display count (double digits at most); the shift guard is
+    // for the type's sake, not for a machine with 64 screens.
+    let all = if n >= 64 { u64::MAX } else { (1u64 << n) - 1 };
+    let set = if mask & all == 0 { all } else { mask & all };
+    if set.count_ones() == 1 {
+        return (set.trailing_zeros() as usize, i + 3);
+    }
+    // The next screen in the set, wrapping. The set holds at least two
+    // screens, so at least one of them is within the next n steps.
+    (1..=n)
+        .map(|k| (cur + k) % n)
+        .find(|&idx| (set >> idx) & 1 == 1)
+        .map_or((cur, i), |idx| (idx, i))
+}
+
 /// Best-effort focus that defeats the Windows foreground lock by briefly
 /// attaching to the current foreground thread's input queue.
 unsafe fn focus_window(h: isize) {
@@ -13898,9 +13926,10 @@ unsafe fn swap_workspace_adjacent(mgr: &mut Manager, dir: i32) {
 }
 
 /// Swap the active workspace with the one `kind` names: 0 a global workspace
-/// number (shared mode), 1 this monitor's local one, 2 the next monitor's
-/// local one (wrapping; on a single monitor, this screen's index+3, as the
-/// Alt+L / Alt+; / Alt+' keys are). Leaves swap mode.
+/// number (shared mode), 1 this monitor's local one, 2 the workspace the
+/// Alt+L / Alt+; / Alt+' keys would show (the next screen
+/// `switch_ws_monitors` allows; one reachable screen means that screen's
+/// index + 3). Leaves swap mode.
 unsafe fn swap_workspace_to(mgr: &mut Manager, kind: u8, index: usize) {
     if mgr.monitors.is_empty() {
         return;
@@ -13910,14 +13939,12 @@ unsafe fn swap_workspace_to(mgr: &mut Manager, kind: u8, index: usize) {
     let (to_mi, to_wi) = match kind {
         0 => mgr.global_to_ml(index),
         1 => (mi, index),
-        2 => {
-            let n = mgr.monitors.len();
-            if n <= 1 {
-                (mi, index + 3)
-            } else {
-                ((mi + 1) % n, index)
-            }
-        }
+        2 => switch_ws_target(
+            mgr.cfg.switch_ws_monitor_mask(),
+            mgr.monitors.len(),
+            mi,
+            index,
+        ),
         _ => return,
     };
     if to_mi >= mgr.monitors.len() || to_wi >= mgr.monitors[to_mi].workspaces.len() {
@@ -14485,19 +14512,16 @@ unsafe fn process(mgr: &mut Manager, cmd: Cmd) {
         }
         Cmd::SwitchNextLocal(i) => {
             // Alt+L / Alt+; / Alt+' — 1st/2nd/3rd workspace of the NEXT
-            // monitor, wrapping to the first. With a single monitor the
-            // same three keys land on that screen's 4th/5th/6th workspace
-            // instead (i + 3), so they do not merely duplicate
-            // key_switch_ws_1/2/3 on one-screen setups.
+            // monitor (the next one `switch_ws_monitors` allows), wrapping to
+            // the first. One reachable screen means that screen's
+            // 4th/5th/6th instead (i + 3), so the three keys do not merely
+            // duplicate key_switch_ws_1/2/3 on one-screen setups.
             if mgr.monitors.is_empty() {
                 return;
             }
-            let cur = mgr.focused_mon.min(mgr.monitors.len() - 1);
-            let (mi, wi) = if mgr.monitors.len() <= 1 {
-                (cur, i + 3)
-            } else {
-                ((cur + 1) % mgr.monitors.len(), i)
-            };
+            let n = mgr.monitors.len();
+            let cur = mgr.focused_mon.min(n - 1);
+            let (mi, wi) = switch_ws_target(mgr.cfg.switch_ws_monitor_mask(), n, cur, i);
             if wi < mgr.monitors[mi].workspaces.len() {
                 show_workspace(mgr, mi, wi);
             }
@@ -14597,21 +14621,18 @@ unsafe fn process(mgr: &mut Manager, cmd: Cmd) {
             place_hidden_workspace(mgr, mi, from_a);
         }
         Cmd::MoveToNextLocalWs(i) => {
-            // Alt+Shift+L / ; / ': move the focused window to the Nth
-            // workspace of the NEXT monitor, wrapping to the first. With a
-            // single monitor the destination is that screen's (i + 3)th
-            // workspace (4/5/6), matching Cmd::SwitchNextLocal. The window
-            // travels first, then its destination is shown, exactly as
-            // MoveToWs does across screens.
+            // Alt+Shift+L / ; / ': move the focused window to the workspace
+            // Cmd::SwitchNextLocal would show — same target screen, same
+            // `switch_ws_monitors` set, so a swap or a move never lands on a
+            // screen the keys themselves cannot reach. The window travels
+            // first, then its destination is shown, exactly as MoveToWs does
+            // across screens.
             if !mgr.tiling || mgr.monitors.is_empty() {
                 return;
             }
-            let from_mi = mgr.focused_mon.min(mgr.monitors.len() - 1);
-            let (to_mi, wi) = if mgr.monitors.len() <= 1 {
-                (from_mi, i + 3)
-            } else {
-                ((from_mi + 1) % mgr.monitors.len(), i)
-            };
+            let n = mgr.monitors.len();
+            let from_mi = mgr.focused_mon.min(n - 1);
+            let (to_mi, wi) = switch_ws_target(mgr.cfg.switch_ws_monitor_mask(), n, from_mi, i);
             if wi >= mgr.monitors[to_mi].workspaces.len() {
                 return;
             }
@@ -28623,6 +28644,75 @@ mod tests {
             cfg: Config::defaults(),
             pending_launch_mon: 0,
         }
+    }
+
+    /// key_switch_ws_4/5/6 destinations: `all` is the historical rule at every
+    /// screen count, a one-screen list means that screen's 4/5/6, a longer
+    /// list cycles among its screens, and a list of absent screens is no
+    /// restriction.
+    #[test]
+    fn switch_ws_targets_follow_the_configured_screens() {
+        let mask = |v: &str| {
+            config::parse_text(&format!("switch_ws_monitors = {v}")).switch_ws_monitor_mask()
+        };
+        // all: one screen goes to its own 4/5/6, two or more to the next one.
+        for n in 1..=4 {
+            for cur in 0..n {
+                let want = if n == 1 { (0, 3) } else { ((cur + 1) % n, 0) };
+                assert_eq!(
+                    switch_ws_target(mask("all"), n, cur, 0),
+                    want,
+                    "n={n} cur={cur}"
+                );
+            }
+        }
+        // One screen listed: always its 4/5/6, from anywhere. Two screens
+        // included -- the list is no longer ignored there.
+        for n in 2..=4 {
+            for cur in 0..n {
+                for i in 0..3 {
+                    assert_eq!(
+                        switch_ws_target(mask("2"), n, cur, i),
+                        (1, i + 3),
+                        "n={n} cur={cur} i={i}"
+                    );
+                }
+            }
+        }
+        // Two listed: the next listed screen, wrapping; and from outside the
+        // list, the next listed screen too.
+        assert_eq!(switch_ws_target(mask("2 4"), 4, 0, 1), (1, 1), "1 -> 2");
+        assert_eq!(switch_ws_target(mask("2 4"), 4, 1, 1), (3, 1), "2 -> 4");
+        assert_eq!(
+            switch_ws_target(mask("2 4"), 4, 3, 1),
+            (1, 1),
+            "4 wraps to 2"
+        );
+        assert_eq!(
+            switch_ws_target(mask("2 4"), 4, 2, 1),
+            (3, 1),
+            "3 is outside: 4"
+        );
+        // Three listed on five screens: only the listed ones, in screen order.
+        assert_eq!(switch_ws_target(mask("1 3 5"), 5, 0, 0), (2, 0));
+        assert_eq!(switch_ws_target(mask("1 3 5"), 5, 2, 0), (4, 0));
+        assert_eq!(
+            switch_ws_target(mask("1 3 5"), 5, 4, 0),
+            (0, 0),
+            "5 wraps to 1"
+        );
+        assert_eq!(
+            switch_ws_target(mask("1 3 5"), 5, 1, 0),
+            (2, 0),
+            "2 is outside: 3"
+        );
+        // Two screens with both listed keep the old rule.
+        assert_eq!(switch_ws_target(mask("1 2"), 2, 0, 0), (1, 0));
+        // A list of screens this machine does not have is no restriction.
+        assert_eq!(switch_ws_target(mask("5"), 2, 0, 0), (1, 0));
+        assert_eq!(switch_ws_target(mask("4 5"), 3, 1, 0), (2, 0));
+        // The one-listed screen can be the current one: ws4 of this screen.
+        assert_eq!(switch_ws_target(mask("4"), 4, 3, 0), (3, 3));
     }
 
     /// Every tracked window appears exactly once across every workspace, and

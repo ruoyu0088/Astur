@@ -46,6 +46,9 @@ OVERRIDES = {
     ("astur", "system_actions"): ("records", "category|label|command"),
     ("astur", "window_rules"): (
         "records", "action|exe|class|title|workspace|monitor"),
+    # A list of screens, not a key bind: its comment mentions the keys it
+    # changes and its default `all` matches the "keys" heuristic below.
+    ("astur", "switch_ws_monitors"): ("text", ""),
 }
 
 # The single-key binds: one key name each, whether it is `J` or `[`.
@@ -122,6 +125,12 @@ HELP_OVERRIDES = {
     ("astur", "key_switch_ws_6"):
         "Go to the next monitor's third workspace (on one monitor: "
         "workspace 6); with Shift, move the focused window there.",
+    ("astur", "switch_ws_monitors"):
+        "Which screens key_switch_ws_4/5/6, their Shift variants and swap mode "
+        "may reach: all, or screen numbers left to right (1 3). One screen "
+        "listed always means that screen's 4th/5th/6th workspace; two or more, "
+        "the next listed screen's 1st/2nd/3rd. A screen not listed is never a "
+        "destination, but the keys still take you into the list from anywhere.",
     ("astur", "hide_taskbar"):
         "Hide the Windows taskbar: it stays click-through and invisible, "
         "and HideTaskbar's key shows it for a moment. bool",
