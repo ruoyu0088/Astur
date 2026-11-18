@@ -534,6 +534,7 @@ SCHEMA_DATA = {
             ("bg", "colour", "auto", "", "Colours: 'auto' follows the palette and theme, or set an explicit #RRGGBB to override that colour permanently."),
             ("fg", "text", "auto", "", ""),
             ("accent", "text", "auto", "", "Active-workspace pill highlight."),
+            ("focus_border", "colour", "auto", "", "Colour of the ring around the active workspace mark on the monitor with the focused window: a row of bars then shows where you are typing. Only that bar draws it, and only with two or more monitors. One pixel thick. auto = fg."),
             ("inactive", "text", "auto", "", "Empty workspaces / layout / stats text."),
             ("accent_fg", "colour", "auto", "", "Text on the accent highlight. auto = the palette's, or bg while bg is set."),
             ("surface", "text", "auto", "", "Island and pill fill."),

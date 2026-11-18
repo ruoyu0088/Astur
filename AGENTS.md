@@ -56,8 +56,8 @@ single Rust `.exe` with no installer and no required config. Core hooks:
   (`Cmd::BarAction` -> `run_bar_action`, sharing `run_action` with extra
   hotkeys); `monitors` picks the screens; 9 preset looks as data in
   astur-config `BAR_PRESETS`, set through the editor's individual keys; the
-  focused monitor's bar carries an accent edge line, so a row of bars says
-  which screen has the keyboard).
+  focused monitor's bar rings its active workspace mark with `focus_border`,
+  so a row of bars says which screen has the keyboard).
 - **Workspace-switch animation** — overlay compositor: off/slide/spring/fade.
 - **Window glide** — windows animate to their tile slot on open/move/resize/
   re-tile/scroll via an overlay of live DWM thumbnails (off/glide).
@@ -76,7 +76,10 @@ single Rust `.exe` with no installer and no required config. Core hooks:
   followed there: taskbar activation holds the foreground, and a window we hid
   for its workspace (`was_hidden_by_us`, e.g. a browser re-shown by a link
   click from another workspace) counts as intent to be seen too, so `Cmd::Add`
-  switches instead of leaving it visible over the active tiles.
+  switches instead of leaving it visible over the active tiles. The hooks
+  clear `HIDDEN_BY_US` in the SHOW handler itself, so that fact rides on
+  `Cmd::Add`'s third field: read it there, never in the manager, which runs
+  after the marker is gone.
 
 The Astur modifier is the **main key** (`main_key`, config `MainKey`): Right Alt
 by default, fully reserved (apps never see it; Right Alt + an unbound

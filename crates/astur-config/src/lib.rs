@@ -163,17 +163,20 @@ pub struct Config {
     /// The key every hotkey is held with (`main_key`, alias `mod`).
     pub main_key: MainKey,
     pub window_rules: Vec<WindowRule>,
-    pub bar_enabled: bool,         // draw the status bar on every monitor
-    pub bar_height: i32,           // bar thickness in px (work area is reserved for it)
-    pub bar_bottom: bool,          // dock the bar at the bottom instead of the top
-    pub bar_font_size: i32,        // text height in px; 0 = auto from bar_height
-    pub bar_show_title: bool,      // show the focused window title
-    pub bar_show_clock: bool,      // show the clock
-    pub bar_clock_24h: bool,       // 24-hour clock (false = 12-hour with am/pm)
-    pub bar_show_layout: bool,     // show layout + tiling/floating state on the right
-    pub bar_bg: Option<u32>,       // COLORREF bar background; None = follow theme
-    pub bar_fg: Option<u32>,       // COLORREF bar text; None = follow theme
-    pub bar_accent: Option<u32>,   // COLORREF active-workspace highlight; None = theme
+    pub bar_enabled: bool,       // draw the status bar on every monitor
+    pub bar_height: i32,         // bar thickness in px (work area is reserved for it)
+    pub bar_bottom: bool,        // dock the bar at the bottom instead of the top
+    pub bar_font_size: i32,      // text height in px; 0 = auto from bar_height
+    pub bar_show_title: bool,    // show the focused window title
+    pub bar_show_clock: bool,    // show the clock
+    pub bar_clock_24h: bool,     // 24-hour clock (false = 12-hour with am/pm)
+    pub bar_show_layout: bool,   // show layout + tiling/floating state on the right
+    pub bar_bg: Option<u32>,     // COLORREF bar background; None = follow theme
+    pub bar_fg: Option<u32>,     // COLORREF bar text; None = follow theme
+    pub bar_accent: Option<u32>, // COLORREF active-workspace highlight; None = theme
+    /// Ring on the focused monitor's active workspace mark (`focus_border`),
+    /// so a row of bars says which screen has the keyboard. None = the fg colour.
+    pub bar_focus_border: Option<u32>,
     pub bar_inactive: Option<u32>, // COLORREF empty-workspace text; None = theme
     pub bar_font_name: String,     // font family (default "Segoe UI")
     pub bar_hide_empty: bool,      // hide empty workspace pills
@@ -1308,6 +1311,7 @@ impl Config {
             bar_bg: None, // follow theme
             bar_fg: None,
             bar_accent: None,
+            bar_focus_border: None,
             bar_inactive: None,
             bar_font_name: "Segoe UI".to_string(),
             bar_hide_empty: false,
@@ -2343,6 +2347,10 @@ bg = auto
 fg = auto
 # Active-workspace pill highlight.
 accent = auto
+# Colour of the ring around the active workspace mark on the monitor with the
+# focused window: a row of bars then shows where you are typing. Only that bar
+# draws it, and only with two or more monitors. One pixel thick. auto = fg.
+focus_border = auto
 # Empty workspaces / layout / stats text.
 inactive = auto
 # Text on the accent highlight. auto = the palette's, or bg while bg is set.
@@ -3379,6 +3387,9 @@ fn parse_into_from(c: &mut Config, text: &str, source: &str) {
             "accent" | "bar_accent" => {
                 c.bar_accent = parse_theme_color(v, BAR_DARK[2], c.bar_accent)
             }
+            "focus_border" | "bar_focus_border" => {
+                c.bar_focus_border = parse_theme_color(v, NO_LEGACY, c.bar_focus_border)
+            }
             "inactive" | "bar_inactive" => {
                 c.bar_inactive = parse_theme_color(v, BAR_DARK[3], c.bar_inactive)
             }
@@ -3811,6 +3822,7 @@ pub fn reload_groups(old: &Config, new: &Config) -> ReloadGroups {
         bar_bg,
         bar_fg,
         bar_accent,
+        bar_focus_border,
         bar_inactive,
         bar_font_name,
         bar_hide_empty,
@@ -3942,7 +3954,7 @@ pub fn reload_groups(old: &Config, new: &Config) -> ReloadGroups {
     diff!(bar: bar_show_title, bar_show_clock, bar_clock_24h, bar_show_layout, bar_show_date);
     diff!(bar: bar_show_cpu, bar_show_mem, bar_show_battery, bar_show_net, bar_show_volume);
     diff!(bar: bar_show_apps, bar_show_media, media_enabled, bar_left, bar_center, bar_right);
-    diff!(bar: bar_bg, bar_fg, bar_accent, bar_inactive, theme, bar_hide_empty);
+    diff!(bar: bar_bg, bar_fg, bar_accent, bar_focus_border, bar_inactive, theme, bar_hide_empty);
     diff!(bar: bar_widget_gap, bar_icon_size, bar_workspace_width, bar_icon_mode);
     diff!(bar: bar_show_tooltips, bar_show_app_labels, bar_date_format, bar_clock_format);
     diff!(bar: bar_cpu_format, bar_mem_format, bar_battery_format, bar_net_format);
@@ -5550,6 +5562,18 @@ outer_gap = 4
                 assert_ne!(g, ReloadGroups::full(), "`{key}` fell through to full");
             }
         }
+    }
+
+    #[test]
+    fn focus_border_defaults_to_fg_and_reads_a_colour() {
+        let mut c = Config::defaults();
+        assert_eq!(c.bar_focus_border, None); // auto = fg
+        parse_into(&mut c, "focus_border = #123456");
+        assert_eq!(c.bar_focus_border, Some(0x0056_3412));
+        parse_into(&mut c, "focus_border = nope"); // malformed keeps it
+        assert_eq!(c.bar_focus_border, Some(0x0056_3412));
+        parse_into(&mut c, "focus_border = auto"); // back to fg
+        assert_eq!(c.bar_focus_border, None);
     }
 
     #[test]

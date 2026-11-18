@@ -3048,8 +3048,12 @@ enum Dir {
 /// Commands sent from the hooks to the manager thread.
 enum Cmd {
     /// Adopt (or follow) a window. The u32 is the WinEvent that asked, so a
-    /// rejection can say what triggered it.
-    Add(isize, u32),
+    /// rejection can say what triggered it. The bool is the SHOW handler's
+    /// reading of HIDDEN_BY_US, taken before it clears the marker: the app
+    /// showed a window Astur had hidden for a workspace, so that show is
+    /// intent to be seen. The manager must not re-read the marker; by the
+    /// time it runs, the hook has cleared it.
+    Add(isize, u32, bool),
     Remove(isize),
     /// App-driven hide: untrack unless the window is visible again by then.
     RemoveHidden(isize),
@@ -3769,6 +3773,10 @@ struct MonBar {
 /// Logical size of a workspace mark's app icons (`workspace_apps`): small
 /// enough for a 24 px bar, and one more size in BAR_ICON_CACHE.
 const WS_ICON_PX: i32 = 16;
+/// Thickness of the focus ring around the active workspace mark, in logical
+/// pixels. It has no navbar key on purpose: one knob, here, for every
+/// `workspace_style`.
+const FOCUS_RING_PX: i32 = 1;
 
 /// `MonBar::occupied` holds one bit per pill, and a monitor never has more
 /// pills than `workspaces`: a cap past 64 needs a wider mask.
@@ -3918,6 +3926,9 @@ enum BarShape {
 struct BarStyle {
     surface: u32,
     accent_fg: u32,
+    /// The ring on the focused monitor's active workspace mark
+    /// (`focus_border`); resolved here so paint parses nothing.
+    focus_border: u32,
     border: u32,
     alert: u32, // low battery: the palette's red swatch
     border_w: i32,
@@ -3980,6 +3991,7 @@ fn bar_style(cfg: &Config, r: &config::BarRoles) -> BarStyle {
     BarStyle {
         surface: r.surface,
         accent_fg: r.accent_fg,
+        focus_border: cfg.bar_focus_border.unwrap_or(r.fg),
         border: cfg.bar_border.unwrap_or(r.muted),
         alert: r.swatches[0],
         fills,
@@ -14137,7 +14149,7 @@ unsafe fn process(mgr: &mut Manager, cmd: Cmd) {
         return;
     }
     match cmd {
-        Cmd::Add(h, event) => {
+        Cmd::Add(h, event, from_hidden) => {
             ev_count(EVC_ADD);
             match mgr.locate(h) {
                 Some((mi, wi)) => {
@@ -14161,16 +14173,16 @@ unsafe fn process(mgr: &mut Manager, cmd: Cmd) {
                     // window we hid, but a background process never gets the
                     // foreground (Windows only flashes its taskbar button), so
                     // the window stayed visible over the active tiling while its
-                    // workspace stayed hidden. A window we hid for this
-                    // workspace counts as intent to be seen; a window we never
-                    // hid (a toast, a splash refresh) still leaves the
-                    // workspace alone.
+                    // workspace stayed hidden. `from_hidden` is the SHOW
+                    // handler's reading of the marker before it cleared it: a
+                    // show of a window we hid for this workspace counts as
+                    // intent to be seen; a window we never hid (a toast, a
+                    // splash refresh) still leaves the workspace alone.
                     let foreground = GetForegroundWindow() == hwnd_from(h);
-                    let hidden_by_us = was_hidden_by_us(h);
                     let scratchpad = h == SCRATCHPAD_HWND.load(Ordering::Relaxed);
                     if wi != mgr.monitors[mi].active
                         && IsWindowVisible(hwnd_from(h)).as_bool()
-                        && show_follows_window(foreground, hidden_by_us, scratchpad)
+                        && show_follows_window(foreground, from_hidden, scratchpad)
                     {
                         mgr.monitors[mi].workspaces[wi].focused = h;
                         mgr.focused_mon = mi;
@@ -18029,6 +18041,7 @@ unsafe fn draw_workspaces(cv: &BarCanvas, it: &BarItem, data: &BarData, mb: &Mon
                 let cx = ((a + b) / 2.0) as f32;
                 let mark = [cx - pw / 2.0, cy - d / 2.0, cx + pw / 2.0, cy + d / 2.0];
                 cv.shape(mark, d, Some(data.accent), None);
+                focus_ring(cv, mark, d, data, mb, dpi);
             }
         }
         WsStyle::Underline => {
@@ -18048,6 +18061,20 @@ unsafe fn draw_workspaces(cv: &BarCanvas, it: &BarItem, data: &BarData, mb: &Mon
                     uh,
                     Some(data.accent),
                     None,
+                );
+                // No pill to outline: the ring frames the label cell.
+                focus_ring(
+                    cv,
+                    [
+                        a as f32 + 2.0,
+                        ipad as f32,
+                        b as f32 - 2.0,
+                        (h_px - ipad) as f32,
+                    ],
+                    (ipad / 2) as f32,
+                    data,
+                    mb,
+                    dpi,
                 );
             }
         }
@@ -18069,9 +18096,43 @@ unsafe fn draw_workspaces(cv: &BarCanvas, it: &BarItem, data: &BarData, mb: &Mon
                 };
                 cv.shape(mark, radius, Some(data.accent), None);
                 label(i, a.round() as i32, b.round() as i32, data.style.accent_fg);
+                focus_ring(cv, mark, radius, data, mb, dpi);
             }
         }
     }
+}
+
+/// The ring that says which bar belongs to the focused monitor, drawn only
+/// there and only with two or more monitors (one has nothing to compare).
+/// `mark` is the inside of the ring and `radius` its corner radius; the ring
+/// sits one pixel outside it, so the fill and its label keep their shape.
+unsafe fn focus_ring(
+    cv: &BarCanvas,
+    mark: [f32; 4],
+    radius: f32,
+    data: &BarData,
+    mb: &MonBar,
+    dpi: u32,
+) {
+    if !focus_ring_shown(data.mons.len(), mb.focused) {
+        return;
+    }
+    let t = dpi_px(FOCUS_RING_PX, dpi).max(1) as f32;
+    let gap = t + 1.0;
+    let r = [
+        mark[0] - gap,
+        (mark[1] - gap).max(0.0),
+        mark[2] + gap,
+        (mark[3] + gap).min(cv.h as f32),
+    ];
+    cv.shape(r, radius + gap, None, Some((data.style.focus_border, t)));
+}
+
+/// Whether the focus ring is drawn at all: on the focused monitor's bar,
+/// with another monitor to compare with. One bar that always says
+/// `focused` is noise.
+fn focus_ring_shown(monitors: usize, focused: bool) -> bool {
+    focused && monitors > 1
 }
 
 /// Room a `pills`-shape capsule leaves around a widget's content. None for a
@@ -19082,27 +19143,6 @@ unsafe fn render_bar(
     }
     for it in left.iter().chain(&center).chain(&right) {
         bar_widget_draw(cv, it, data, mb, fonts);
-    }
-
-    // The focused monitor's bar marks itself with an accent line along the edge
-    // that faces the desktop (the side `strip`'s border uses): a row of bars
-    // otherwise looks the same everywhere. One monitor has nothing to compare,
-    // and a rounded `floating` body starts the line past the corner arc so the
-    // line stays inside the body.
-    if data.mons.len() > 1 && mb.is_some_and(|m| m.focused) {
-        let t = dpi_px(2, dpi).max(1) as f32;
-        let inset = backdrop_inset(h_px);
-        let (w_f, h_f) = (w as f32, h_px as f32);
-        let r = match data.style.shape {
-            BarShape::Floating => (dpi_px(data.style.radius, dpi) as f32).min(w_f / 2.0),
-            _ => 0.0,
-        };
-        let (y0, y1) = if BAR_BOTTOM.load(Ordering::Relaxed) {
-            (inset, inset + t)
-        } else {
-            (h_f - inset - t, h_f - inset)
-        };
-        cv.shape([r, y0, w_f - r, y1], t / 2.0, Some(data.accent), None);
     }
 
     if data.show_tooltips && !data.show_app_labels && hovered != 0 {
@@ -21208,15 +21248,17 @@ fn show_needs_add(suppressed: bool, tracked: bool) -> bool {
 
 /// Should `Cmd::Add` for a tracked window that is now visible on a hidden
 /// workspace switch to that workspace? `foreground`: the window holds the OS
-/// foreground. `hidden_by_us`: we hid it for its workspace, so the app showing
-/// it again is intent to be seen. `scratchpad`: it is the scratchpad, whose own
-/// show/foreground path owns it (#22). A background app that re-shows a window
-/// we hid never gets the foreground (Windows only flashes its taskbar button),
-/// so without the second test a link opened from another workspace left the
-/// browser visible over the active tiling; a window we never hid (a toast, a
-/// splash refresh) still leaves the workspace alone.
-fn show_follows_window(foreground: bool, hidden_by_us: bool, scratchpad: bool) -> bool {
-    foreground || (hidden_by_us && !scratchpad)
+/// foreground. `from_hidden`: the app showed a window we had hidden for its
+/// workspace (read off HIDDEN_BY_US by the SHOW handler before it cleared the
+/// marker), so the app showing it again is intent to be seen. `scratchpad`: it
+/// is the scratchpad, whose own show/foreground path owns it (#22). A
+/// background app that re-shows a window we hid never gets the foreground
+/// (Windows only flashes its taskbar button), so without the second test a
+/// link opened from another workspace left the browser visible over the
+/// active tiling; a window we never hid (a toast, a splash refresh) still
+/// leaves the workspace alone.
+fn show_follows_window(foreground: bool, from_hidden: bool, scratchpad: bool) -> bool {
+    foreground || (from_hidden && !scratchpad)
 }
 
 /// A Cmd::BarRefresh is queued and not yet consumed (BAR-10). Set by the
@@ -21439,14 +21481,17 @@ unsafe extern "system" fn win_event_proc(
         EVENT_OBJECT_SHOW => {
             // Someone made it visible — whoever hid it, the marker is stale now
             // (and a later app-driven hide must untrack it again).
-            // Unconditional and first, before the prefilter below.
+            // Unconditional and first, before the prefilter below. The
+            // manager runs later, so the fact rides on Cmd::Add instead:
+            // by then this marker is gone.
+            let from_hidden = was_hidden_by_us(h);
             unmark_hidden_by_us(h);
             if show_junk {
                 ev_count(EVC_SHOW_STYLE);
             } else {
                 let managed = is_managed(h);
                 if show_needs_add(SUPPRESS.load(Ordering::Relaxed), managed) {
-                    push_cmd(Cmd::Add(h, event));
+                    push_cmd(Cmd::Add(h, event, from_hidden));
                 }
                 if !managed {
                     uncloak_retry_mark(
@@ -21507,7 +21552,7 @@ unsafe extern "system" fn win_event_proc(
             LAST_FG_MS.store(now_ms(), Ordering::Relaxed);
             push_cmd(Cmd::Focused(h));
             if show_needs_add(SUPPRESS.load(Ordering::Relaxed), is_managed(h)) {
-                push_cmd(Cmd::Add(h, event));
+                push_cmd(Cmd::Add(h, event, false));
             }
         }
         EVENT_OBJECT_UNCLOAKED => {
@@ -21519,7 +21564,7 @@ unsafe extern "system" fn win_event_proc(
                 && (fg_uncloak
                     || uncloak_retry_live(&UNCLOAK_RETRY.lock().unwrap()[..], h, now_ms()))
             {
-                push_cmd(Cmd::Add(h, event));
+                push_cmd(Cmd::Add(h, event, false));
             }
         }
         EVENT_OBJECT_HIDE => {
@@ -27444,6 +27489,15 @@ mod tests {
         assert!(show_needs_add(false, true));
         // Tracked + SUPPRESS: echo of our own show, skip.
         assert!(!show_needs_add(true, true));
+    }
+
+    #[test]
+    fn only_the_focused_monitor_gets_a_focus_ring() {
+        assert!(focus_ring_shown(2, true));
+        assert!(!focus_ring_shown(2, false));
+        // One monitor has nothing to compare with; none, nothing to mark.
+        assert!(!focus_ring_shown(1, true));
+        assert!(!focus_ring_shown(0, true));
     }
 
     #[test]
