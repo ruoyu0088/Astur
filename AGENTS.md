@@ -55,7 +55,9 @@ single Rust `.exe` with no installer and no required config. Core hooks:
   actions from astur-config `BAR_ACTIONS` run by the manager
   (`Cmd::BarAction` -> `run_bar_action`, sharing `run_action` with extra
   hotkeys); `monitors` picks the screens; 9 preset looks as data in
-  astur-config `BAR_PRESETS`, set through the editor's individual keys).
+  astur-config `BAR_PRESETS`, set through the editor's individual keys; the
+  focused monitor's bar carries an accent edge line, so a row of bars says
+  which screen has the keyboard).
 - **Workspace-switch animation** — overlay compositor: off/slide/spring/fade.
 - **Window glide** — windows animate to their tile slot on open/move/resize/
   re-tile/scroll via an overlay of live DWM thumbnails (off/glide).
@@ -66,8 +68,15 @@ single Rust `.exe` with no installer and no required config. Core hooks:
   or main+A / main+D for previous / next); layouts stay per workspace.
 - **Minimize** — main+Q minimizes the focused window; pressing it again
   within a moment restores every window that key minimized.
+- **Restore all** — main+V (`key_restore_all`) brings back every minimized
+  window of the workspace however it was minimized: the floats come back in
+  front, the tiles re-flow, and the focus stays put unless it was minimized.
 - Coloured DWM borders, unfocused dimming, focus-follows-mouse, per-app rules,
-  live config hot-reload.
+  live config hot-reload. A window an app brings up on another workspace is
+  followed there: taskbar activation holds the foreground, and a window we hid
+  for its workspace (`was_hidden_by_us`, e.g. a browser re-shown by a link
+  click from another workspace) counts as intent to be seen too, so `Cmd::Add`
+  switches instead of leaving it visible over the active tiles.
 
 The Astur modifier is the **main key** (`main_key`, config `MainKey`): Right Alt
 by default, fully reserved (apps never see it; Right Alt + an unbound

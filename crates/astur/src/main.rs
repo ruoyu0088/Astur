@@ -3761,6 +3761,9 @@ struct MonBar {
     /// `workspace_apps`: per mark, up to that many cached app icons (WS_ICON_PX;
     /// 0 / -1 = placeholder) of that workspace's windows. Empty when off.
     ws_icons: Vec<Vec<isize>>,
+    /// This monitor is `mgr.focused_mon`: its bar draws an accent edge line,
+    /// the one difference between several bars on screen.
+    focused: bool,
 }
 
 /// Logical size of a workspace mark's app icons (`workspace_apps`): small
@@ -14151,12 +14154,23 @@ unsafe fn process(mgr: &mut Manager, cmd: Cmd) {
                     // workspace (link click opening the browser, taskbar
                     // activation, …), FOLLOW it: switch to its workspace. Never
                     // pull the window out of its workspace — that half-shows it
-                    // over the active tiling. Foreground check keeps background
-                    // self-shows (toasts, splash refreshes) from yanking the
-                    // workspace.
+                    // over the active tiling.
+                    //
+                    // A link opened from another workspace is the case the
+                    // foreground check alone missed: the browser re-shows the
+                    // window we hid, but a background process never gets the
+                    // foreground (Windows only flashes its taskbar button), so
+                    // the window stayed visible over the active tiling while its
+                    // workspace stayed hidden. A window we hid for this
+                    // workspace counts as intent to be seen; a window we never
+                    // hid (a toast, a splash refresh) still leaves the
+                    // workspace alone.
+                    let foreground = GetForegroundWindow() == hwnd_from(h);
+                    let hidden_by_us = was_hidden_by_us(h);
+                    let scratchpad = h == SCRATCHPAD_HWND.load(Ordering::Relaxed);
                     if wi != mgr.monitors[mi].active
                         && IsWindowVisible(hwnd_from(h)).as_bool()
-                        && GetForegroundWindow() == hwnd_from(h)
+                        && show_follows_window(foreground, hidden_by_us, scratchpad)
                     {
                         mgr.monitors[mi].workspaces[wi].focused = h;
                         mgr.focused_mon = mi;
@@ -16995,6 +17009,7 @@ unsafe fn update_bar(mgr: &Manager) {
             title,
             apps,
             ws_icons,
+            focused: mi == mgr.focused_mon,
             layout: {
                 let eff = mgr.layout_at(mi, m.active);
                 match m.workspaces.get(m.active) {
@@ -19067,6 +19082,27 @@ unsafe fn render_bar(
     }
     for it in left.iter().chain(&center).chain(&right) {
         bar_widget_draw(cv, it, data, mb, fonts);
+    }
+
+    // The focused monitor's bar marks itself with an accent line along the edge
+    // that faces the desktop (the side `strip`'s border uses): a row of bars
+    // otherwise looks the same everywhere. One monitor has nothing to compare,
+    // and a rounded `floating` body starts the line past the corner arc so the
+    // line stays inside the body.
+    if data.mons.len() > 1 && mb.is_some_and(|m| m.focused) {
+        let t = dpi_px(2, dpi).max(1) as f32;
+        let inset = backdrop_inset(h_px);
+        let (w_f, h_f) = (w as f32, h_px as f32);
+        let r = match data.style.shape {
+            BarShape::Floating => (dpi_px(data.style.radius, dpi) as f32).min(w_f / 2.0),
+            _ => 0.0,
+        };
+        let (y0, y1) = if BAR_BOTTOM.load(Ordering::Relaxed) {
+            (inset, inset + t)
+        } else {
+            (h_f - inset - t, h_f - inset)
+        };
+        cv.shape([r, y0, w_f - r, y1], t / 2.0, Some(data.accent), None);
     }
 
     if data.show_tooltips && !data.show_app_labels && hovered != 0 {
@@ -21168,6 +21204,19 @@ fn uncloak_retry_live(slots: &[(isize, u64)], h: isize, now: u64) -> bool {
 /// track can be the echo of our own show, so only those are skipped.
 fn show_needs_add(suppressed: bool, tracked: bool) -> bool {
     !(suppressed && tracked)
+}
+
+/// Should `Cmd::Add` for a tracked window that is now visible on a hidden
+/// workspace switch to that workspace? `foreground`: the window holds the OS
+/// foreground. `hidden_by_us`: we hid it for its workspace, so the app showing
+/// it again is intent to be seen. `scratchpad`: it is the scratchpad, whose own
+/// show/foreground path owns it (#22). A background app that re-shows a window
+/// we hid never gets the foreground (Windows only flashes its taskbar button),
+/// so without the second test a link opened from another workspace left the
+/// browser visible over the active tiling; a window we never hid (a toast, a
+/// splash refresh) still leaves the workspace alone.
+fn show_follows_window(foreground: bool, hidden_by_us: bool, scratchpad: bool) -> bool {
+    foreground || (hidden_by_us && !scratchpad)
 }
 
 /// A Cmd::BarRefresh is queued and not yet consumed (BAR-10). Set by the
@@ -27397,6 +27446,20 @@ mod tests {
         assert!(!show_needs_add(true, true));
     }
 
+    #[test]
+    fn a_resumed_window_follows_unless_it_is_a_background_self_show() {
+        // Foreground: follow (a taskbar activation).
+        assert!(show_follows_window(true, false, false));
+        // A link opened from another workspace: the browser re-shows the window
+        // we hid without ever getting the foreground — still follow.
+        assert!(show_follows_window(false, true, false));
+        // Never ours: a toast or a splash refresh must not yank the workspace.
+        assert!(!show_follows_window(false, false, false));
+        // The scratchpad keeps its own show/foreground path (#22).
+        assert!(!show_follows_window(false, true, true));
+        assert!(show_follows_window(true, true, true));
+    }
+
     // ---- drag drops (batch 17, INPUT-9 / INPUT-5) -----------------------------
 
     #[test]
@@ -30157,6 +30220,7 @@ mod tests {
                 .collect(),
             layout: "dwindle".into(),
             ws_icons: Vec::new(),
+            focused: false,
         };
         let mut img: Vec<u32> = Vec::new();
         let mut row_h = 0;
