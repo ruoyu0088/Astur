@@ -7611,10 +7611,13 @@ unsafe fn send_win_b_when_free() -> bool {
         return false;
     }
     release_modifiers();
-    std::thread::sleep(std::time::Duration::from_millis(15));
+    std::thread::sleep(std::time::Duration::from_millis(80));
     inject_key(VK_LWIN, false);
+    std::thread::sleep(std::time::Duration::from_millis(30));
     inject_key(VIRTUAL_KEY(0x42), false);
+    std::thread::sleep(std::time::Duration::from_millis(30));
     inject_key(VIRTUAL_KEY(0x42), true);
+    std::thread::sleep(std::time::Duration::from_millis(30));
     inject_key(VK_LWIN, true);
     let mut guard = TASKBAR_STATE.lock().unwrap();
     guard.win_b_deadline = None;
