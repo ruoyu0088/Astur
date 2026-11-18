@@ -3772,11 +3772,11 @@ struct MonBar {
 
 /// Logical size of a workspace mark's app icons (`workspace_apps`): small
 /// enough for a 24 px bar, and one more size in BAR_ICON_CACHE.
-const WS_ICON_PX: i32 = 16;
+const WS_ICON_PX: i32 = 24;
 /// Thickness of the focus ring around the active workspace mark, in logical
 /// pixels. It has no navbar key on purpose: one knob, here, for every
 /// `workspace_style`.
-const FOCUS_RING_PX: i32 = 1;
+const FOCUS_RING_PX: i32 = 2;
 
 /// `MonBar::occupied` holds one bit per pill, and a monitor never has more
 /// pills than `workspaces`: a cap past 64 needs a wider mask.
