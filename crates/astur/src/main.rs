@@ -5617,6 +5617,30 @@ unsafe fn match_window_rule(hwnd: HWND) -> Option<RulePlacement> {
     })
 }
 
+/// Does the rule place the window itself? A float rule naming a monitor or a
+/// workspace owns a target; one naming neither leaves the window to the screen
+/// the user is on.
+fn rule_names_target(rule: Option<RulePlacement>) -> bool {
+    rule.is_some_and(|r| r.monitor.is_some() || r.workspace.is_some())
+}
+
+/// `w` x `h` centred in `area`, shrunk to fit when the window is larger than
+/// the screen (a dialog sized on a 4K panel, then opened on a laptop one).
+fn centred_in(area: RECT, w: i32, h: i32) -> RECT {
+    let aw = (area.right - area.left).max(0);
+    let ah = (area.bottom - area.top).max(0);
+    let w = w.clamp(0, aw);
+    let h = h.clamp(0, ah);
+    let x = area.left + (aw - w) / 2;
+    let y = area.top + (ah - h) / 2;
+    RECT {
+        left: x,
+        top: y,
+        right: x + w,
+        bottom: y + h,
+    }
+}
+
 /// Where a window belongs: the monitor and workspace its rule names, else the
 /// monitor it sits on and that monitor's active workspace. Shared by Cmd::Add
 /// (a window that just appeared) and the startup scan, so a rule's workspace
@@ -6442,6 +6466,30 @@ unsafe fn monitor_index_for_point(mgr: &Manager, pt: POINT) -> usize {
     let hmon = MonitorFromPoint(pt, MONITOR_DEFAULTTONEAREST).0 as isize;
     mgr.mon_by_hmon(hmon)
         .unwrap_or_else(|| mgr.focused_mon.min(mgr.monitors.len().saturating_sub(1)))
+}
+
+/// Put a floating window in the middle of a monitor's work area, keeping its
+/// size (shrunk only when it is larger than the screen). Placement, not
+/// activation: no focus, no z-order change, the way a tile is placed.
+unsafe fn centre_float(mgr: &Manager, h: isize, mi: usize) {
+    let Some(m) = mgr.monitors.get(mi) else {
+        return;
+    };
+    let hwnd = hwnd_from(h);
+    if IsIconic(hwnd).as_bool() {
+        // Its app decides where a restore lands; a rect set now would only
+        // resize the minimized state.
+        return;
+    }
+    let mut cur = RECT::default();
+    if GetWindowRect(hwnd, &mut cur).is_err() {
+        return;
+    }
+    let (w, hgt) = (cur.right - cur.left, cur.bottom - cur.top);
+    if w <= 0 || hgt <= 0 {
+        return;
+    }
+    set_pos_raw(h, centred_in(m.work_area, w, hgt));
 }
 
 /// The tiled (non-floating) window on monitor `mi`'s active workspace whose
@@ -14195,8 +14243,8 @@ unsafe fn process(mgr: &mut Manager, cmd: Cmd) {
                 None if is_manageable(hwnd_from(h)) => {
                     let hwnd = hwnd_from(h);
                     let rule = match_window_rule(hwnd);
-                    let pending = std::mem::replace(&mut mgr.pending_launch_mon, 0);
-                    let (mut mi, mut wi) = rule_target(mgr, hwnd, rule, pending);
+                    let launch_mon = std::mem::replace(&mut mgr.pending_launch_mon, 0);
+                    let (mut mi, mut wi) = rule_target(mgr, hwnd, rule, launch_mon);
                     let pending_at = SCRATCHPAD_PENDING_AT.load(Ordering::Relaxed);
                     let pending =
                         pending_at != 0 && GetTickCount64().saturating_sub(pending_at) <= 5_000;
@@ -14215,10 +14263,20 @@ unsafe fn process(mgr: &mut Manager, cmd: Cmd) {
                         wi = mgr.monitors[mi].active;
                         SCRATCHPAD_HWND.store(h, Ordering::Relaxed);
                     }
+                    // A float rule that names no monitor and no workspace
+                    // leaves the window to the screen the user is on, not to
+                    // the one its own initial rect happens to overlap: Tk and
+                    // friends open near the primary monitor's corner, so the
+                    // window used to land on another screen and drag
+                    // focused_mon there with it.
+                    let floating = scratch || should_float(hwnd, rule);
+                    if floating && !scratch && !rule_names_target(rule) && launch_mon == 0 {
+                        mi = mgr.focused_mon.min(mgr.monitors.len().saturating_sub(1));
+                        wi = mgr.monitors[mi].active;
+                    }
                     let visible = wi == mgr.monitors[mi].active;
                     // On a scrolling monitor: a new column right of the
                     // focused one, scrolled into view.
-                    let floating = scratch || should_float(hwnd, rule);
                     // An uncloak retry (#16a) can adopt a window long after
                     // the user moved on to another one, which keeps the OS
                     // foreground and gets no new FOREGROUND event: tile it,
@@ -14230,6 +14288,13 @@ unsafe fn process(mgr: &mut Manager, cmd: Cmd) {
                         && GetForegroundWindow() != hwnd;
                     let prev_focus = mgr.monitors[mi].workspaces[wi].focused;
                     mgr.insert_window(h, mi, wi, None, floating);
+                    // No layout ever places a float, so it would keep the
+                    // rect the app chose. Centre every new one in the
+                    // workspace it landed in (its rule's target or the
+                    // focused screen); the scratchpad keeps its own spot.
+                    if floating && !scratch {
+                        centre_float(mgr, h, mi);
+                    }
                     if quiet && prev_focus != 0 {
                         mgr.monitors[mi].workspaces[wi].focused = prev_focus;
                         if !floating && mgr.monitors[mi].layout == "scrolling" {
@@ -14700,6 +14765,14 @@ unsafe fn process(mgr: &mut Manager, cmd: Cmd) {
             if !mgr.move_window(h, to_mi, to_local, None) {
                 return;
             }
+            // A float keeps its size and lands in the middle of its new
+            // workspace: nothing re-places it the way a tile is re-placed.
+            if mgr.monitors[to_mi].workspaces[to_local]
+                .floating
+                .contains(&h)
+            {
+                centre_float(mgr, h, to_mi);
+            }
             // On the same monitor the source workspace is about to be hidden by
             // the switch below (the early return above rules out staying).
             // Reflowing it first only ran a motion handshake (overlay, DwmFlush,
@@ -14761,6 +14834,9 @@ unsafe fn process(mgr: &mut Manager, cmd: Cmd) {
             if !mgr.move_window(h, mi, i, None) {
                 return;
             }
+            if mgr.monitors[mi].workspaces[i].floating.contains(&h) {
+                centre_float(mgr, h, mi);
+            }
             // Same monitor, so the source stays hidden underneath the
             // slide: switch straight to the destination.
             mgr.focused_mon = mi;
@@ -14797,6 +14873,9 @@ unsafe fn process(mgr: &mut Manager, cmd: Cmd) {
             }
             if !mgr.move_window(h, to_mi, wi, None) {
                 return;
+            }
+            if mgr.monitors[to_mi].workspaces[wi].floating.contains(&h) {
+                centre_float(mgr, h, to_mi);
             }
             let reflow_now = move_needs_source_retile(to_mi, from_mi);
             mgr.focused_mon = to_mi;
@@ -15325,6 +15404,9 @@ unsafe fn move_to_adjacent_monitor(mgr: &mut Manager, mi: usize, h: isize, dir: 
     let ta = mgr.monitors[to_mi].active;
     if !mgr.move_window(h, to_mi, ta, None) {
         return;
+    }
+    if mgr.monitors[to_mi].workspaces[ta].floating.contains(&h) {
+        centre_float(mgr, h, to_mi);
     }
     mgr.focused_mon = to_mi;
     // The source closes its gap instantly: one motion at a time, and the
@@ -29054,6 +29136,36 @@ mod tests {
             focus_became_empty(before, mgr.focused()),
             "empty to empty workspace"
         );
+    }
+
+    #[test]
+    fn centred_in_puts_a_window_in_the_middle() {
+        let area = RECT {
+            left: 100,
+            top: 50,
+            right: 2100,
+            bottom: 1250,
+        };
+        let r = centred_in(area, 800, 600);
+        assert_eq!((r.left, r.top, r.right, r.bottom), (700, 350, 1500, 950));
+        // Larger than the screen: shrunk to it, not pushed off it.
+        let r = centred_in(area, 4000, 3000);
+        assert_eq!((r.left, r.top, r.right, r.bottom), (100, 50, 2100, 1250));
+    }
+
+    #[test]
+    fn a_float_rule_without_a_target_leaves_the_window_to_the_focused_screen() {
+        let float = |workspace, monitor| {
+            Some(RulePlacement {
+                action: RuleAction::Float,
+                workspace,
+                monitor,
+            })
+        };
+        assert!(!rule_names_target(None));
+        assert!(!rule_names_target(float(None, None)));
+        assert!(rule_names_target(float(Some(2), None)));
+        assert!(rule_names_target(float(None, Some(1))));
     }
 
     #[test]
