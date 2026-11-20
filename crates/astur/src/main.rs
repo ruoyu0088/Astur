@@ -175,24 +175,24 @@ use windows::Win32::UI::WindowsAndMessaging::ShowWindowAsync;
 use windows::Win32::UI::WindowsAndMessaging::WPF_ASYNCWINDOWPLACEMENT;
 use windows::Win32::UI::WindowsAndMessaging::{
     BringWindowToTop, ChangeWindowMessageFilterEx, EnumWindows, FindWindowExW, FindWindowW,
-    GetClassNameW, GetClientRect, GetCursorPos, GetForegroundWindow, GetSystemMetrics,
-    GetTopWindow, GetWindow, GetWindowLongPtrW, GetWindowLongW, GetWindowPlacement,
-    GetWindowTextLengthW, GetWindowTextW, GetWindowThreadProcessId, IsHungAppWindow, IsIconic,
-    IsWindow, IsWindowVisible, KillTimer, MessageBoxW, PeekMessageW, PostMessageW,
-    RegisterWindowMessageW, SendMessageTimeoutW, SetForegroundWindow, SetTimer, SetWindowLongPtrW,
-    SetWindowLongW, SetWindowPlacement, SystemParametersInfoW, EVENT_OBJECT_DESTROY,
-    EVENT_OBJECT_HIDE, EVENT_OBJECT_LOCATIONCHANGE, EVENT_OBJECT_NAMECHANGE, EVENT_OBJECT_SHOW,
-    EVENT_OBJECT_UNCLOAKED, EVENT_SYSTEM_FOREGROUND, EVENT_SYSTEM_MINIMIZEEND,
-    EVENT_SYSTEM_MINIMIZESTART, EVENT_SYSTEM_MOVESIZEEND, EVENT_SYSTEM_MOVESIZESTART,
-    GWLP_USERDATA, GWL_EXSTYLE, GWL_STYLE, GW_HWNDNEXT, GW_HWNDPREV, GW_OWNER, HWND_BOTTOM,
-    HWND_TOP, MB_ICONERROR, MB_OK, MSGFLT_ALLOW, OBJID_CURSOR, PM_REMOVE, PW_RENDERFULLCONTENT,
-    SMTO_ABORTIFHUNG, SM_CXSCREEN, SM_CYSCREEN, SPIF_SENDCHANGE, SPIF_UPDATEINIFILE,
-    SPI_GETFOREGROUNDLOCKTIMEOUT, SPI_GETWORKAREA, SPI_SETDESKWALLPAPER,
-    SPI_SETFOREGROUNDLOCKTIMEOUT, SPI_SETWORKAREA, SW_MINIMIZE, SW_SHOW, SW_SHOWMINNOACTIVE,
-    SW_SHOWNORMAL, SYSTEM_PARAMETERS_INFO_UPDATE_FLAGS, WINDOWPLACEMENT, WINDOW_EX_STYLE,
-    WINEVENT_OUTOFCONTEXT, WINEVENT_SKIPOWNPROCESS, WM_CLIPBOARDUPDATE, WM_CLOSE, WM_DISPLAYCHANGE,
-    WM_DPICHANGED, WM_ENDSESSION, WM_ERASEBKGND, WM_PAINT, WM_SETTINGCHANGE, WM_TIMER, WM_USER,
-    WS_CAPTION, WS_CHILD,
+    GetClassLongPtrW, GetClassNameW, GetClientRect, GetCursorPos, GetForegroundWindow,
+    GetSystemMetrics, GetTopWindow, GetWindow, GetWindowLongPtrW, GetWindowLongW,
+    GetWindowPlacement, GetWindowTextLengthW, GetWindowTextW, GetWindowThreadProcessId,
+    IsHungAppWindow, IsIconic, IsWindow, IsWindowVisible, KillTimer, MessageBoxW, PeekMessageW,
+    PostMessageW, RegisterWindowMessageW, SendMessageTimeoutW, SetForegroundWindow, SetTimer,
+    SetWindowLongPtrW, SetWindowLongW, SetWindowPlacement, SystemParametersInfoW,
+    EVENT_OBJECT_DESTROY, EVENT_OBJECT_HIDE, EVENT_OBJECT_LOCATIONCHANGE, EVENT_OBJECT_NAMECHANGE,
+    EVENT_OBJECT_SHOW, EVENT_OBJECT_UNCLOAKED, EVENT_SYSTEM_FOREGROUND, EVENT_SYSTEM_MINIMIZEEND,
+    EVENT_SYSTEM_MINIMIZESTART, EVENT_SYSTEM_MOVESIZEEND, EVENT_SYSTEM_MOVESIZESTART, GCLP_HICON,
+    GCLP_HICONSM, GWLP_USERDATA, GWL_EXSTYLE, GWL_STYLE, GW_HWNDNEXT, GW_HWNDPREV, GW_OWNER,
+    HWND_BOTTOM, HWND_TOP, ICON_BIG, ICON_SMALL, ICON_SMALL2, MB_ICONERROR, MB_OK, MSGFLT_ALLOW,
+    OBJID_CURSOR, PM_REMOVE, PW_RENDERFULLCONTENT, SMTO_ABORTIFHUNG, SMTO_BLOCK, SM_CXSCREEN,
+    SM_CYSCREEN, SPIF_SENDCHANGE, SPIF_UPDATEINIFILE, SPI_GETFOREGROUNDLOCKTIMEOUT,
+    SPI_GETWORKAREA, SPI_SETDESKWALLPAPER, SPI_SETFOREGROUNDLOCKTIMEOUT, SPI_SETWORKAREA,
+    SW_MINIMIZE, SW_SHOW, SW_SHOWMINNOACTIVE, SW_SHOWNORMAL, SYSTEM_PARAMETERS_INFO_UPDATE_FLAGS,
+    WINDOWPLACEMENT, WINDOW_EX_STYLE, WINEVENT_OUTOFCONTEXT, WINEVENT_SKIPOWNPROCESS,
+    WM_CLIPBOARDUPDATE, WM_CLOSE, WM_DISPLAYCHANGE, WM_DPICHANGED, WM_ENDSESSION, WM_ERASEBKGND,
+    WM_GETICON, WM_PAINT, WM_SETTINGCHANGE, WM_TIMER, WM_USER, WS_CAPTION, WS_CHILD,
 };
 
 // =========================================================================
@@ -16237,9 +16237,9 @@ unsafe fn bar_icons_retire() {
         let gen = BAR_ICON_GEN.load(Ordering::SeqCst);
         cache.retain_live(
             |_, px, _| sizes.contains(&px),
-            |icon| {
-                if icon > 1 {
-                    out.push((gen, icon));
+            |bar| {
+                if bar.icon > 1 {
+                    out.push((gen, bar.icon));
                 }
             },
         );
@@ -16312,34 +16312,107 @@ unsafe fn tracked_exe(hwnd: HWND) -> Option<String> {
     exe
 }
 
-/// Return cached app icon without shell work on manager thread. Cache misses are
-/// queued to icon workers and temporarily render a placeholder.
-/// `px` is the physical size the caller will draw at — icons are resolved at
-/// exactly that size and never rescaled in DrawIconEx, so it is part of the cache key.
-/// Stamp 0: this runs per window on every bar update, too hot for a metadata
-/// read, so an app updated mid-session keeps its old bar icon until restart.
-unsafe fn bar_app_icon(hwnd: HWND, px: i32) -> isize {
-    tracked_exe(hwnd).map_or(-1, |path| bar_exe_icon(&path, px))
+/// One bar icon: the handle to draw, and the icon it shows. `app` groups
+/// windows that draw the same picture, because a workspace mark shows one icon
+/// per app, not one per window — and two windows of one program must share a
+/// slot while two Python scripts that set their own icons must not.
+#[derive(Clone, Copy, Default, PartialEq)]
+struct BarIcon {
+    icon: isize,
+    app: u64,
 }
 
-/// bar_app_icon for an exe path already in hand (the tab bars keep the path
-/// to look the icon up again at paint time).
-fn bar_exe_icon(path: &str, px: i32) -> isize {
+/// Cache key for a window's own icon. NOT the exe path: two windows of one exe
+/// can carry different icons (a Python script calling `iconphoto`, a browser
+/// app window), and the taskbar shows the window's, not the file's. '@' never
+/// starts a Win32 path, so a key always says which of the two it is.
+fn window_icon_key(h: isize) -> String {
+    format!("@{h:x}")
+}
+
+/// The window a `window_icon_key` names, None for an exe path key.
+fn icon_key_window(key: &str) -> Option<isize> {
+    key.strip_prefix('@')
+        .and_then(|hex| isize::from_str_radix(hex, 16).ok())
+}
+
+/// The app a bar icon belongs to, for the one-icon-per-app marks: windows
+/// showing the exe file's icon group by exe, a window with an icon of its own
+/// groups by that icon's handle (the same image shared by two windows is one
+/// handle; a script that builds one icon object per window counts as two apps).
+fn icon_app(own: Option<isize>, exe: &str) -> u64 {
+    match own {
+        Some(h) => h as u64,
+        None => ((exe_hash(exe) as u64) << 1) | 1,
+    }
+}
+
+/// FNV-1a of an exe path: a stable number for `icon_app`.
+fn exe_hash(exe: &str) -> u32 {
+    let mut h: u32 = 0x811c_9dc5;
+    for b in exe.bytes() {
+        h ^= b as u32;
+        h = h.wrapping_mul(0x0100_0193);
+    }
+    h
+}
+
+/// Return cached app icon without shell work on manager thread. Cache misses are
+/// queued to the icon worker and temporarily render a placeholder.
+/// `px` is the physical size the caller will draw at, so it is part of the key.
+/// Stamp 0: this runs per window on every bar update, too hot for a metadata
+/// read, so an app updated mid-session (or one that sets its window icon after
+/// the bar first drew it) keeps its old bar icon until restart.
+unsafe fn bar_app_icon(hwnd: HWND, px: i32) -> BarIcon {
+    let h = hwnd.0 as isize;
+    let key = window_icon_key(h);
     {
         let mut cache = BAR_ICON_CACHE.lock().unwrap();
-        if let Some(icon) = cache.get(path, px, 0) {
+        if let Some(icon) = cache.get(&key, px, 0) {
             return icon;
         }
-        // 0 = queued: later lookups wait for the worker instead of re-queueing.
-        cache.insert(path, px, 0, 0, 0);
+        // The default value = a job is queued: later lookups wait for the
+        // worker instead of re-queueing.
+        cache.insert(&key, px, 0, BarIcon::default(), BarIcon::default());
     }
-    let job = IconJob::Bar(path.to_string(), px);
+    let exe = tracked_exe(hwnd).unwrap_or_default();
+    queue_icon_job(IconJob::Bar {
+        key,
+        hwnd: h,
+        exe,
+        px,
+    });
+    BarIcon::default()
+}
+
+/// bar_app_icon for a window whose exe is already in hand (the tab bars keep
+/// the key to look the icon up again at paint time).
+fn bar_window_icon(h: isize, exe: &str, px: i32) -> BarIcon {
+    let key = window_icon_key(h);
+    {
+        let mut cache = BAR_ICON_CACHE.lock().unwrap();
+        if let Some(icon) = cache.get(&key, px, 0) {
+            return icon;
+        }
+        cache.insert(&key, px, 0, BarIcon::default(), BarIcon::default());
+    }
+    queue_icon_job(IconJob::Bar {
+        key,
+        hwnd: h,
+        exe: exe.to_string(),
+        px,
+    });
+    BarIcon::default()
+}
+
+/// Queue an icon job unless the same one already waits: a bar update runs per
+/// command, and the worker only needs to hear about a window once.
+fn queue_icon_job(job: IconJob) {
     let mut q = ICON_QUEUE.lock().unwrap();
     if !q.contains(&job) {
         q.push_back(job);
         ICON_CV.notify_one();
     }
-    0
 }
 
 /// The title widget's text for window `h` under `title_format`. The default
@@ -17020,6 +17093,7 @@ unsafe fn update_bar(mgr: &Manager) {
                     .iter()
                     .map(|&local| {
                         let mut icons: Vec<isize> = Vec::with_capacity(want);
+                        let mut apps: Vec<u64> = Vec::with_capacity(want);
                         let wins = m
                             .workspaces
                             .get(local)
@@ -17030,8 +17104,10 @@ unsafe fn update_bar(mgr: &Manager) {
                             }
                             if IsWindow(hwnd_from(h)).as_bool() {
                                 let icon = bar_app_icon(hwnd_from(h), px);
-                                if !icons.contains(&icon) {
-                                    icons.push(icon);
+                                // One slot per app, not per window (icon.app).
+                                if !apps.contains(&icon.app) {
+                                    apps.push(icon.app);
+                                    icons.push(icon.icon);
                                 }
                             }
                         }
@@ -17087,7 +17163,7 @@ unsafe fn update_bar(mgr: &Manager) {
                                 .unwrap_or_else(|| window_title(hwnd));
                             BarApp {
                                 hwnd: h,
-                                icon: bar_app_icon(hwnd, icon_px),
+                                icon: bar_app_icon(hwnd, icon_px).icon,
                                 label,
                             }
                         })
@@ -19577,7 +19653,7 @@ unsafe extern "system" fn bar_wndproc(h: HWND, msg: u32, w: WPARAM, l: LPARAM) -
 struct TabInfo {
     hwnd: isize,
     title: String,
-    exe: String, // icon cache key ("" = unknown: no icon)
+    key: String, // window_icon_key ("" = unknown: no icon)
     // BAR_ICON_CACHE's value when the snapshot was built. Only diffed, so the
     // bar repaints when the icon resolves; paint looks the handle up again
     // (paint_tab_bar says why).
@@ -19689,21 +19765,24 @@ unsafe fn tab_bars_build(mgr: &Manager) -> Vec<TabBarData> {
             let tabs = cols[ci]
                 .iter()
                 .map(|&h| {
-                    // No exe read when no icon is drawn.
-                    let exe = if icon_px > 0 {
-                        tracked_exe(hwnd_from(h)).unwrap_or_default()
+                    // No window or exe read when no icon is drawn.
+                    let key = if icon_px > 0 {
+                        window_icon_key(h)
                     } else {
                         String::new()
                     };
-                    let icon = if exe.is_empty() {
+                    let icon = if key.is_empty() {
                         -1
                     } else {
-                        bar_exe_icon(&exe, icon_px)
+                        // The window's own icon; the exe is the worker's
+                        // fallback read, so queued as one job.
+                        let exe = tracked_exe(hwnd_from(h)).unwrap_or_default();
+                        bar_window_icon(h, &exe, icon_px).icon
                     };
                     TabInfo {
                         hwnd: h,
                         title: window_title(hwnd_from(h)),
-                        exe,
+                        key,
                         icon,
                     }
                 })
@@ -20042,8 +20121,8 @@ unsafe fn paint_tab_bar(h: HWND) {
                 let icon = BAR_ICON_CACHE
                     .lock()
                     .unwrap()
-                    .get(&t.exe, d.icon_px, 0)
-                    .unwrap_or(0);
+                    .get(&t.key, d.icon_px, 0)
+                    .map_or(0, |b| b.icon);
                 let iy = (rc.bottom - d.icon_px) / 2;
                 if icon > 1 {
                     let _ = DrawIconEx(
@@ -20890,6 +20969,29 @@ fn sync_managed(mgr: &Manager) {
     }
     if let Some(exe) = EXE_CACHE.lock().unwrap().as_mut() {
         exe.retain(|h, _| map.contains_key(h));
+    }
+    // Bar icons are keyed on the window (a window can show its own icon, not
+    // its exe's), so one that stops being tracked takes its icons with it:
+    // nothing can look them up again, and a recycled HWND must not draw the
+    // old window's icon. Only parked here; `bar_icons_sweep` frees them,
+    // because a paint may still be drawing one.
+    {
+        let mut cache = BAR_ICON_CACHE.lock().unwrap();
+        // Read under the cache lock, as bar_icons_retire does: see BAR_ICON_GEN.
+        let gen = BAR_ICON_GEN.load(Ordering::SeqCst);
+        let mut dead = Vec::new();
+        cache.retain_live(
+            |key, _, _| icon_key_window(key).is_none_or(|h| map.contains_key(&h)),
+            |bar| {
+                if bar.icon > 1 {
+                    dead.push((gen, bar.icon));
+                }
+            },
+        );
+        drop(cache);
+        if !dead.is_empty() {
+            BAR_ICON_RETIRED.lock().unwrap().extend(dead);
+        }
     }
     let dead = COLD.lock().unwrap().retain(|h| map.contains_key(&h));
     *INDEX.lock().unwrap() = Some(map);
@@ -22421,10 +22523,21 @@ enum IconJob {
     App(usize, i32),
     /// (search generation, index into LauncherState::files, px)
     File(u64, usize, i32),
-    /// (exe path, physical pixel size to resolve at), into BAR_ICON_CACHE
-    Bar(String, i32),
-    /// (exe path, px): a switcher Window row, into ICON_CACHE
-    Exe(String, i32),
+    /// A window's own icon (its exe file's when the window has none), into
+    /// BAR_ICON_CACHE: cache key, window, exe fallback, physical px.
+    Bar {
+        key: String,
+        hwnd: isize,
+        exe: String,
+        px: i32,
+    },
+    /// The same for a launcher Window row, into ICON_CACHE.
+    Win {
+        key: String,
+        hwnd: isize,
+        exe: String,
+        px: i32,
+    },
     /// exe path: its FileDescription for the bar's `{app}`, into APP_NAMES.
     /// Here because it is file I/O off the manager, like an icon.
     Name(String),
@@ -22591,13 +22704,14 @@ impl<H: Copy + PartialEq> IconCache<H> {
 /// every launcher_icon_size tried kept a full set per DPI until exit.)
 static ICON_CACHE: LazyLock<Mutex<IconCache<isize>>> =
     LazyLock::new(|| Mutex::new(IconCache::new(None)));
-/// Bar app-button icons, keyed (exe path, px, 0). Values as ICON_CACHE, plus
-/// 0 = a bar job is queued for it. The main thread draws them, from the
-/// manager's BAR snapshot, so a handle dropped from here may still be in the
-/// published snapshot or in the clone a paint is drawing: `bar_icons_retire`
+/// Bar app-button icons, keyed (window, px, 0) — a window's own icon, with its
+/// exe file's as the fallback (BAR_ICON_CACHE notes on `window_icon`). The
+/// default `BarIcon` (0, 0) is a queued job. The main thread draws them, from
+/// the manager's BAR snapshot, so a handle dropped from here may still be in
+/// the published snapshot or in the clone a paint is drawing: `bar_icons_retire`
 /// parks it and `bar_icons_sweep` frees it once a snapshot built after that is
 /// published, on the main thread between paints.
-static BAR_ICON_CACHE: LazyLock<Mutex<IconCache<isize>>> =
+static BAR_ICON_CACHE: LazyLock<Mutex<IconCache<BarIcon>>> =
     LazyLock::new(|| Mutex::new(IconCache::new(None)));
 /// System-menu custom icons. Resolved and drawn only on the sysmenu thread,
 /// which frees an entry the moment it supersedes it.
@@ -22992,6 +23106,64 @@ unsafe fn sys_list_icon(path: &str) -> Option<HICON> {
     (!hicon.0.is_null()).then_some(hicon)
 }
 
+/// The icon a window shows, the way the taskbar gets it: `WM_GETICON` in the
+/// slots Windows fills (`ICON_BIG` first — the biggest frame an app sets —
+/// then `ICON_SMALL2` and `ICON_SMALL`), then the class icon. Returns our own
+/// copy and the identity of what it shows (`icon_app`), or None when the
+/// window sets no icon at all and the caller falls back to the exe file.
+///
+/// Worker thread only. `SendMessageTimeoutW` with SMTO_ABORTIFHUNG never
+/// blocks on a hung app, and an unanswered query costs one timeout, once per
+/// window, never per paint.
+unsafe fn window_icon(h: isize) -> Option<(isize, u64)> {
+    let hwnd = hwnd_from(h);
+    if !IsWindow(hwnd).as_bool() {
+        return None;
+    }
+    for slot in [ICON_BIG, ICON_SMALL2, ICON_SMALL] {
+        let mut res: usize = 0;
+        let _ = SendMessageTimeoutW(
+            hwnd,
+            WM_GETICON,
+            WPARAM(slot as usize),
+            LPARAM(0),
+            SMTO_ABORTIFHUNG | SMTO_BLOCK,
+            100,
+            Some(&mut res as *mut usize),
+        );
+        if res > 1 {
+            if let Ok(copy) = CopyIcon(HICON(res as *mut c_void)) {
+                return Some((copy.0 as isize, res as u64));
+            }
+        }
+    }
+    for index in [GCLP_HICON, GCLP_HICONSM] {
+        let raw = GetClassLongPtrW(hwnd, index);
+        if raw > 1 {
+            if let Ok(copy) = CopyIcon(HICON(raw as *mut c_void)) {
+                return Some((copy.0 as isize, raw as u64));
+            }
+        }
+    }
+    None
+}
+
+/// A window's bar icon: its own when it shows one, else the exe file's.
+unsafe fn window_or_exe_icon(h: isize, exe: &str, px: i32) -> BarIcon {
+    if let Some((icon, own)) = window_icon(h) {
+        return BarIcon { icon, app: own };
+    }
+    let icon = if exe.is_empty() {
+        -1
+    } else {
+        load_icon(exe, px)
+    };
+    BarIcon {
+        icon,
+        app: icon_app(None, exe),
+    }
+}
+
 /// Cached generic "application" icon (the shell's default .exe icon), used when
 /// both real resolvers fail so the row still shows something. 0 = not yet
 /// resolved, -1 = resolution failed, else an HICON we own for the process life.
@@ -23090,10 +23262,34 @@ fn icon_worker() {
                 }
                 continue;
             }
+            // A bar icon needs no launcher state, and its cache entry is the
+            // placeholder bar_app_icon left behind: every queued job resolves,
+            // and the placeholder becomes the icon.
+            if let IconJob::Bar { key, hwnd, exe, px } = &job {
+                let bar = window_or_exe_icon(*hwnd, exe, *px);
+                let dup =
+                    BAR_ICON_CACHE
+                        .lock()
+                        .unwrap()
+                        .insert(key, *px, 0, bar, BarIcon::default());
+                if let Some(dup) = dup {
+                    release_launcher_icon(dup.icon); // another worker got there first
+                }
+                // Paint draws the manager's snapshot, which still holds the
+                // placeholder, so a repaint alone showed nothing until some
+                // unrelated command ran (BAR-13). Have update_bar publish the
+                // new handle: through the BarRefresh gate, so a startup or
+                // reload burst of N icons queues one refresh, not N ahead of
+                // the user's commands.
+                if bar_refresh_gate(&BAR_REFRESH_QUEUED) {
+                    push_cmd(Cmd::BarRefresh);
+                }
+                continue;
+            }
             // Short lock: copy the source only if the row still belongs to
             // the current model, and skip what the cache already holds (a
             // reload or F5 re-queues every app; nearly all are hits).
-            let (path, px, stamp) = {
+            let (source, px, stamp) = {
                 let st = LAUNCHER_STATE.lock().unwrap();
                 match &job {
                     IconJob::App(i, px) => match st.all.get(*i) {
@@ -23106,41 +23302,42 @@ fn icon_worker() {
                         Some(f) => (f.path.clone(), *px, f.stamp()),
                         _ => continue,
                     },
+                    IconJob::Win { key, px, .. } => (key.clone(), *px, 0),
                     IconJob::File(..) | IconJob::Name(_) => continue,
-                    IconJob::Bar(path, px) | IconJob::Exe(path, px) => (path.clone(), *px, 0),
+                    IconJob::Bar { .. } => continue,
                 }
             };
             let cache = match &job {
                 IconJob::File(..) => &FILE_ICON_CACHE,
-                IconJob::Bar(..) => &BAR_ICON_CACHE,
-                IconJob::App(..) | IconJob::Exe(..) | IconJob::Name(_) => &ICON_CACHE,
+                IconJob::App(..) | IconJob::Win { .. } | IconJob::Name(_) => &ICON_CACHE,
+                IconJob::Bar { .. } => continue,
             };
-            // A Bar job's key holds the 0 placeholder bar_app_icon left there.
-            if !matches!(job, IconJob::Bar(..))
-                && cache.lock().unwrap().get(&path, px, stamp).is_some()
-            {
+            if cache.lock().unwrap().get(&source, px, stamp).is_some() {
                 continue;
             }
             // Every job carries the exact size it was queued for; the worker
             // must not re-read a global, which on a mixed-DPI desk would be
             // whichever monitor painted last.
-            let hicon = load_icon(&path, px);
+            let hicon = match &job {
+                // A launcher Window row shows the window's own icon, as the
+                // taskbar does; the exe file is only the fallback.
+                IconJob::Win { hwnd, exe, .. } => window_icon(*hwnd).map_or_else(
+                    || {
+                        if exe.is_empty() {
+                            -1
+                        } else {
+                            load_icon(exe, px)
+                        }
+                    },
+                    |(icon, _)| icon,
+                ),
+                _ => load_icon(&source, px),
+            };
             // Keyed by source, so an icon can never land on the wrong row
             // however the list moved while it resolved.
-            let dup = cache.lock().unwrap().insert(&path, px, stamp, hicon, 0);
+            let dup = cache.lock().unwrap().insert(&source, px, stamp, hicon, 0);
             if let Some(dup) = dup {
                 release_launcher_icon(dup); // another worker got there first
-            }
-            if matches!(job, IconJob::Bar(..)) {
-                // Paint draws the manager's snapshot, which still holds the 0
-                // placeholder, so a repaint alone showed nothing until some
-                // unrelated command ran (BAR-13). Have update_bar publish the
-                // new handle: through the BarRefresh gate, so a startup or
-                // reload burst of N icons queues one refresh, not N ahead of
-                // the user's commands.
-                if bar_refresh_gate(&BAR_REFRESH_QUEUED) {
-                    push_cmd(Cmd::BarRefresh);
-                }
             }
             // Launcher rows (app, file and switcher Window rows) repaint only
             // on this.
@@ -24805,14 +25002,21 @@ unsafe fn launcher_paint(h: HWND) {
             }
             Hit::Window(i) => {
                 let win = &st.windows[i];
-                // ICON_CACHE by the exe read when the list was built: this
-                // thread is the only one that draws it (so LA_REFRESH can free
-                // it), and a paint no longer opens each row's process.
-                if !win.exe.is_empty() {
+                // ICON_CACHE by the window: this thread is the only one that
+                // draws it (so LA_REFRESH can free it), and a paint no longer
+                // opens each row's process. The worker asks the window for its
+                // own icon, the way the taskbar gets it.
+                {
                     let iy = top + (la_row_h() - la_icon_px()) / 2;
                     let px = la_icon_px();
-                    if draw_cached_icon(hdc, &ICON_CACHE, &win.exe, 0, row.left + 6, iy, px) {
-                        want.push(IconJob::Exe(win.exe.clone(), px));
+                    let key = window_icon_key(win.hwnd);
+                    if draw_cached_icon(hdc, &ICON_CACHE, &key, 0, row.left + 6, iy, px) {
+                        want.push(IconJob::Win {
+                            key,
+                            hwnd: win.hwnd,
+                            exe: win.exe.clone(),
+                            px,
+                        });
                     }
                 }
                 (
@@ -29611,6 +29815,27 @@ mod tests {
     // ---- icon cache (batch 14, LAUNCH-13) ----------------------------------------
 
     #[test]
+    fn a_bar_icon_key_names_its_window_and_never_a_path() {
+        let h = 0x1a2b_3c4d_isize;
+        assert_eq!(icon_key_window(&window_icon_key(h)), Some(h));
+        // An exe path key is no window, so the prune leaves it alone.
+        assert_eq!(icon_key_window(r"C:\Python313\python.exe"), None);
+        assert_eq!(icon_key_window("@nothex"), None);
+    }
+
+    #[test]
+    fn one_mark_slot_per_app_but_not_per_window() {
+        // Windows showing the file's icon are one app, however many there are.
+        let exe = r"C:\Python313\python.exe";
+        assert_eq!(icon_app(None, exe), icon_app(None, exe));
+        // A window with its own icon is its own app (a script that sets one).
+        assert_ne!(icon_app(Some(0x1234), exe), icon_app(Some(0x5678), exe));
+        assert_ne!(icon_app(None, exe), icon_app(Some(0x1234), exe));
+        // Different exes do not collide either.
+        assert_ne!(icon_app(None, exe), icon_app(None, r"C:\Tools\rio.exe"));
+    }
+
+    #[test]
     fn an_icon_is_keyed_by_source_size_and_stamp() {
         let mut c: IconCache<i64> = IconCache::new(None);
         assert_eq!(c.insert("app.lnk", 32, 7, 100, 0), None);
@@ -31155,7 +31380,7 @@ mod tests {
         let tab = |hwnd, title: &str| TabInfo {
             hwnd,
             title: title.to_string(),
-            exe: String::new(),
+            key: String::new(),
             icon: -1,
         };
         let bar = TabBarData {
@@ -31200,7 +31425,7 @@ mod tests {
                 .map(|&hwnd| TabInfo {
                     hwnd,
                     title: String::new(),
-                    exe: String::new(),
+                    key: String::new(),
                     icon: -1,
                 })
                 .collect(),
