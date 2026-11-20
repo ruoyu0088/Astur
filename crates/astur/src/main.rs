@@ -174,15 +174,15 @@ use windows::Win32::UI::Input::KeyboardAndMouse::{VK_LWIN, VK_RWIN};
 use windows::Win32::UI::WindowsAndMessaging::ShowWindowAsync;
 use windows::Win32::UI::WindowsAndMessaging::WPF_ASYNCWINDOWPLACEMENT;
 use windows::Win32::UI::WindowsAndMessaging::{
-    BringWindowToTop, ChangeWindowMessageFilterEx, EnumWindows, FindWindowExW, FindWindowW,
-    GetClassLongPtrW, GetClassNameW, GetClientRect, GetCursorPos, GetForegroundWindow,
-    GetSystemMetrics, GetTopWindow, GetWindow, GetWindowLongPtrW, GetWindowLongW,
-    GetWindowPlacement, GetWindowTextLengthW, GetWindowTextW, GetWindowThreadProcessId,
-    IsHungAppWindow, IsIconic, IsWindow, IsWindowVisible, KillTimer, MessageBoxW, PeekMessageW,
-    PostMessageW, RegisterWindowMessageW, SendMessageTimeoutW, SetForegroundWindow, SetTimer,
-    SetWindowLongPtrW, SetWindowLongW, SetWindowPlacement, SystemParametersInfoW,
-    EVENT_OBJECT_DESTROY, EVENT_OBJECT_HIDE, EVENT_OBJECT_LOCATIONCHANGE, EVENT_OBJECT_NAMECHANGE,
-    EVENT_OBJECT_SHOW, EVENT_OBJECT_UNCLOAKED, EVENT_SYSTEM_FOREGROUND, EVENT_SYSTEM_MINIMIZEEND,
+    ChangeWindowMessageFilterEx, EnumWindows, FindWindowExW, FindWindowW, GetClassLongPtrW,
+    GetClassNameW, GetClientRect, GetCursorPos, GetForegroundWindow, GetSystemMetrics,
+    GetTopWindow, GetWindow, GetWindowLongPtrW, GetWindowLongW, GetWindowPlacement,
+    GetWindowTextLengthW, GetWindowTextW, GetWindowThreadProcessId, IsHungAppWindow, IsIconic,
+    IsWindow, IsWindowVisible, KillTimer, MessageBoxW, PeekMessageW, PostMessageW,
+    RegisterWindowMessageW, SendMessageTimeoutW, SetForegroundWindow, SetTimer, SetWindowLongPtrW,
+    SetWindowLongW, SetWindowPlacement, SystemParametersInfoW, EVENT_OBJECT_DESTROY,
+    EVENT_OBJECT_HIDE, EVENT_OBJECT_LOCATIONCHANGE, EVENT_OBJECT_NAMECHANGE, EVENT_OBJECT_SHOW,
+    EVENT_OBJECT_UNCLOAKED, EVENT_SYSTEM_FOREGROUND, EVENT_SYSTEM_MINIMIZEEND,
     EVENT_SYSTEM_MINIMIZESTART, EVENT_SYSTEM_MOVESIZEEND, EVENT_SYSTEM_MOVESIZESTART, GCLP_HICON,
     GCLP_HICONSM, GWLP_USERDATA, GWL_EXSTYLE, GWL_STYLE, GW_HWNDNEXT, GW_HWNDPREV, GW_OWNER,
     HWND_BOTTOM, HWND_TOP, ICON_BIG, ICON_SMALL, ICON_SMALL2, MB_ICONERROR, MB_OK, MSGFLT_ALLOW,
@@ -962,11 +962,16 @@ unsafe fn commit_rect(hwnd: isize, x: i32, y: i32, w: i32, h: i32) {
 /// its own request in parallel: the layout is done after the slowest app, and
 /// the manager is free for the next command at once.
 ///
-/// This does NOT make the manager hang-proof. These stay synchronous and can
-/// still block on a hung app: switch_plain's ShowWindow hide/show, the
-/// refresh_monitors re-show, Cmd::Add's hide, the scratchpad show/hide,
-/// SW_RESTORE, BringWindowToTop and SetWindowLongW. Only commands that just
-/// place windows stop waiting.
+/// Placement posting alone does not make the manager hang-proof: a show, a
+/// hide or a raise places nothing and still sends its request to the app.
+/// `ShowWindow`, `BringWindowToTop`, a synchronous `SetWindowPos`,
+/// `SetWindowPlacement` and `SetWindowLongW` all wait for the app's thread to
+/// answer; measured on a window that stopped pumping, every one of them never
+/// returns. One `ShowWindow` in a workspace switch was enough to freeze the
+/// manager, and with it every hotkey, switch and retile. So each of them on a
+/// foreign window posts instead — `ShowWindowAsync`, SWP_ASYNCWINDOWPOS,
+/// WPF_ASYNCWINDOWPLACEMENT — and the cosmetic style changes, which have no
+/// posted form, skip a window `IsHungAppWindow` reports hung.
 ///
 /// Consequences handled elsewhere, because a SetWindowPos no longer means the
 /// window is there yet: the cursor warp centres on the requested tile, not the
@@ -981,13 +986,13 @@ static ASYNC_WINDOW_POS: AtomicBool = AtomicBool::new(true);
 /// SWP_ASYNCWINDOWPOS when async placement is on. Every such call goes through
 /// here (set_pos_raw, commit_rect, place_drag) so the requests
 /// one window gets are all posted, FIFO in its queue, or all synchronous:
-/// mixing the two could land an older rect after a newer one. ShowWindow and
-/// SetWindowPlacement stay synchronous; each is followed, in the same call, by
-/// a posted SetWindowPos, so the newest rect still lands last. Exception:
-/// unpark_window with `reveal` (exit restore, rescue of a hidden entry)
-/// always posts, move and placement alike. Nothing places after an exit, and
-/// a rescued hidden window is adopted only once its posted show (queued
-/// ahead of the move) has run.
+/// mixing the two could land an older rect after a newer one. A show or a
+/// hide goes through ShowWindowAsync, which posts the same request into that
+/// same queue, so a switch's show and the placement after it still land in
+/// the order they were issued. Exception: unpark_window with `reveal` (exit
+/// restore, rescue of a hidden entry) always posts, move and placement alike.
+/// Nothing places after an exit, and a rescued hidden window is adopted only
+/// once its posted show (queued ahead of the move) has run.
 fn foreign_swp_flags(base: SET_WINDOW_POS_FLAGS, async_on: bool) -> SET_WINDOW_POS_FLAGS {
     if async_on {
         base | SWP_ASYNCWINDOWPOS
@@ -995,6 +1000,19 @@ fn foreign_swp_flags(base: SET_WINDOW_POS_FLAGS, async_on: bool) -> SET_WINDOW_P
         base
     }
 }
+
+/// Raise a foreign window to the top of the z-order without waiting for it.
+/// `BringWindowToTop` runs a synchronous `SetWindowPos` internally and was
+/// measured never to return on a hung window; posting does (measured ~5 ms),
+/// and a raise that lands a little late costs nothing but draw order.
+unsafe fn raise_nowait(hwnd: HWND) {
+    let _ = SetWindowPos(hwnd, HWND_TOP, 0, 0, 0, 0, RAISE_FLAGS);
+}
+
+/// `raise_nowait`'s flags, a const so the test can prove the posted bit is
+/// there: drop it and the raise waits for a hung app again.
+const RAISE_FLAGS: SET_WINDOW_POS_FLAGS =
+    SET_WINDOW_POS_FLAGS(SWP_NOMOVE.0 | SWP_NOSIZE.0 | SWP_NOACTIVATE.0 | SWP_ASYNCWINDOWPOS.0);
 
 /// A screen rect as WINDOWPLACEMENT's rcNormalPosition. For a top-level window
 /// without WS_EX_TOOLWINDOW that is workspace coordinates: screen coordinates
@@ -1021,6 +1039,12 @@ fn placement_to_workspace(r: RECT, work_off: (i32, i32), toolwindow: bool) -> RE
 /// drop never gets a focus_window of its own). False when it did not take, or
 /// the window is somehow still maximised: the caller falls back to SW_RESTORE.
 unsafe fn unmaximize_to(hwnd: HWND, r: RECT) -> bool {
+    // SetWindowPlacement waits for the app's thread (measured: never returns on
+    // a hung window). A hung window takes the caller's posted SW_RESTORE
+    // instead, which is the same un-maximize asked for asynchronously.
+    if IsHungAppWindow(hwnd).as_bool() {
+        return false;
+    }
     let mut wp = WINDOWPLACEMENT {
         length: core::mem::size_of::<WINDOWPLACEMENT>() as u32,
         ..Default::default()
@@ -1185,7 +1209,10 @@ unsafe fn sink_now(h: isize, r: RECT) {
         0,
         0,
         0,
-        SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_NOOWNERZORDER,
+        foreign_swp_flags(
+            SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_NOOWNERZORDER,
+            ASYNC_WINDOW_POS.load(Ordering::Relaxed),
+        ),
     );
 }
 
@@ -6032,7 +6059,7 @@ unsafe fn toggle_fill(mgr: &mut Manager) {
             // A window the user maximised since filling ignores placement:
             // take the maximise off first, so the old rect (or tile) takes.
             if IsZoomed(ww).as_bool() {
-                let _ = ShowWindow(ww, SW_RESTORE);
+                let _ = ShowWindowAsync(ww, SW_RESTORE);
             }
             // Leave the strip list as it was found even in float mode: the
             // entry we added would otherwise keep the window floating if
@@ -6154,15 +6181,7 @@ unsafe fn toggle_fill(mgr: &mut Manager) {
     retile_monitor(mgr, mi);
     // Focus picks which of them shows; put that one on top now, rather than
     // waiting for the next command's tail pass.
-    let _ = SetWindowPos(
-        hwnd,
-        HWND_TOP,
-        0,
-        0,
-        0,
-        0,
-        SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE,
-    );
+    raise_nowait(hwnd);
     FILL_SEEN.store(h, Ordering::Relaxed);
     // Every window on the workspace is floating now: give them the floating
     // border colour (the focus did not change, so nothing else would).
@@ -6202,15 +6221,7 @@ unsafe fn fill_follow(mgr: &Manager) {
     }
     let wa = mgr.monitors[mi].work_area;
     set_pos_raw(h, adjust_for_border(hwnd, wa));
-    let _ = SetWindowPos(
-        hwnd,
-        HWND_TOP,
-        0,
-        0,
-        0,
-        0,
-        SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE,
-    );
+    raise_nowait(hwnd);
 }
 
 /// Compute the visible-frame correction: Win32 GetWindowRect includes an
@@ -7170,7 +7181,9 @@ unsafe fn unstyle_window(hwnd: HWND) {
 /// WM_STYLECHANGING / WM_STYLECHANGED and waits for its app.
 unsafe fn unlayer_window(hwnd: HWND) {
     let ex = GetWindowLongW(hwnd, GWL_EXSTYLE) as u32;
-    if ex & WS_EX_LAYERED.0 != 0 {
+    // A hung window keeps the bit: SetWindowLongW waits for its thread (see
+    // the fn comment) and there is no posted form. The next restore retries.
+    if ex & WS_EX_LAYERED.0 != 0 && !IsHungAppWindow(hwnd).as_bool() {
         SetWindowLongW(hwnd, GWL_EXSTYLE, (ex & !WS_EX_LAYERED.0) as i32);
     }
 }
@@ -7397,7 +7410,7 @@ unsafe fn unpark_window(h: isize, sent: Option<RECT>, reveal: bool) -> bool {
         // waits for the app (WPF_ASYNCWINDOWPLACEMENT remarks), so a hung app
         // held the exit here. Either order with the posted show ends shown,
         // since a reveal never picks SW_HIDE.
-        if reveal {
+        if reveal || IsHungAppWindow(hwnd).as_bool() {
             wp.flags |= WPF_ASYNCWINDOWPLACEMENT;
         }
         return SetWindowPlacement(hwnd, &wp).is_ok();
@@ -7530,6 +7543,11 @@ unsafe fn apply_transparent_to_taskbars() {
         if (ex & WS_EX_TRANSPARENT_TASKBAR) != 0 && (ex & WS_EX_LAYERED_TASKBAR) != 0 {
             continue;
         }
+        // SetWindowLongW waits for the app's thread; a hung one keeps the
+        // taskbar as it is and the periodic check catches it up later.
+        if IsHungAppWindow(hwnd).as_bool() {
+            continue;
+        }
         let new_ex = ex | WS_EX_LAYERED_TASKBAR | WS_EX_TRANSPARENT_TASKBAR;
         SetWindowLongW(hwnd, GWL_EXSTYLE, new_ex as i32);
         let _ = SetLayeredWindowAttributes(hwnd, COLORREF(0), 0, LWA_ALPHA);
@@ -7546,6 +7564,9 @@ unsafe fn remove_transparent_from_taskbars() {
     for hwnd in enum_taskbar_windows() {
         let ex = GetWindowLongW(hwnd, GWL_EXSTYLE) as u32;
         if (ex & WS_EX_TRANSPARENT_TASKBAR) == 0 && (ex & WS_EX_LAYERED_TASKBAR) == 0 {
+            continue;
+        }
+        if IsHungAppWindow(hwnd).as_bool() {
             continue;
         }
         let new_ex = ex & !(WS_EX_LAYERED_TASKBAR | WS_EX_TRANSPARENT_TASKBAR);
@@ -7851,7 +7872,7 @@ unsafe extern "system" fn console_handler(_ctrl_type: u32) -> BOOL {
 /// (Named `animate_to` for historical reasons; placement is now always instant.)
 unsafe fn animate_to(hwnd: HWND, target: RECT, map: &PlaceMap) {
     if IsIconic(hwnd).as_bool() || IsZoomed(hwnd).as_bool() {
-        let _ = ShowWindow(hwnd, SW_RESTORE);
+        let _ = ShowWindowAsync(hwnd, SW_RESTORE);
     }
     place_slot(hwnd.0 as isize, target, map);
 }
@@ -7963,7 +7984,10 @@ unsafe fn sink_overhang(h: isize, to: RECT, map: &PlaceMap) {
         0,
         0,
         0,
-        SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_NOOWNERZORDER,
+        foreign_swp_flags(
+            SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_NOOWNERZORDER,
+            ASYNC_WINDOW_POS.load(Ordering::Relaxed),
+        ),
     );
     sunk.insert(h, rect);
 }
@@ -8001,7 +8025,10 @@ unsafe fn sink_sweep() {
             0,
             0,
             0,
-            SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_NOOWNERZORDER,
+            foreign_swp_flags(
+                SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_NOOWNERZORDER,
+                ASYNC_WINDOW_POS.load(Ordering::Relaxed),
+            ),
         );
     }
 }
@@ -8710,7 +8737,7 @@ unsafe fn place_active_instant(mgr: &Manager, mi: usize) {
     for (h, target) in rects {
         let hwnd = hwnd_from(h);
         if IsIconic(hwnd).as_bool() || IsZoomed(hwnd).as_bool() {
-            let _ = ShowWindow(hwnd, SW_RESTORE);
+            let _ = ShowWindowAsync(hwnd, SW_RESTORE);
         }
         let to = place_slot(h, target, &map);
         let mut got = RECT::default();
@@ -8837,7 +8864,9 @@ unsafe fn style_window(hwnd: HWND, floating: bool, focused: bool, cfg: &Config) 
     if let Some(alpha) = styled_alpha(focused, cfg.unfocused_opacity) {
         let ex = GetWindowLongW(hwnd, GWL_EXSTYLE) as u32;
         let was_layered = ex & WS_EX_LAYERED.0 != 0;
-        if !was_layered {
+        // Skipping a hung window leaves it undimmed until it pumps again: the
+        // alternative is SetWindowLongW waiting on its thread for ever.
+        if !was_layered && !IsHungAppWindow(hwnd).as_bool() {
             SetWindowLongW(hwnd, GWL_EXSTYLE, (ex | WS_EX_LAYERED.0) as i32);
         }
         // Skip a SetLayeredWindowAttributes that would re-send the alpha the
@@ -9324,7 +9353,10 @@ unsafe fn focus_window(h: isize) {
     // The focus sink stays hidden (paste_text hands it back as the launcher's
     // previous foreground): shown, Windows could activate it on its own.
     if h != FOCUS_SINK.load(Ordering::Relaxed) {
-        let _ = ShowWindow(hwnd, SW_SHOW);
+        // Posted: a synchronous ShowWindow waits for the app's thread and was
+        // measured never to return on a hung one, which would stall the whole
+        // manager on the very window this is trying to focus.
+        let _ = ShowWindowAsync(hwnd, SW_SHOW);
     }
     let fg = GetForegroundWindow();
     let cur = GetCurrentThreadId();
@@ -9341,17 +9373,17 @@ unsafe fn focus_window(h: isize) {
             fg.0 as isize
         );
         let took = SetForegroundWindow(hwnd);
-        let _ = BringWindowToTop(hwnd);
+        raise_nowait(hwnd);
         took
     } else if fgt != 0 && fgt != cur {
         let _ = AttachThreadInput(cur, fgt, BOOL(1));
         let took = SetForegroundWindow(hwnd);
-        let _ = BringWindowToTop(hwnd);
+        raise_nowait(hwnd);
         let _ = AttachThreadInput(cur, fgt, BOOL(0));
         took
     } else {
         let took = SetForegroundWindow(hwnd);
-        let _ = BringWindowToTop(hwnd);
+        raise_nowait(hwnd);
         took
     };
     // Refused by the foreground lock: an input event from Astur makes it the
@@ -9368,7 +9400,7 @@ unsafe fn focus_window(h: isize) {
         NUDGE_TICK.store(GetTickCount(), Ordering::Relaxed);
         SendInput(&[nudge], core::mem::size_of::<INPUT>() as i32);
         let took = SetForegroundWindow(hwnd);
-        let _ = BringWindowToTop(hwnd);
+        raise_nowait(hwnd);
         took
     };
     if !took.as_bool() {
@@ -9549,7 +9581,7 @@ unsafe fn assign_existing_windows(mgr: &mut Manager) {
             // Marked before the hide, as switch_plain does: the async
             // EVENT_OBJECT_HIDE must find the marker already there.
             mark_hidden_by_us(h);
-            let _ = ShowWindow(hwnd_from(h), SW_HIDE);
+            let _ = ShowWindowAsync(hwnd_from(h), SW_HIDE);
         }
         if let Some(r) = floating_rect {
             // The layout never places a floating window: the saved rect is its
@@ -9573,7 +9605,7 @@ unsafe fn assign_existing_windows(mgr: &mut Manager) {
             // Marked before the hide, as switch_plain does: the async
             // EVENT_OBJECT_HIDE must find the marker already there.
             mark_hidden_by_us(h);
-            let _ = ShowWindow(hwnd, SW_HIDE);
+            let _ = ShowWindowAsync(hwnd, SW_HIDE);
         }
     }
 }
@@ -12798,15 +12830,19 @@ unsafe fn switch_plain(mgr: &mut Manager, mi: usize, old: usize, n: usize) {
     }
     SUPPRESS.store(true, Ordering::Relaxed);
     // Iterate by index (no Vec clone per switch): the manager owns `mgr` on this
-    // thread and ShowWindow touches no Astur state, so the borrow is safe to hold.
-    // Every hide is marked in HIDDEN_BY_US BEFORE the ShowWindow so the async
+    // thread and ShowWindowAsync only posts, so the borrow is safe to hold.
+    // Every hide is marked in HIDDEN_BY_US BEFORE the post so the async
     // EVENT_OBJECT_HIDE can never race the marker (see the static's comment).
+    //
+    // Posted, not synchronous: measured, a synchronous ShowWindow on a window
+    // that stopped pumping never returns, so one hung app in the workspace
+    // being left froze the manager here, and with it every hotkey and switch.
     {
         let ws = &mgr.monitors[mi].workspaces[old].windows;
         let fg = GetForegroundWindow().0 as isize;
         for h in hide_order(ws, fg) {
             mark_hidden_by_us(h);
-            let _ = ShowWindow(hwnd_from(h), SW_HIDE);
+            let _ = ShowWindowAsync(hwnd_from(h), SW_HIDE);
         }
     }
     mgr.monitors[mi].active = n;
@@ -12822,10 +12858,11 @@ unsafe fn switch_plain(mgr: &mut Manager, mi: usize, old: usize, n: usize) {
             // window it showed (one cross-process activate/deactivate chain
             // and FOREGROUND event each), only for focus_window(f) to pick the
             // real target right after (SWITCH-4). Not SetWindowPos with
-            // SWP_SHOWWINDOW: the hide above is ShowWindow, which sends
-            // WM_SHOWWINDOW(FALSE), and only ShowWindow sends the matching
-            // TRUE that frameworks tracking visibility through it wait for.
-            let _ = ShowWindow(hwnd_from(h), SW_SHOWNA);
+            // SWP_SHOWWINDOW: the hide above is ShowWindowAsync, which posts
+            // the same ShowWindow request, so only it sends the matching
+            // WM_SHOWWINDOW(TRUE) that frameworks tracking visibility through
+            // it wait for.
+            let _ = ShowWindowAsync(hwnd_from(h), SW_SHOWNA);
         }
     }
     SUPPRESS.store(false, Ordering::Relaxed);
@@ -13298,7 +13335,7 @@ unsafe fn normalize_visibility(mgr: &Manager) {
                 } else {
                     mark_hidden_by_us(h);
                 }
-                let _ = ShowWindow(hwnd_from(h), if show { SW_SHOWNA } else { SW_HIDE });
+                let _ = ShowWindowAsync(hwnd_from(h), if show { SW_SHOWNA } else { SW_HIDE });
             }
         }
     }
@@ -13412,7 +13449,7 @@ unsafe fn toggle_scratchpad(mgr: &mut Manager) {
         SCRATCHPAD_HIDDEN.store(true, Ordering::Relaxed);
         mark_hidden_by_us(h);
         SUPPRESS.store(true, Ordering::Relaxed);
-        let _ = ShowWindow(hwnd_from(h), SW_HIDE);
+        let _ = ShowWindowAsync(hwnd_from(h), SW_HIDE);
         SUPPRESS.store(false, Ordering::Relaxed);
         if let Some((mi, wi)) = mgr.locate(h) {
             let ws = &mut mgr.monitors[mi].workspaces[wi];
@@ -13460,7 +13497,7 @@ unsafe fn toggle_scratchpad(mgr: &mut Manager) {
     SCRATCHPAD_HIDDEN.store(false, Ordering::Relaxed);
     unmark_hidden_by_us(h);
     SUPPRESS.store(true, Ordering::Relaxed);
-    let _ = ShowWindow(hwnd_from(h), SW_SHOWNA);
+    let _ = ShowWindowAsync(hwnd_from(h), SW_SHOWNA);
     SUPPRESS.store(false, Ordering::Relaxed);
     focus_window(h);
     retile_monitor(mgr, to_mi);
@@ -13999,15 +14036,7 @@ unsafe fn raise_floats(mgr: &Manager, mi: usize, a: usize) {
         order.push(f);
     }
     for h in order {
-        let _ = SetWindowPos(
-            hwnd_from(h),
-            HWND_TOP,
-            0,
-            0,
-            0,
-            0,
-            SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE,
-        );
+        raise_nowait(hwnd_from(h));
     }
 }
 
@@ -14141,8 +14170,6 @@ unsafe fn swap_workspace_to(mgr: &mut Manager, kind: u8, index: usize) {
     swap_workspaces(mgr, mi, a, to_mi, to_wi);
 }
 
-/// Drop `h` from whatever workspace holds it and re-tile if that workspace is
-/// on screen. A no-op for an untracked handle.
 /// Drop `h` from whatever workspace holds it and re-tile if that workspace is
 /// on screen. A no-op for an untracked handle.
 unsafe fn untrack_window(mgr: &mut Manager, h: isize) {
@@ -14327,7 +14354,7 @@ unsafe fn process(mgr: &mut Manager, cmd: Cmd) {
                     } else {
                         mark_hidden_by_us(h);
                         SUPPRESS.store(true, Ordering::Relaxed);
-                        let _ = ShowWindow(hwnd, SW_HIDE);
+                        let _ = ShowWindowAsync(hwnd, SW_HIDE);
                         SUPPRESS.store(false, Ordering::Relaxed);
                     }
                 }
@@ -14473,7 +14500,7 @@ unsafe fn process(mgr: &mut Manager, cmd: Cmd) {
                 // restore from the caller's thread would show it on this one.
                 let hwnd = hwnd_from(h);
                 if IsIconic(hwnd).as_bool() {
-                    let _ = ShowWindow(hwnd, SW_RESTORE);
+                    let _ = ShowWindowAsync(hwnd, SW_RESTORE);
                 }
                 touch_window_mru(h);
                 focus_window(h);
@@ -14994,7 +15021,7 @@ unsafe fn process(mgr: &mut Manager, cmd: Cmd) {
                 // window still WS_MAXIMIZE would corrupt its restore state.
                 let direct = unmaximize_to(hwnd, r);
                 if !direct {
-                    let _ = ShowWindow(hwnd, SW_RESTORE);
+                    let _ = ShowWindowAsync(hwnd, SW_RESTORE);
                 }
                 // Exact-position fixup, and the whole move when the placement
                 // fell back. After a direct restore the size already matches,
@@ -15015,7 +15042,7 @@ unsafe fn process(mgr: &mut Manager, cmd: Cmd) {
             if IsZoomed(hwnd_from(h)).as_bool() {
                 let r = window_rect_of(h);
                 if !unmaximize_to(hwnd_from(h), r) {
-                    let _ = ShowWindow(hwnd_from(h), SW_RESTORE);
+                    let _ = ShowWindowAsync(hwnd_from(h), SW_RESTORE);
                 }
             }
         }
@@ -27856,6 +27883,16 @@ mod tests {
             foreign_swp_flags(park, true).0 & !SWP_ASYNCWINDOWPOS.0,
             park.0
         );
+    }
+
+    #[test]
+    fn a_raise_posts_instead_of_waiting() {
+        // Measured: BringWindowToTop (a synchronous SetWindowPos inside) never
+        // returned on a hung window; the posted form does.
+        assert_ne!(RAISE_FLAGS.0 & SWP_ASYNCWINDOWPOS.0, 0);
+        assert_ne!(RAISE_FLAGS.0 & SWP_NOACTIVATE.0, 0);
+        let known = SWP_ASYNCWINDOWPOS.0 | SWP_NOACTIVATE.0 | SWP_NOMOVE.0 | SWP_NOSIZE.0;
+        assert_eq!(RAISE_FLAGS.0 & !known, 0);
     }
 
     #[test]

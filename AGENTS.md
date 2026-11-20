@@ -245,6 +245,14 @@ queues. Keep it that way — do not move work onto the hooks (main thread).
 
 - **No emojis in code.** Monochrome only, UI surfaces only.
 - Win32 calls are `unsafe`; keep `unsafe` blocks tight and comment the invariant.
+- **Never wait on an app's thread.** A window that stopped pumping makes a
+  synchronous ShowWindow, BringWindowToTop, SetWindowPos, SetWindowPlacement or
+  SetWindowLongW wait for ever (measured), and the manager thread carries every
+  hotkey, so one hung app froze the whole WM. On a foreign window: post the
+  show/hide (ShowWindowAsync), the raise and the placement
+  (SWP_ASYNCWINDOWPOS), the park (WPF_ASYNCWINDOWPLACEMENT); where the API has
+  no posted form (SetWindowPlacement, SetWindowLongW) check IsHungAppWindow and
+  skip. Astur's own windows stay synchronous.
 - Hot paths: no allocation, no `Mutex` lock unless an atomic guard says there's
   work. Comment *why* a fast-path exists so nobody "simplifies" it away.
 - Colours are `COLORREF` (`0x00BBGGRR`) internally; config parses `#RRGGBB`.
