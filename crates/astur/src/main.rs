@@ -16384,12 +16384,32 @@ fn exe_hash(exe: &str) -> u32 {
     h
 }
 
+/// Whether a bar icon cache entry is out of date against what its window shows
+/// now. `current` is the icon handle `window_icon_source` reports, None when the
+/// window shows none.
+///
+/// An even `app` is a window's own icon handle, an odd one the exe file hash
+/// (`icon_app`): so a window that still shows no icon of its own keeps the exe
+/// icon it fell back to, and only a window that GAVE UP its icon needs the
+/// fallback re-resolved. The all-zero placeholder means a job already waits for
+/// this key, and re-queueing it would resolve the same icon twice.
+fn icon_needs_refresh(cached: BarIcon, current: Option<u64>) -> bool {
+    if cached == BarIcon::default() {
+        return false;
+    }
+    match current {
+        Some(now) => cached.app != now,
+        None => cached.app & 1 == 0,
+    }
+}
+
 /// Return cached app icon without shell work on manager thread. Cache misses are
 /// queued to the icon worker and temporarily render a placeholder.
 /// `px` is the physical size the caller will draw at, so it is part of the key.
 /// Stamp 0: this runs per window on every bar update, too hot for a metadata
-/// read, so an app updated mid-session (or one that sets its window icon after
-/// the bar first drew it) keeps its old bar icon until restart.
+/// read. A window that swaps its own icon after the first draw (a chat badge,
+/// a document's dirty mark) is caught by the icon worker's refresh sweep
+/// (`refresh_window_icons`), not here.
 unsafe fn bar_app_icon(hwnd: HWND, px: i32) -> BarIcon {
     let h = hwnd.0 as isize;
     let key = window_icon_key(h);
@@ -16408,6 +16428,7 @@ unsafe fn bar_app_icon(hwnd: HWND, px: i32) -> BarIcon {
         hwnd: h,
         exe,
         px,
+        refresh: false,
     });
     BarIcon::default()
 }
@@ -16428,6 +16449,7 @@ fn bar_window_icon(h: isize, exe: &str, px: i32) -> BarIcon {
         hwnd: h,
         exe: exe.to_string(),
         px,
+        refresh: false,
     });
     BarIcon::default()
 }
@@ -22551,12 +22573,15 @@ enum IconJob {
     /// (search generation, index into LauncherState::files, px)
     File(u64, usize, i32),
     /// A window's own icon (its exe file's when the window has none), into
-    /// BAR_ICON_CACHE: cache key, window, exe fallback, physical px.
+    /// BAR_ICON_CACHE: cache key, window, exe fallback, physical px. `refresh`
+    /// = the window changed its icon while the bar already drew the old one:
+    /// the worker replaces the entry instead of filling a placeholder.
     Bar {
         key: String,
         hwnd: isize,
         exe: String,
         px: i32,
+        refresh: bool,
     },
     /// The same for a launcher Window row, into ICON_CACHE.
     Win {
@@ -22632,6 +22657,42 @@ impl<H: Copy + PartialEq> IconCache<H> {
             .filter(|s| s.stamp == stamp && usable(s.icon))
             .min_by_key(|s| (s.px - px).abs())
             .map(|s| s.icon)
+    }
+
+    /// Every (source, px, icon) the cache holds, for the icon worker's refresh
+    /// sweep (it must not hold the lock while it talks to the windows).
+    fn entries(&self) -> Vec<(&str, i32, H)> {
+        self.map
+            .iter()
+            .flat_map(|(src, slots)| slots.iter().map(move |s| (src.as_str(), s.px, s.icon)))
+            .collect()
+    }
+
+    /// Store `icon` over whatever this source holds at this size and stamp,
+    /// handing the old handle back so the caller can retire it. `insert` keeps
+    /// the first resolution on purpose; this is for an icon that changed.
+    fn replace(&mut self, source: &str, px: i32, stamp: u64, icon: H) -> Option<H> {
+        self.clock += 1;
+        let clock = self.clock;
+        let slots = self.map.entry(source.to_string()).or_default();
+        match slots.iter_mut().find(|s| s.px == px && s.stamp == stamp) {
+            Some(s) => {
+                let old = s.icon;
+                s.icon = icon;
+                s.used = clock;
+                Some(old)
+            }
+            None => {
+                slots.push(IconSlot {
+                    px,
+                    stamp,
+                    icon,
+                    used: clock,
+                });
+                self.len += 1;
+                None
+            }
+        }
     }
 
     /// Store `icon`, replacing a `pending` placeholder. If the key already
@@ -23142,7 +23203,7 @@ unsafe fn sys_list_icon(path: &str) -> Option<HICON> {
 /// Worker thread only. `SendMessageTimeoutW` with SMTO_ABORTIFHUNG never
 /// blocks on a hung app, and an unanswered query costs one timeout, once per
 /// window, never per paint.
-unsafe fn window_icon(h: isize) -> Option<(isize, u64)> {
+unsafe fn window_icon_source(h: isize) -> Option<isize> {
     let hwnd = hwnd_from(h);
     if !IsWindow(hwnd).as_bool() {
         return None;
@@ -23159,20 +23220,24 @@ unsafe fn window_icon(h: isize) -> Option<(isize, u64)> {
             Some(&mut res as *mut usize),
         );
         if res > 1 {
-            if let Ok(copy) = CopyIcon(HICON(res as *mut c_void)) {
-                return Some((copy.0 as isize, res as u64));
-            }
+            return Some(res as isize);
         }
     }
     for index in [GCLP_HICON, GCLP_HICONSM] {
         let raw = GetClassLongPtrW(hwnd, index);
         if raw > 1 {
-            if let Ok(copy) = CopyIcon(HICON(raw as *mut c_void)) {
-                return Some((copy.0 as isize, raw as u64));
-            }
+            return Some(raw as isize);
         }
     }
     None
+}
+
+/// `window_icon_source` as an HICON we own, with the source handle as the
+/// identity `icon_app` groups by.
+unsafe fn window_icon(h: isize) -> Option<(isize, u64)> {
+    let src = window_icon_source(h)?;
+    let copy = CopyIcon(HICON(src as *mut c_void)).ok()?;
+    Some((copy.0 as isize, src as u64))
 }
 
 /// A window's bar icon: its own when it shows one, else the exe file's.
@@ -23258,21 +23323,104 @@ unsafe fn shell_item_hicon(path: &str, px: i32) -> Option<HICON> {
     hicon.filter(|h| !h.0.is_null())
 }
 
+/// How often the icon worker re-reads the icons of the windows the bar shows.
+/// A chat badge or a dirty mark is a new HICON with no event to announce it, so
+/// the only way to follow it is to ask again; one `WM_GETICON` per window is
+/// microseconds, and a hung window is skipped rather than asked.
+const ICON_REFRESH_EVERY: std::time::Duration = std::time::Duration::from_millis(2500);
+
+/// The exe of a window for a refresh job, WITHOUT adding it to EXE_CACHE: that
+/// map is the manager's (sync_managed prunes it against the tracked set).
+unsafe fn worker_exe(h: isize) -> String {
+    if let Some(exe) = EXE_CACHE.lock().unwrap().as_ref().and_then(|m| m.get(&h)) {
+        return exe.clone().unwrap_or_default();
+    }
+    window_exe(hwnd_from(h)).unwrap_or_default()
+}
+
+/// Re-read the icons of every window the bar has an icon for, and re-resolve
+/// the ones that changed. Worker thread, every `ICON_REFRESH_EVERY`: a window
+/// that swaps its own HICON (a badge count, a modified marker) sends no event,
+/// so without this the bar would show the icon the window had the first time.
+unsafe fn refresh_window_icons() {
+    let tracked = MANAGED.lock().unwrap().clone();
+    if tracked.is_empty() {
+        return;
+    }
+    let mut scan: Vec<(isize, String, i32, BarIcon)> = Vec::new();
+    {
+        let cache = BAR_ICON_CACHE.lock().unwrap();
+        for (key, px, icon) in cache.entries() {
+            let Some(h) = icon_key_window(key) else {
+                continue;
+            };
+            if tracked.contains(&h) {
+                scan.push((h, key.to_string(), px, icon));
+            }
+        }
+    }
+    if scan.is_empty() {
+        return;
+    }
+    // One query per window, however many sizes the bar asks it for.
+    let mut now: HashMap<isize, Option<u64>> = HashMap::new();
+    for (h, ..) in &scan {
+        if now.contains_key(h) {
+            continue;
+        }
+        // A hung window cannot answer, and its old icon costs nothing: asking
+        // would burn the whole SendMessageTimeout on every sweep.
+        if IsHungAppWindow(hwnd_from(*h)).as_bool() {
+            continue;
+        }
+        now.insert(*h, window_icon_source(*h).map(|src| src as u64));
+    }
+    for (h, key, px, cached) in scan {
+        let Some(current) = now.get(&h) else {
+            continue;
+        };
+        if !icon_needs_refresh(cached, *current) {
+            continue;
+        }
+        queue_icon_job(IconJob::Bar {
+            key,
+            hwnd: h,
+            exe: worker_exe(h),
+            px,
+            refresh: true,
+        });
+    }
+}
+
 /// Icon worker: drains `ICON_QUEUE`, resolves each app's shell icon to an HICON,
 /// stores it on the entry, and repaints. Off the UI thread so a slow icon (UWP
 /// logo, network path) never stalls typing. One apartment for its lifetime.
 fn icon_worker() {
     unsafe {
         let _ = CoInitializeEx(None, COINIT_APARTMENTTHREADED);
+        let mut next_refresh = Instant::now() + ICON_REFRESH_EVERY;
         loop {
             let job = {
                 let mut q = ICON_QUEUE.lock().unwrap();
                 loop {
                     if let Some(job) = q.pop_front() {
-                        break job;
+                        break Some(job);
                     }
-                    q = ICON_CV.wait(q).unwrap();
+                    let wait = next_refresh.saturating_duration_since(Instant::now());
+                    let (guard, timeout) = ICON_CV
+                        .wait_timeout(q, wait.max(std::time::Duration::from_millis(1)))
+                        .unwrap();
+                    q = guard;
+                    if timeout.timed_out() {
+                        break None;
+                    }
                 }
+            };
+            let Some(job) = job else {
+                // Nothing queued: the refresh sweep is due (see ICON_REFRESH_EVERY).
+                refresh_window_icons();
+                next_refresh = Instant::now() + ICON_REFRESH_EVERY;
+                continue;
             };
             if let IconJob::Name(path) = &job {
                 if let Some(name) = file_description(path) {
@@ -23292,13 +23440,38 @@ fn icon_worker() {
             // A bar icon needs no launcher state, and its cache entry is the
             // placeholder bar_app_icon left behind: every queued job resolves,
             // and the placeholder becomes the icon.
-            if let IconJob::Bar { key, hwnd, exe, px } = &job {
+            if let IconJob::Bar {
+                key,
+                hwnd,
+                exe,
+                px,
+                refresh,
+            } = &job
+            {
                 let bar = window_or_exe_icon(*hwnd, exe, *px);
-                let dup =
+                let dup = if *refresh {
+                    // The window changed its icon: swap it in, and keep drawing
+                    // the old handle until the new one lands (a placeholder
+                    // here would blink). The old handle is retired under the
+                    // same rule as bar_icons_retire: gen read under the cache
+                    // lock, so the sweep frees it only once no snapshot can
+                    // hold it.
+                    let gen;
+                    let old = {
+                        let mut cache = BAR_ICON_CACHE.lock().unwrap();
+                        gen = BAR_ICON_GEN.load(Ordering::SeqCst);
+                        cache.replace(key, *px, 0, bar)
+                    };
+                    if let Some(old) = old.filter(|b| b.icon > 1) {
+                        BAR_ICON_RETIRED.lock().unwrap().push((gen, old.icon));
+                    }
+                    None
+                } else {
                     BAR_ICON_CACHE
                         .lock()
                         .unwrap()
-                        .insert(key, *px, 0, bar, BarIcon::default());
+                        .insert(key, *px, 0, bar, BarIcon::default())
+                };
                 if let Some(dup) = dup {
                     release_launcher_icon(dup.icon); // another worker got there first
                 }
@@ -29850,6 +30023,29 @@ mod tests {
     }
 
     // ---- icon cache (batch 14, LAUNCH-13) ----------------------------------------
+
+    #[test]
+    fn an_icon_refreshes_only_when_the_window_shows_another_one() {
+        // The window still shows the icon the bar cached.
+        let own = BarIcon {
+            icon: 7,
+            app: 0x1234,
+        };
+        assert!(!icon_needs_refresh(own, Some(0x1234)));
+        // It swapped it (badge count, dirty mark).
+        assert!(icon_needs_refresh(own, Some(0x5678)));
+        // It cleared it: go back to the exe file's icon.
+        assert!(icon_needs_refresh(own, None));
+        // Already on the exe icon (odd app) with still none of its own.
+        let exe = BarIcon {
+            icon: 8,
+            app: (0x99 << 1) | 1,
+        };
+        assert!(!icon_needs_refresh(exe, None));
+        assert!(icon_needs_refresh(exe, Some(0x1111)));
+        // Placeholder: a job already resolves this key, do not queue a second.
+        assert!(!icon_needs_refresh(BarIcon::default(), Some(0x1111)));
+    }
 
     #[test]
     fn a_bar_icon_key_names_its_window_and_never_a_path() {

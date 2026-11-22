@@ -60,7 +60,9 @@ single Rust `.exe` with no installer and no required config. Core hooks:
   so a row of bars says which screen has the keyboard; app icons come from
   the window itself (`WM_GETICON`, then its class icon, resolved on the icon
   worker) and fall back to the exe file's icon, so each Python script shows
-  the icon it sets).
+  the icon it sets; the icon worker re-reads those icons every 2.5 s, so a
+  window that swaps its own (a chat badge, a dirty mark) updates without a
+  restart).
 - **Workspace-switch animation** — overlay compositor: off/slide/spring/fade.
 - **Window glide** — windows animate to their tile slot on open/move/resize/
   re-tile/scroll via an overlay of live DWM thumbnails (off/glide).
