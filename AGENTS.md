@@ -270,3 +270,65 @@ queues. Keep it that way — do not move work onto the hooks (main thread).
 - **Writing style.** In chat: lead with the judgement, then the why; terse is
   fine. In code, comments, commit messages and docs: normal prose, no filler.
   Flag every real flaw you see instead of smoothing it over.
+
+## Upstream audit log
+
+"Who keeps these docs" says where an audit starts. This log is the other half:
+what upstream's commits turned out to be, so the next session does not
+re-derive a verdict that is already settled. Reopen an item only when its
+premise changed (the line in its entry says which premise), otherwise start at
+the next tip.
+
+**2026-11-22, upstream 2.4.2** — 8 commits on top of merge base `3d9f06f`
+(v2.4.1); this tree was 2.8.2, 79 commits ahead. Two change sets and one doc
+block: PR #37 (`7decc49` plus review commits `685c817`, `6861677`) with nine
+2.4.2 fixes, PR #36 (`4824da2` plus review `b16e97f`) for `#30` Defender false
+positives, and `4288a7c` (README Star History). All reviewed; none adopted.
+
+- **`#35` mask at the main key's release instead of at the trigger.** The mask
+  exists only for a *passed-through* Win or Alt main key; `needs_mask` is false
+  for a reserved key and `mask_main` returns early when `MAIN_VK != 0`. Our main
+  key is RAlt and fully reserved, so no path reaches it. Premise to watch: a
+  `main_key` of `win` or a passed-through Alt.
+- **`#32` keep an app-fullscreen or user-maximised tile as it is across a
+  switch.** Our maximise is fill mode (`FILLED` / `FilledWs`: remember the rect
+  and the floating state, keep the layout), never Win32 `IsZoomed`, so the
+  user-maximised half cannot happen. The app-fullscreen half (F11, a video, a
+  borderless game) would still apply to this tree, and was judged not wanted:
+  we have our own maximise key and do not recommend Win's. Premise to watch:
+  adopting Win's maximise.
+- **Focus skips minimised windows.** Already ours, commit `195e57c`: `focusable`
+  = not the toggled-away scratchpad and not `IsIconic`, used by `focus_target`,
+  `focus_step` and `active_window_rects`.
+- **`#33` per-monitor layouts follow screen position after a display change.**
+  Only reachable when monitors are hot-plugged, undocked or the machine wakes
+  with a different screen set. Premise to watch: multi-monitor hot-plug users.
+- **`taskkill` without `/F` leaves Astur running headless.** Real in this tree
+  too — the marker is the only `WM_CLOSE` handler and it is hidden, so taskkill
+  posts to the visible bars, `DefWindowProc` destroys them, and an open
+  launcher's capture flag then eats every key. Judged not worth fixing: ending
+  Astur gently is not something we do, and tray Quit / menu Exit cover it.
+- **A key held while the launcher or power menu opens stays stuck down.** Real
+  here as well: both capture branches eat every non-modifier up without asking
+  whether the system still holds the key. Judged not worth it — it takes a
+  non-modifier held while the popup is opened, which our hotkeys do not do.
+- **Scratchpad `#22`** — a toggled-away scratchpad counted as an occupied
+  workspace (bar pill, YASB), re-show before clearing state on reload, un-park
+  on return, Notepad in the settings app list. Cosmetic in our use.
+- **Administrator mode** — launches through Explorer, custom bar widget off
+  while elevated, IPC accepting elevated clients only. Not adopted; our own
+  elevation checks (`process_elevated`, `foreground_elevated`, the owner-only
+  pipe descriptor) already cover the part we care about.
+- **`#30` Defender false positives** (`Trojan:Win32/Bearfoos.A!ml` on an
+  unsigned exe) — not adopted, but the premise to watch is concrete: this tree
+  still spawns a hidden `cmd /C start` from `launch_now`, `astur.rc` still
+  carries only the icon (no `VERSIONINFO`, no manifest), and the clipboard
+  listener is registered unconditionally. If a Defender verdict ever hits this
+  build, those three are the first to change. Note that half of that patch has
+  no target here: there is no `astur-settings` crate (the editor is
+  `tools/astur_settings.py`) and no `packaging/` installer.
+- **`4288a7c`** — README Star History block, docs only; our README is our own.
+
+The diffs were read as combined patches kept in `.git/upstream-review/`
+(untracked by design, gone with a fresh clone); regenerate them from
+`git format-patch 3d9f06f..upstream/main` rather than trusting that folder.
