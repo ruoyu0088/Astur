@@ -1174,37 +1174,216 @@ fn last_sent_forget(h: isize) {
     }
 }
 
-/// The monitor a window was last placed on by Astur, if any.
-fn tile_own(h: isize) -> Option<RECT> {
-    TILE_OWN
-        .lock()
-        .unwrap()
-        .as_ref()
-        .and_then(|m| m.get(&h).copied())
+/// Snapshot of monitor geometry and active-workspace managed windows for
+/// overhang z-order sinking. Published from `Manager` on startup, before
+/// placement passes, and after every command (`sync_managed`), so moved,
+/// floated, hidden, or non-scrolling windows never keep stale monitor ownership.
+#[derive(Default, Clone)]
+struct SinkCtx {
+    monitors: Vec<RECT>,
+    /// Active-workspace managed windows: (hwnd, monitor index, is_scrolling_tile).
+    /// Non-scrolling tiles and floating windows stay here with `scrolling = false`
+    /// so an overhanging scrolling tile can be inserted directly behind them.
+    active: Vec<(isize, usize, bool)>,
 }
 
-/// Does `r` reach past `own` (the monitor the window belongs to)?
-fn reaches_past(r: RECT, own: RECT) -> bool {
-    r.left < own.left || r.top < own.top || r.right > own.right || r.bottom > own.bottom
+static SINK_CTX: Mutex<SinkCtx> = Mutex::new(SinkCtx {
+    monitors: Vec::new(),
+    active: Vec::new(),
+});
+
+/// Strict rect overlap (sharing only an edge does not intersect).
+fn rects_strictly_overlap(a: RECT, b: RECT) -> bool {
+    a.left.max(b.left) < a.right.min(b.right) && a.top.max(b.top) < a.bottom.min(b.bottom)
 }
 
-/// Put window `h` at the bottom of the z-order if `r` reaches past its own
-/// monitor. Z-order only: nothing is activated or focused, and a foreground
-/// window is left alone.
-unsafe fn sink_now(h: isize, r: RECT) {
-    let Some(own) = tile_own(h) else {
-        return;
+/// Does visible frame `frame` strictly enter any monitor other than `own_mon`?
+fn bleeds_onto_other_monitor(frame: RECT, own_mon: usize, monitors: &[RECT]) -> bool {
+    monitors
+        .iter()
+        .enumerate()
+        .any(|(mj, &mr)| mj != own_mon && rects_strictly_overlap(frame, mr))
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct SinkWin {
+    hwnd: isize,
+    mon: usize,
+    scrolling: bool,
+    frame: RECT,
+    /// Live z-order rank (0 = topmost in normal band; usize::MAX = not found).
+    z: usize,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum SinkAfter {
+    /// Insert directly behind this normal-band window on the bled-into monitor.
+    Window(isize),
+    /// Fallback when the bled-into monitor has no managed normal-band window.
+    Bottom,
+}
+
+/// Compute which overhanging scrolling tiles need a z-order move and where each
+/// one goes (pure, no Win32).
+///
+/// Only scrolling tiles (`scrolling == true`) that visibly intersect another
+/// monitor are ever sunk; non-scrolling tiles and floats are never sunk, and
+/// the foreground window is left alone. When a candidate is already below every
+/// native window of the monitor(s) it bleeds onto, nothing is emitted — avoiding
+/// redundant async `SetWindowPos` calls and z-order races.
+fn plan_overhang_sinks(
+    monitors: &[RECT],
+    wins: &[SinkWin],
+    foreground: isize,
+    allow_bottom_fallback: bool,
+) -> Vec<(isize, SinkAfter)> {
+    if monitors.len() < 2 {
+        return Vec::new();
+    }
+    let mut moves: Vec<(usize, isize, SinkAfter)> = Vec::new();
+    for w in wins {
+        if !w.scrolling || w.hwnd == foreground || w.z == usize::MAX {
+            continue;
+        }
+        let mut any_bleed = false;
+        let mut lowest_target: Option<(usize, isize)> = None;
+        for (mj, &mr) in monitors.iter().enumerate() {
+            if mj == w.mon || !rects_strictly_overlap(w.frame, mr) {
+                continue;
+            }
+            any_bleed = true;
+            for v in wins {
+                if v.hwnd == w.hwnd || v.mon != mj || v.z == usize::MAX {
+                    continue;
+                }
+                // Break mutual-bleed cycles (M1 -> M2 and M2 -> M1): a global
+                // z-order cannot place two windows behind each other at once.
+                let mutual = v.scrolling
+                    && v.hwnd != foreground
+                    && monitors
+                        .get(w.mon)
+                        .is_some_and(|&own_r| rects_strictly_overlap(v.frame, own_r));
+                if mutual {
+                    continue;
+                }
+                if lowest_target.is_none_or(|(best_z, _)| v.z > best_z) {
+                    lowest_target = Some((v.z, v.hwnd));
+                }
+            }
+        }
+        if !any_bleed {
+            continue;
+        }
+        match lowest_target {
+            Some((tz, th)) => {
+                if w.z < tz {
+                    moves.push((tz, w.hwnd, SinkAfter::Window(th)));
+                }
+            }
+            None if allow_bottom_fallback => {
+                moves.push((usize::MAX, w.hwnd, SinkAfter::Bottom));
+            }
+            None => {}
+        }
+    }
+    // Descending target z so a chain (M1 -> M2 -> M3) settles in one pass.
+    moves.sort_by_key(|a| std::cmp::Reverse(a.0));
+    moves.into_iter().map(|(_, h, after)| (h, after)).collect()
+}
+
+/// Visible screen rect (`DWMWA_EXTENDED_FRAME_BOUNDS`), falling back to
+/// `GetWindowRect` if DWM cannot report it. Using the visible frame keeps the
+/// invisible DWM resize borders added by `adjust_for_border` from looking like
+/// an overhang onto a neighbour monitor.
+unsafe fn visible_rect(hwnd: HWND) -> Option<RECT> {
+    if let Some(fr) = frame_bounds(hwnd) {
+        return Some(fr);
+    }
+    let mut r = RECT::default();
+    GetWindowRect(hwnd, &mut r).ok().map(|_| r)
+}
+
+unsafe fn is_topmost(hwnd: HWND) -> bool {
+    GetWindowLongPtrW(hwnd, GWL_EXSTYLE) & WS_EX_TOPMOST.0 as isize != 0
+}
+
+/// Each handle's z-order rank (0 = topmost; usize::MAX = not found), from one
+/// bounded walk of top-level windows. Reads kernel lists only; never waits on
+/// an app's thread.
+unsafe fn z_ranks_for(hwnds: &[isize]) -> Vec<usize> {
+    let mut rank = vec![usize::MAX; hwnds.len()];
+    let mut left = hwnds.len();
+    let mut w = GetTopWindow(None).ok();
+    let mut z = 0;
+    while let Some(h) = w.filter(|_| left > 0 && z < 4096) {
+        let raw = h.0 as isize;
+        if let Some(i) = hwnds.iter().position(|&x| x == raw) {
+            if rank[i] == usize::MAX {
+                rank[i] = z;
+                left -= 1;
+            }
+        }
+        z += 1;
+        w = GetWindow(h, GW_HWNDNEXT).ok();
+    }
+    rank
+}
+
+/// Build the live `SinkWin` list for `ctx`, skipping the z-order walk when no
+/// scrolling tile visibly crosses onto another monitor.
+unsafe fn collect_sink_wins(ctx: &SinkCtx, override_for: Option<(isize, RECT)>) -> Vec<SinkWin> {
+    if ctx.monitors.len() < 2 || ctx.active.is_empty() {
+        return Vec::new();
+    }
+    let fg = GetForegroundWindow().0 as isize;
+    let mut wins = Vec::with_capacity(ctx.active.len());
+    let mut any_bleed = false;
+    for &(h, mon, scrolling) in &ctx.active {
+        let hwnd = hwnd_from(h);
+        if !IsWindow(hwnd).as_bool()
+            || !IsWindowVisible(hwnd).as_bool()
+            || IsIconic(hwnd).as_bool()
+            || is_topmost(hwnd)
+        {
+            continue;
+        }
+        let frame = match override_for {
+            Some((oh, r)) if oh == h => r,
+            _ => match visible_rect(hwnd) {
+                Some(r) => r,
+                None => continue,
+            },
+        };
+        if scrolling && h != fg && bleeds_onto_other_monitor(frame, mon, &ctx.monitors) {
+            any_bleed = true;
+        }
+        wins.push(SinkWin {
+            hwnd: h,
+            mon,
+            scrolling,
+            frame,
+            z: usize::MAX,
+        });
+    }
+    if !any_bleed {
+        return Vec::new();
+    }
+    let hwnds: Vec<isize> = wins.iter().map(|w| w.hwnd).collect();
+    let ranks = z_ranks_for(&hwnds);
+    for (w, z) in wins.iter_mut().zip(ranks) {
+        w.z = z;
+    }
+    wins
+}
+
+unsafe fn apply_sink_move(h: isize, after: SinkAfter) {
+    let insert_after = match after {
+        SinkAfter::Window(target) => hwnd_from(target),
+        SinkAfter::Bottom => HWND_BOTTOM,
     };
-    if !reaches_past(r, own) {
-        return;
-    }
-    let hwnd = hwnd_from(h);
-    if IsIconic(hwnd).as_bool() || GetForegroundWindow() == hwnd {
-        return;
-    }
     let _ = SetWindowPos(
-        hwnd,
-        HWND_BOTTOM,
+        hwnd_from(h),
+        insert_after,
         0,
         0,
         0,
@@ -1216,6 +1395,45 @@ unsafe fn sink_now(h: isize, r: RECT) {
     );
 }
 
+/// Sink one scrolling tile `h` behind the windows of any neighbour monitor its
+/// visible frame enters. `override_frame` lets a pre-move check use the visible
+/// target slot before `SetWindowPos` lands. Returns true when `h` visibly bleeds
+/// onto another monitor (so the caller can schedule post-resize resink checks).
+unsafe fn sink_window_now(h: isize, override_frame: Option<RECT>) -> bool {
+    let ctx = SINK_CTX.lock().unwrap().clone();
+    let Some(&(_, mon, scrolling)) = ctx.active.iter().find(|&&(ah, _, _)| ah == h) else {
+        return false;
+    };
+    if !scrolling || ctx.monitors.len() < 2 {
+        return false;
+    }
+    let hwnd = hwnd_from(h);
+    if !IsWindow(hwnd).as_bool()
+        || !IsWindowVisible(hwnd).as_bool()
+        || IsIconic(hwnd).as_bool()
+        || is_topmost(hwnd)
+    {
+        return false;
+    }
+    let Some(frame) = override_frame.or_else(|| visible_rect(hwnd)) else {
+        return false;
+    };
+    if !bleeds_onto_other_monitor(frame, mon, &ctx.monitors) {
+        return false;
+    }
+    let fg = GetForegroundWindow().0 as isize;
+    if fg == h {
+        return true;
+    }
+    let wins = collect_sink_wins(&ctx, Some((h, frame)));
+    for (mh, after) in plan_overhang_sinks(&ctx.monitors, &wins, fg, true) {
+        if mh == h {
+            apply_sink_move(mh, after);
+        }
+    }
+    true
+}
+
 /// Windows that need their z-order looked at again shortly, with the instant
 /// they are due and the stage they are at. A resize reaches the app's message
 /// loop after our call, and some programs (Chromium shells especially) raise
@@ -1224,10 +1442,10 @@ static RESINK: Mutex<Option<HashMap<isize, (Instant, u8)>>> = Mutex::new(None);
 static RESINK_LIVE: AtomicBool = AtomicBool::new(false);
 
 /// Z-order checks after a move, in ms after the previous one: the first is
-/// almost immediate (the window is already at the bottom, so it only matters
-/// when the app raised it at once), the second lands after the app has handled
-/// its resize and is the one that reliably sticks. Both are far earlier than
-/// the once-a-second sweep.
+/// almost immediate (the window is already tucked behind the neighbour, so it
+/// only matters when the app raised it at once), the second lands after the app
+/// has handled its resize and is the one that reliably sticks. Both are far
+/// earlier than the once-a-second sweep.
 const RESINK_STAGES: [u64; 2] = [1, 100];
 
 /// Queue `h` for the z-order checks in RESINK_STAGES, starting the checker
@@ -1253,6 +1471,7 @@ fn schedule_resink(h: isize) {
         let due: Vec<(isize, u8)> = {
             let mut guard = RESINK.lock().unwrap();
             let Some(map) = guard.as_mut() else {
+                RESINK_LIVE.store(false, Ordering::SeqCst);
                 break;
             };
             let now = Instant::now();
@@ -1267,12 +1486,9 @@ fn schedule_resink(h: isize) {
             due
         };
         for (h, stage) in due {
-            let mut got = RECT::default();
-            if unsafe { GetWindowRect(hwnd_from(h), &mut got) }.is_ok() {
-                unsafe { sink_now(h, got) };
-            }
+            let still_bleeds = unsafe { sink_window_now(h, None) };
             let next = stage as usize + 1;
-            if next < RESINK_STAGES.len() {
+            if still_bleeds && next < RESINK_STAGES.len() {
                 RESINK
                     .lock()
                     .unwrap()
@@ -1284,21 +1500,25 @@ fn schedule_resink(h: isize) {
                     ));
             }
         }
-        if RESINK.lock().unwrap().is_none() {
+        let empty = RESINK
+            .lock()
+            .unwrap()
+            .as_ref()
+            .is_none_or(HashMap::is_empty);
+        if empty {
             RESINK_LIVE.store(false, Ordering::SeqCst);
-            break;
+            // Re-check after clearing RESINK_LIVE so an insert racing our exit
+            // cannot be stranded without a running checker thread.
+            let still_empty = RESINK
+                .lock()
+                .unwrap()
+                .as_ref()
+                .is_none_or(HashMap::is_empty);
+            if still_empty || RESINK_LIVE.swap(true, Ordering::SeqCst) {
+                break;
+            }
         }
     });
-}
-
-/// A window whose next rect `r` reaches past its own monitor goes to the bottom
-/// of the z-order: at once (so the first crossing frame is covered), and again
-/// a breath later (because the app's own resize handling can raise it back).
-unsafe fn sink_when_spanning(h: isize, r: RECT) {
-    sink_now(h, r);
-    if tile_own(h).is_some_and(|own| reaches_past(r, own)) {
-        schedule_resink(h);
-    }
 }
 
 /// Move a window with no activation/zorder side effects (instant tile placement
@@ -1316,7 +1536,6 @@ unsafe fn set_pos_raw(h: isize, r: RECT) {
     let live = GetWindowRect(hwnd_from(h), &mut live)
         .is_ok()
         .then_some(live);
-    sink_when_spanning(h, r);
     {
         let mut sent = LAST_SENT.lock().unwrap();
         let sent = sent.get_or_insert_with(HashMap::new);
@@ -1341,18 +1560,6 @@ unsafe fn set_pos_raw(h: isize, r: RECT) {
             ASYNC_WINDOW_POS.load(Ordering::Relaxed),
         ),
     );
-    // Again AFTER the move, by the rect the window really has now: a resize can
-    // raise the window again, and a program that refuses the size can end up
-    // wider than the slot we asked for. The sink before the move is not the
-    // last word. One extra call, only for a window that reaches past its
-    // monitor.
-    let mut got = RECT::default();
-    let after = if GetWindowRect(hwnd_from(h), &mut got).is_ok() {
-        got
-    } else {
-        r
-    };
-    sink_when_spanning(h, after);
 }
 
 // Set by the keyboard hook while the reserved main key (MAIN_VK: Left Alt or
@@ -7940,96 +8147,52 @@ fn is_warm(h: isize) -> bool {
         .is_some_and(|s| s.contains(&h))
 }
 
-/// Tiles a placement sent onto a neighbour monitor, with the rect they were
-/// sent to. A tile is sunk once per rect, not once per frame.
-static SUNK: Mutex<Option<HashMap<isize, RECT>>> = Mutex::new(None);
+/// Interval between idle overhang z-order checks on multi-monitor scrolling
+/// setups. Catches a window that raised itself or resized onto a neighbour
+/// monitor after placement, without running on the hook/bar thread.
+const SINK_SWEEP_INTERVAL: std::time::Duration = std::time::Duration::from_secs(1);
 
-/// The monitor each placed tile belongs to, kept so the sweep below can tell
-/// when a tile has walked off its own monitor without being placed again
-/// (floating windows, programs that move themselves).
-static TILE_OWN: Mutex<Option<HashMap<isize, RECT>>> = Mutex::new(None);
-
-/// A tile whose rect crosses onto a neighbour monitor is pushed to the bottom
-/// of the z-order, so that monitor's windows cover its overhang instead of
-/// being painted over by it. Z-order only: nothing is activated, nothing is
-/// focused, and the tile keeps its slot.
-///
-/// It reads the window's real rect, not the slot `to`: a program that refuses
-/// the size Astur gives it (or restores its own) can sit off its slot, and the
-/// slot is then no guide to whether the window actually reaches the neighbour.
-unsafe fn sink_overhang(h: isize, to: RECT, map: &PlaceMap) {
-    let hwnd = hwnd_from(h);
-    let mut got = RECT::default();
-    let rect = if GetWindowRect(hwnd, &mut got).is_ok() {
-        got
-    } else {
-        to
-    };
-    let crosses = map.others.iter().any(|&o| {
-        rect.left < o.right && o.left < rect.right && rect.top < o.bottom && o.top < rect.bottom
-    });
-    let mut guard = SUNK.lock().unwrap();
-    let sunk = guard.get_or_insert_with(HashMap::new);
-    if !crosses {
-        sunk.remove(&h);
-        return;
-    }
-    if IsIconic(hwnd).as_bool() || GetForegroundWindow() == hwnd {
-        return;
-    }
-    let _ = SetWindowPos(
-        hwnd,
-        HWND_BOTTOM,
-        0,
-        0,
-        0,
-        0,
-        foreign_swp_flags(
-            SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_NOOWNERZORDER,
-            ASYNC_WINDOW_POS.load(Ordering::Relaxed),
-        ),
-    );
-    sunk.insert(h, rect);
+fn has_scrolling_multi_mon(mgr: &Manager) -> bool {
+    mgr.tiling
+        && mgr.monitors.len() >= 2
+        && mgr
+            .monitors
+            .iter()
+            .enumerate()
+            .any(|(mi, m)| mgr.is_scrolling(mi, m.active))
 }
 
-/// Sink every placed tile that now reaches past its own monitor, whether or not
-/// it was placed there. Called after a retile and once a second, so a window
-/// that a program moved onto its neighbour ends up under that monitor's windows
-/// too. Only the z-order changes; nothing is activated or focused.
-unsafe fn sink_sweep() {
-    let tiles: Vec<(isize, RECT)> = match TILE_OWN.lock().unwrap().as_ref() {
-        Some(m) => m.iter().map(|(&h, &own)| (h, own)).collect(),
-        None => return,
-    };
-    for (h, own) in tiles {
-        let hwnd = hwnd_from(h);
-        if !IsWindow(hwnd).as_bool() || !IsWindowVisible(hwnd).as_bool() || IsIconic(hwnd).as_bool()
-        {
+fn build_sink_ctx(mgr: &Manager) -> SinkCtx {
+    let monitors: Vec<RECT> = mgr.monitors.iter().map(|m| m.full).collect();
+    let mut active = Vec::new();
+    for (mi, m) in mgr.monitors.iter().enumerate() {
+        let Some(ws) = m.workspaces.get(m.active) else {
             continue;
+        };
+        let scrolling = mgr.tiling && mgr.is_scrolling(mi, m.active);
+        for &h in &ws.windows {
+            active.push((h, mi, scrolling && !ws.floating.contains(&h)));
         }
-        let mut got = RECT::default();
-        if GetWindowRect(hwnd, &mut got).is_err() {
-            continue;
-        }
-        let inside = got.left >= own.left
-            && got.top >= own.top
-            && got.right <= own.right
-            && got.bottom <= own.bottom;
-        if inside || GetForegroundWindow() == hwnd {
-            continue;
-        }
-        let _ = SetWindowPos(
-            hwnd,
-            HWND_BOTTOM,
-            0,
-            0,
-            0,
-            0,
-            foreign_swp_flags(
-                SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_NOOWNERZORDER,
-                ASYNC_WINDOW_POS.load(Ordering::Relaxed),
-            ),
-        );
+    }
+    SinkCtx { monitors, active }
+}
+
+fn sync_sink_ctx(mgr: &Manager) {
+    *SINK_CTX.lock().unwrap() = build_sink_ctx(mgr);
+}
+
+/// Check every active scrolling tile that visibly enters a neighbour monitor
+/// and insert it behind that monitor's lowest native window if it is currently
+/// above it. No-op when already behind, so nothing thrashes or races.
+unsafe fn sink_sweep_mgr(mgr: &Manager, allow_bottom_fallback: bool) {
+    if !has_scrolling_multi_mon(mgr) {
+        return;
+    }
+    let ctx = build_sink_ctx(mgr);
+    let fg = GetForegroundWindow().0 as isize;
+    let wins = collect_sink_wins(&ctx, None);
+    for (h, after) in plan_overhang_sinks(&ctx.monitors, &wins, fg, allow_bottom_fallback) {
+        apply_sink_move(h, after);
     }
 }
 
@@ -8038,22 +8201,32 @@ unsafe fn sink_sweep() {
 /// one placement step of every path that places tiles. Returns the rect sent.
 /// A visible tile it puts on screen becomes warm (WARM).
 unsafe fn place_slot(h: isize, raw: RECT, map: &PlaceMap) -> RECT {
+    let parks = map.parks(h, raw);
     let to = map.target(h, raw);
     LAST_SLOT
         .lock()
         .unwrap()
         .get_or_insert_with(HashMap::new)
         .insert(h, raw);
-    if let Some(own) = map.own {
-        TILE_OWN
-            .lock()
-            .unwrap()
-            .get_or_insert_with(HashMap::new)
-            .insert(h, own);
+    let slot_bleeds =
+        map.own.is_some() && !parks && map.others.iter().any(|&o| rects_strictly_overlap(raw, o));
+    // Sink BEFORE the move when the visible slot crosses onto a neighbour
+    // monitor, so the first crossing frame is already behind that monitor's
+    // windows.
+    if slot_bleeds {
+        sink_window_now(h, Some(raw));
     }
     set_pos_raw(h, to);
-    sink_overhang(h, to, map);
-    if !map.parks(h, raw) && IsWindowVisible(hwnd_from(h)).as_bool() {
+    // Check again AFTER the move (a resize can raise the window, or a program
+    // refusing its slot size can end up bleeding onto a neighbour) and queue
+    // the short post-resize resink checks when it bleeds.
+    if map.own.is_some() && !parks {
+        let live_bleeds = sink_window_now(h, None);
+        if slot_bleeds || live_bleeds {
+            schedule_resink(h);
+        }
+    }
+    if !parks && IsWindowVisible(hwnd_from(h)).as_bool() {
         warm_note(h);
     }
     to
@@ -8330,10 +8503,15 @@ unsafe fn retile_monitor_opts(mgr: &Manager, mi: usize, force_instant: bool) {
     if reaim || wp_ok {
         motion_start(mgr, mi, &rects, &map, generation, reaim, &mut probe);
     }
+    // Keep SINK_CTX current before placing, so a brand-new or just-moved tile
+    // gets its pre-move overhang check against the real active monitor set.
+    if has_scrolling_multi_mon(mgr) {
+        sync_sink_ctx(mgr);
+    }
     // Under the overlay just raised or re-aimed, or the instant path
     // (animations off, busy elsewhere, no crop, nothing moved).
     place_tiles(rects, &map, &mut probe);
-    sink_sweep();
+    sink_sweep_mgr(mgr, true);
     // The motion may reveal now (its loop holds a finished segment for this).
     GLIDE_PLACED.store(generation, Ordering::Release);
 }
@@ -8733,6 +8911,9 @@ unsafe fn place_active_instant(mgr: &Manager, mi: usize) {
     // Synchronous placement only: a posted one has not landed yet when read
     // back here, so every window would be reported.
     let check = log_on(LOG_DEBUG) && !ASYNC_WINDOW_POS.load(Ordering::Relaxed);
+    if has_scrolling_multi_mon(mgr) {
+        sync_sink_ctx(mgr);
+    }
     SUPPRESS.store(true, Ordering::Relaxed);
     for (h, target) in rects {
         let hwnd = hwnd_from(h);
@@ -8756,6 +8937,7 @@ unsafe fn place_active_instant(mgr: &Manager, mi: usize) {
         }
     }
     SUPPRESS.store(false, Ordering::Relaxed);
+    sink_sweep_mgr(mgr, true);
 }
 
 /// Must Cmd::MoveToWs retile the source workspace itself? Only when the
@@ -14178,11 +14360,6 @@ unsafe fn untrack_window(mgr: &mut Manager, h: isize) {
         SCRATCHPAD_HIDDEN.store(false, Ordering::Relaxed);
     }
     unmark_hidden_by_us(h); // untracked -> marker would only go stale
-    TILE_OWN
-        .lock()
-        .unwrap()
-        .get_or_insert_with(HashMap::new)
-        .remove(&h);
     if let Some(map) = FILLED.lock().unwrap().as_mut() {
         for fw in map.values_mut() {
             fw.wins.retain(|w| w.h != h);
@@ -19455,9 +19632,6 @@ unsafe extern "system" fn bar_wndproc(h: HWND, msg: u32, w: WPARAM, l: LPARAM) -
                 // bar every second to draw the identical pixels — and
                 // `paint_bar` deep-clones the whole BarData each time (review
                 // P-04). Skip when nothing it shows has changed.
-                // A tile a program walked onto its neighbour monitor goes
-                // under that monitor's windows, even when nothing re-placed it.
-                sink_sweep();
                 if !bar_tick_changed(h) {
                     return LRESULT(0);
                 }
@@ -20766,6 +20940,7 @@ fn manager_loop(cfg: Config) {
     let mut drag_generation = 0;
     let mut next_drag = Instant::now();
     let mut recheck = BorderRecheck::default();
+    let mut next_sink = Instant::now() + SINK_SWEEP_INTERVAL;
     loop {
         let (cmd, depth, burst) = {
             let mut q = CMDQ.lock().unwrap();
@@ -20809,6 +20984,7 @@ fn manager_loop(cfg: Config) {
                     next_drag = Instant::now();
                     // A deferred minimize needs a wakeup, or it would only fire
                     // when the next command arrived.
+                    let now = Instant::now();
                     let pending_wait = {
                         let p = PENDING_MINIMIZE.lock().unwrap();
                         p.as_ref().map(|pm| {
@@ -20816,21 +20992,37 @@ fn manager_loop(cfg: Config) {
                             std::time::Duration::from_millis(due.saturating_sub(now_ms()).max(1))
                         })
                     };
-                    let recheck_wait = recheck.wait(Instant::now());
-                    let wait = match (pending_wait, recheck_wait) {
-                        (Some(pw), Some(rw)) => Some(pw.min(rw)),
-                        (Some(pw), None) => Some(pw),
-                        (None, rw) => rw,
-                    };
+                    let recheck_wait = recheck.wait(now);
+                    let sink_wait = has_scrolling_multi_mon(&mgr)
+                        .then(|| next_sink.saturating_duration_since(now));
+                    let wait = [pending_wait, recheck_wait, sink_wait]
+                        .into_iter()
+                        .flatten()
+                        .min();
                     match wait {
                         None => q = CMDCV.wait(q).unwrap(),
                         Some(w) if !w.is_zero() => q = CMDCV.wait_timeout(q, w).unwrap().0,
                         Some(_) => {
-                            // A border pass is due and no command to overtake
-                            // it. Drop CMDQ before Win32, as for a drag frame.
+                            // A due idle pass and no command to overtake it.
+                            // Drop CMDQ before Win32, as for a drag frame.
+                            let do_recheck = recheck_wait.is_some_and(|w| w.is_zero());
+                            let do_sink = sink_wait.is_some_and(|w| w.is_zero());
                             drop(q);
-                            unsafe { reassert_borders(&mgr, &recheck.windows) };
-                            recheck.ran();
+                            if do_recheck {
+                                unsafe { reassert_borders(&mgr, &recheck.windows) };
+                                recheck.ran();
+                            }
+                            if do_sink {
+                                next_sink = Instant::now() + SINK_SWEEP_INTERVAL;
+                                MGR_BUSY.store(true, Ordering::SeqCst);
+                                if !EXITING.load(Ordering::SeqCst)
+                                    && !SLIDE_BUSY.load(Ordering::Acquire)
+                                    && !GLIDE_BUSY.load(Ordering::Acquire)
+                                {
+                                    unsafe { sink_sweep_mgr(&mgr, false) };
+                                }
+                                MGR_BUSY.store(false, Ordering::SeqCst);
+                            }
                             q = CMDQ.lock().unwrap();
                         }
                     }
@@ -20941,6 +21133,14 @@ fn manager_loop(cfg: Config) {
             tab_bars_publish(&mgr);
         }
         sync_managed(&mgr);
+        // When focus leaves a bleeding scrolling tile (e.g. clicking a window
+        // on monitor 3 while monitor 1's tile hangs onto monitor 2), tuck that
+        // overhang behind monitor 2's windows right away instead of waiting for
+        // the next idle sweep.
+        if has_scrolling_multi_mon(&mgr) && (mgr.focused().2 != focus_before.2 || foreground) {
+            unsafe { sink_sweep_mgr(&mgr, false) };
+            next_sink = Instant::now() + SINK_SWEEP_INTERVAL;
+        }
         if let (Some((t0, name, swp0, skip0)), Some(t1)) = (probe, t1) {
             log_debug!(
                 "cmd {name} process={}us tail={}us swp={} swp_skipped={} queued={depth}",
@@ -20987,6 +21187,7 @@ fn strip_after_command(mgr: &mut Manager) {
 /// state. One walk feeds both, so the index costs nothing extra.
 fn sync_managed(mgr: &Manager) {
     yasb::publish(mgr);
+    sync_sink_ctx(mgr);
     let mut all = MANAGED.lock().unwrap();
     all.clear();
     let mut map: HashMap<isize, (usize, usize)> = HashMap::new();
@@ -32760,5 +32961,174 @@ mod tests {
         assert_eq!(placement_show_cmd(false, false, true), na);
         assert_eq!(placement_show_cmd(true, true, true), min);
         assert_eq!(placement_show_cmd(true, false, true), na);
+    }
+
+    #[test]
+    fn overhang_sink_tucks_only_bleeding_scrolling_tiles_and_is_idempotent() {
+        let rc = |l, t, r, b| RECT {
+            left: l,
+            top: t,
+            right: r,
+            bottom: b,
+        };
+        let mon1 = rc(0, 0, 1920, 1080);
+        let mon2 = rc(1920, 0, 3840, 1080);
+        let mon3 = rc(3840, 0, 5760, 1080);
+        let mons = [mon1, mon2, mon3];
+
+        // Monitor 1 scrolling tile W1 hangs onto Monitor 2; Monitor 2 is NOT
+        // scrolling (W2 sits cleanly inside mon2); focus is W3 on Monitor 3.
+        let w1 = SinkWin {
+            hwnd: 1,
+            mon: 0,
+            scrolling: true,
+            frame: rc(1200, 32, 2200, 1072),
+            z: 1, // above W2
+        };
+        let w2 = SinkWin {
+            hwnd: 2,
+            mon: 1,
+            scrolling: false,
+            frame: rc(1920, 32, 3840, 1080),
+            z: 2,
+        };
+        let w3 = SinkWin {
+            hwnd: 3,
+            mon: 2,
+            scrolling: false,
+            frame: rc(3840, 32, 5760, 1080),
+            z: 0,
+        };
+        assert_eq!(
+            plan_overhang_sinks(&mons, &[w1, w2, w3], 3, false),
+            vec![(1, SinkAfter::Window(2))],
+            "W1 goes directly behind W2; W2 is never sunk"
+        );
+
+        // Once W1 is behind W2, the next sweep emits nothing (no async race).
+        let w1_after = SinkWin { z: 3, ..w1 };
+        assert!(plan_overhang_sinks(&mons, &[w1_after, w2, w3], 3, false).is_empty());
+
+        // While W1 is the foreground window, leave it on top.
+        assert!(plan_overhang_sinks(&mons, &[w1, w2, w3], 1, false).is_empty());
+
+        // A scrolling tile extending into empty virtual space (left of mon1,
+        // no monitor there) does not bleed onto any neighbour and is never sunk.
+        let outer_peek = SinkWin {
+            hwnd: 4,
+            mon: 0,
+            scrolling: true,
+            frame: rc(-300, 32, 600, 1072),
+            z: 1,
+        };
+        assert!(plan_overhang_sinks(&mons, &[outer_peek, w2, w3], 3, false).is_empty());
+
+        // Even if Monitor 2 IS scrolling, a tile whose visible frame stays
+        // inside Monitor 2 is never sunk.
+        let w2_scroll_inside = SinkWin {
+            scrolling: true,
+            ..w2
+        };
+        assert_eq!(
+            plan_overhang_sinks(&mons, &[w1, w2_scroll_inside, w3], 3, false),
+            vec![(1, SinkAfter::Window(2))]
+        );
+    }
+
+    #[test]
+    fn overhang_sink_handles_chains_mutual_bleed_and_empty_target_monitor() {
+        let rc = |l, t, r, b| RECT {
+            left: l,
+            top: t,
+            right: r,
+            bottom: b,
+        };
+        let mons = [
+            rc(0, 0, 1920, 1080),
+            rc(1920, 0, 3840, 1080),
+            rc(3840, 0, 5760, 1080),
+        ];
+
+        // Chain M1 -> M2 -> M3, completely inverted (W1 z=0, W2 z=1, W3 z=2):
+        // W2 must move behind W3 BEFORE W1 moves behind W2 so one pass settles.
+        let w1 = SinkWin {
+            hwnd: 1,
+            mon: 0,
+            scrolling: true,
+            frame: rc(1400, 32, 2300, 1072),
+            z: 0,
+        };
+        let w2 = SinkWin {
+            hwnd: 2,
+            mon: 1,
+            scrolling: true,
+            frame: rc(3300, 32, 4200, 1072),
+            z: 1,
+        };
+        let w3 = SinkWin {
+            hwnd: 3,
+            mon: 2,
+            scrolling: false,
+            frame: rc(3848, 32, 5752, 1072),
+            z: 2,
+        };
+        assert_eq!(
+            plan_overhang_sinks(&mons, &[w1, w2, w3], 3, false),
+            vec![(2, SinkAfter::Window(3)), (1, SinkAfter::Window(2))]
+        );
+
+        // Mutual bleed (M1 -> M2 and M2 -> M1): break the cycle, emit nothing
+        // against each other instead of oscillating.
+        let m1 = SinkWin {
+            hwnd: 10,
+            mon: 0,
+            scrolling: true,
+            frame: rc(1400, 32, 2300, 1072),
+            z: 1,
+        };
+        let m2 = SinkWin {
+            hwnd: 20,
+            mon: 1,
+            scrolling: true,
+            frame: rc(1500, 32, 2400, 1072),
+            z: 2,
+        };
+        assert!(plan_overhang_sinks(&mons, &[m1, m2, w3], 3, false).is_empty());
+
+        // Bled-into monitor has no managed window: placement falls back to
+        // Bottom, while the periodic idle sweep does not spam HWND_BOTTOM.
+        assert_eq!(
+            plan_overhang_sinks(&mons, &[w1, w3], 3, true),
+            vec![(1, SinkAfter::Bottom)]
+        );
+        assert!(plan_overhang_sinks(&mons, &[w1, w3], 3, false).is_empty());
+    }
+
+    #[test]
+    fn sink_ctx_marks_only_tiled_scrolling_windows_and_drops_moved_or_floated() {
+        let mut mgr = test_manager(2, 1);
+        mgr.monitors[0].layout = "scrolling".into();
+        mgr.monitors[1].layout = "dwindle".into();
+        mgr.monitors[0].workspaces[0].windows = vec![101, 102];
+        mgr.monitors[0].workspaces[0].floating.push(102);
+        mgr.monitors[1].workspaces[0].windows = vec![201];
+
+        let ctx = build_sink_ctx(&mgr);
+        assert_eq!(ctx.monitors.len(), 2);
+        assert_eq!(
+            ctx.active,
+            vec![(101, 0, true), (102, 0, false), (201, 1, false)]
+        );
+        assert!(has_scrolling_multi_mon(&mgr));
+
+        // Moving window 101 from scrolling Monitor 0 to non-scrolling Monitor 1
+        // immediately clears its scrolling flag in the next SinkCtx snapshot.
+        mgr.monitors[0].workspaces[0].windows.retain(|&h| h != 101);
+        mgr.monitors[1].workspaces[0].windows.push(101);
+        let ctx2 = build_sink_ctx(&mgr);
+        assert_eq!(
+            ctx2.active,
+            vec![(102, 0, false), (201, 1, false), (101, 1, false)]
+        );
     }
 }
