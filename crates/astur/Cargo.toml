@@ -1,6 +1,6 @@
 [package]
 name = "astur"
-version = "2.8.4"
+version = "2.8.5"
 edition = "2021"
 description = "Alt-drag move/resize + tiling window manager for Windows"
 license = "Apache-2.0"
