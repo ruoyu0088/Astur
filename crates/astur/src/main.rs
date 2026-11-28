@@ -19,8 +19,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 use std::sync::atomic::{
-    AtomicBool, AtomicI32, AtomicI64, AtomicIsize, AtomicU32, AtomicU64, AtomicU8, AtomicUsize,
-    Ordering,
+    AtomicBool, AtomicI32, AtomicI64, AtomicIsize, AtomicU32, AtomicU64, AtomicU8, Ordering,
 };
 use std::sync::{Condvar, LazyLock, Mutex, OnceLock};
 use std::time::Instant;
@@ -1873,7 +1872,7 @@ fn bind_cmd(action: config::Action, arg: u16) -> Option<Cmd> {
         A::ToggleTiling => Cmd::ToggleTiling,
         A::ToggleTabbed => Cmd::ToggleTabbed,
         A::ToggleFloat => Cmd::ToggleFloat,
-        A::FillDesktop => Cmd::ToggleFill,
+        A::FillDesktop => Cmd::ToggleMaximize,
         A::CloseWindow => Cmd::CloseFocused,
         A::MinimizeWindow => Cmd::MinimizeWindow,
         A::RestoreAll => Cmd::RestoreAll,
@@ -3306,7 +3305,7 @@ enum Cmd {
     MoveToNextLocalWs(usize),
     ToggleTiling,
     ToggleFloat,
-    ToggleFill,
+    ToggleMaximize,
     CloseFocused,
     /// main_key + Q: minimize the focused window; a quick double press of
     /// the chord restores every window it minimized.
@@ -3423,7 +3422,7 @@ impl Cmd {
             Cmd::MoveToNextLocalWs(_) => "MoveToNextLocalWs",
             Cmd::ToggleTiling => "ToggleTiling",
             Cmd::ToggleFloat => "ToggleFloat",
-            Cmd::ToggleFill => "ToggleFill",
+            Cmd::ToggleMaximize => "ToggleMaximize",
             Cmd::CloseFocused => "CloseFocused",
             Cmd::MinimizeWindow => "MinimizeWindow",
             Cmd::RestoreAll => "RestoreAll",
@@ -3996,6 +3995,9 @@ struct MonBar {
     title: String,
     apps: Vec<BarApp>,
     layout: String, // this monitor's own layout (layouts are per monitor)
+    /// The active workspace is in Alt+E's full-size view: its layout name still
+    /// shows, with a marker, so the toggle reads as temporary.
+    maximized: bool,
     /// `workspace_apps`: per mark, up to that many cached app icons (WS_ICON_PX;
     /// 0 / -1 = placeholder) of that workspace's windows. Empty when off.
     ws_icons: Vec<Vec<isize>>,
@@ -4705,6 +4707,11 @@ struct Workspace {
     // Scrolling-layout columns, widths and scroll position. Only the
     // scrolling layout reads it; `windows` stays the membership and order.
     strip: Strip,
+    // Alt+E's temporary full-size view (see `toggle_maximize`): the workspace is
+    // placed with the monocle geometry while `layout_at` reports "monocle", and
+    // the layout, the splits and the strip are untouched. Runtime state only,
+    // never saved: a restart comes back with the layout's own geometry.
+    maximized: bool,
 }
 
 impl Workspace {
@@ -4715,6 +4722,7 @@ impl Workspace {
             focused: 0,
             splits: Vec::new(),
             strip: Strip::default(),
+            maximized: false,
         }
     }
 
@@ -5578,10 +5586,26 @@ impl Manager {
         }
     }
 
-    /// The layout `(mi, wi)` runs under: its `workspace_layouts` entry when
-    /// the config sets one, else the monitor's own (config- or
-    /// runtime-resolved) `layout`.
+    /// The layout `(mi, wi)` is laid out with, by name. A maximized workspace
+    /// reports "monocle": that is the geometry it is placed with, and every
+    /// consumer of the effective layout must see it — placement and parking,
+    /// the tab bars, the scrolling keys, the switch animation.
     fn layout_at(&self, mi: usize, wi: usize) -> &str {
+        let maximized = self
+            .monitors
+            .get(mi)
+            .and_then(|m| m.workspaces.get(wi))
+            .is_some_and(|ws| ws.maximized);
+        if maximized {
+            return "monocle";
+        }
+        self.base_layout_at(mi, wi)
+    }
+
+    /// The layout the config asks for, ignoring a maximized workspace: what the
+    /// bar shows. The maximize toggle is temporary, so the bar keeps naming the
+    /// workspace's own layout and marks the toggle separately.
+    fn base_layout_at(&self, mi: usize, wi: usize) -> &str {
         let global = self.ml_to_global(mi, wi);
         self.cfg
             .layout_for_workspace(global)
@@ -6202,233 +6226,40 @@ fn is_settings_process(exe_path: &str, class: &str) -> bool {
         && class.eq_ignore_ascii_case("TkTopLevel")
 }
 
-/// One window a fill-mode press took over: the rect and the floating state it
-/// had, so the same key can put it back.
-struct FilledWin {
-    h: isize,
-    old: RECT,
-    was_floating: bool,
-}
-
-/// A workspace in fill mode: every window it had when the key was pressed
-/// covers the work area, and focus picks which one shows.
-struct FilledWs {
-    wins: Vec<FilledWin>,
-}
-
-/// Fill mode per (monitor, workspace): each keeps its own state, so filling one
-/// workspace and switching to another does not lose the first one's layout.
-static FILLED: Mutex<Option<HashMap<(usize, usize), FilledWs>>> = Mutex::new(None);
-/// How many workspaces are in fill mode. The manager tail's cheap guard: with
-/// the mode off its focus pass costs one atomic load.
-static FILL_ACTIVE: AtomicUsize = AtomicUsize::new(0);
-/// The hwnd `fill_follow` last placed. The focus pass touches a window only
-/// when focus moves there, so a dialog the app opens over it stays on top.
-static FILL_SEEN: AtomicIsize = AtomicIsize::new(0);
-
-/// Alt+E: take the focused window's workspace over. In tiling mode every window
-/// of it goes over the whole work area (they float, so a re-tile leaves them
-/// alone and the strip keeps its order), and focus chooses which one shows:
-/// switching to another window of that workspace shows it in the same place.
-/// The next Alt+E, from any window of the workspace, puts the layout back
-/// exactly as it was. In float mode there is no layout to take over, so only
-/// the focused window's rect moves.
-unsafe fn toggle_fill(mgr: &mut Manager) {
-    let tiling = mgr.tiling;
-    let (mi, a, h) = mgr.focused();
-    if h == 0 || scratch_hidden(h) {
+/// Alt+E: show the focused workspace with every tiled window full size, the
+/// focused one on top, and the next press lay it out again. Nothing about the
+/// layout changes: the layout name, the splits and the strip stay as they are,
+/// so this is a view of the workspace, not a layout switch.
+///
+/// The full-size geometry is the monocle layout's: `layout_at` reports
+/// "monocle" while `maximized` is set, so placement, parking, the tab bars and
+/// the scrolling keys follow the toggle without knowing about it, and the bar
+/// keeps naming the workspace's real layout (with a marker).
+unsafe fn toggle_maximize(mgr: &mut Manager) {
+    let (mi, a, _) = mgr.focused();
+    if mi >= mgr.monitors.len() {
         return;
     }
-    let hwnd = hwnd_from(h);
-    // A minimised window's rect is its icon's, off screen: nothing to fill.
-    if IsIconic(hwnd).as_bool() {
+    let Some(ws) = mgr.monitors[mi].workspaces.get(a) else {
         return;
-    }
-    // Never hold FILLED across the Win32 calls below: a placement posts events
-    // this thread handles (a window's rect changed, tracked windows changed),
-    // and those take the lock too.
-    let prev = {
-        let mut guard = FILLED.lock().unwrap();
-        let map = guard.get_or_insert_with(HashMap::new);
-        let out = map.remove(&(mi, a));
-        FILL_ACTIVE.store(map.len(), Ordering::Relaxed);
-        out
     };
-    if let Some(fw) = prev {
-        // Back to what each window had: a floating one to its own rect, a tiled
-        // one into the strip (its order never changed).
-        let mut unfloat = false;
-        for w in &fw.wins {
-            if !IsWindow(hwnd_from(w.h)).as_bool() {
-                continue;
-            }
-            let ww = hwnd_from(w.h);
-            // A window the user maximised since filling ignores placement:
-            // take the maximise off first, so the old rect (or tile) takes.
-            if IsZoomed(ww).as_bool() {
-                let _ = ShowWindowAsync(ww, SW_RESTORE);
-            }
-            // Leave the strip list as it was found even in float mode: the
-            // entry we added would otherwise keep the window floating if
-            // tiling came back on later.
-            if !w.was_floating {
-                mgr.monitors[mi].workspaces[a]
-                    .floating
-                    .retain(|&x| x != w.h);
-                unfloat = true;
-            }
-            if (w.was_floating || !tiling) && !IsIconic(ww).as_bool() {
-                set_pos_raw(w.h, w.old);
-            }
-        }
-        if tiling && unfloat {
-            mgr.monitors[mi].workspaces[a].focused = h;
-            // The un-floated windows re-enter the strip at their old slots,
-            // which can lie off the view: scroll to it, or they park focused.
-            ensure_visible(mgr, mi, a);
-            retile_monitor(mgr, mi);
-        }
-        FILL_SEEN.store(0, Ordering::Relaxed);
-        // Back to the layout: every window left floating, so re-colour the ones
-        // that were tiled before the fill.
-        restyle_workspace(mgr, mi, a);
-        focus_window(h);
-        return;
+    let on = !ws.maximized;
+    // Leaving a strip for the full-size view brings every parked tile back on
+    // screen (parking is a rect, so a re-tile unparks them); nothing stays
+    // parked, so the cold snapshots it left are dead weight.
+    let was_scrolling = mgr.is_scrolling(mi, a);
+    mgr.monitors[mi].workspaces[a].maximized = on;
+    if was_scrolling && !mgr.is_scrolling(mi, a) {
+        cold_clear();
     }
-    // A maximised window already covers the work area: filling it would only
-    // drop the maximised state for the same picture.
-    if IsZoomed(hwnd).as_bool() {
-        return;
-    }
-    let wa = mgr.monitors[mi].work_area;
-    if !tiling {
-        // No layout to take over: fill just this window, and restore its rect.
-        let mut r = RECT::default();
-        if GetWindowRect(hwnd, &mut r).is_err() {
-            return;
-        }
-        FILLED
-            .lock()
-            .unwrap()
-            .get_or_insert_with(HashMap::new)
-            .insert(
-                (mi, a),
-                FilledWs {
-                    wins: vec![FilledWin {
-                        h,
-                        old: r,
-                        // Restored by rect: nothing placed it but us.
-                        was_floating: true,
-                    }],
-                },
-            );
-        FILL_ACTIVE.store(1, Ordering::Relaxed);
-        set_pos_raw(h, adjust_for_border(hwnd, wa));
-        FILL_SEEN.store(0, Ordering::Relaxed);
-        focus_window(h);
-        return;
-    }
-    // Tiling: every window of the workspace goes over the work area and floats,
-    // so a re-tile leaves it alone. ws.windows keeps its order, which is all the
-    // strip needs to restore the layout on the way out.
-    let members: Vec<isize> = mgr.monitors[mi].workspaces[a].windows.clone();
-    let mut wins: Vec<FilledWin> = Vec::with_capacity(members.len());
-    {
-        let ws = &mut mgr.monitors[mi].workspaces[a];
-        for &w in &members {
-            if w == 0 || scratch_hidden(w) || !IsWindow(hwnd_from(w)).as_bool() {
-                continue;
-            }
-            let ww = hwnd_from(w);
-            if IsIconic(ww).as_bool() {
-                continue;
-            }
-            let mut wr = RECT::default();
-            if GetWindowRect(ww, &mut wr).is_err() {
-                continue;
-            }
-            let was_floating = ws.floating.contains(&w);
-            if !was_floating {
-                ws.floating.push(w);
-            }
-            wins.push(FilledWin {
-                h: w,
-                old: wr,
-                was_floating,
-            });
-        }
-        ws.focused = h;
-    }
-    if wins.is_empty() {
-        return;
-    }
-    // Floating windows are never placed: a parked one would fill off screen,
-    // and it leaves its slot for good now.
-    for w in &wins {
-        unpark_tracked(w.h);
-        slot_forget(w.h);
-    }
-    for w in &wins {
-        set_pos_raw(w.h, adjust_for_border(hwnd_from(w.h), wa));
-    }
-    FILLED
-        .lock()
-        .unwrap()
-        .get_or_insert_with(HashMap::new)
-        .insert((mi, a), FilledWs { wins });
-    FILL_ACTIVE.store(
-        {
-            let guard = FILLED.lock().unwrap();
-            guard.as_ref().map_or(0, HashMap::len)
-        },
-        Ordering::Relaxed,
-    );
-    // The strip lost every tiled window: close the old slots (the filled ones
-    // float, so this leaves them alone).
+    ensure_visible(mgr, mi, a);
     retile_monitor(mgr, mi);
-    // Focus picks which of them shows; put that one on top now, rather than
-    // waiting for the next command's tail pass.
-    raise_nowait(hwnd);
-    FILL_SEEN.store(h, Ordering::Relaxed);
-    // Every window on the workspace is floating now: give them the floating
-    // border colour (the focus did not change, so nothing else would).
-    restyle_workspace(mgr, mi, a);
-    focus_window(h);
-}
-
-/// Fill mode's focus side: whichever filled window has focus covers the work
-/// area and sits on top, so moving around a filled workspace behaves like
-/// moving around maximised windows. Runs in the manager tail (after a command,
-/// never on a hook), which is where a focus key, a click and Windows' own pick
-/// all end up.
-unsafe fn fill_follow(mgr: &Manager) {
-    if FILL_ACTIVE.load(Ordering::Relaxed) == 0 {
-        FILL_SEEN.store(0, Ordering::Relaxed);
-        return;
+    // The stack's top window is the focused one: a focus key raises as it goes,
+    // but entering the mode needs the focused window put in front.
+    let focused = mgr.monitors[mi].workspaces[a].focused;
+    if focused != 0 {
+        raise_nowait(hwnd_from(focused));
     }
-    let (mi, a, h) = mgr.focused();
-    if h == 0 || FILL_SEEN.load(Ordering::Relaxed) == h {
-        return;
-    }
-    let filled = {
-        let guard = FILLED.lock().unwrap();
-        guard
-            .as_ref()
-            .and_then(|m| m.get(&(mi, a)))
-            .is_some_and(|fw| fw.wins.iter().any(|w| w.h == h))
-    };
-    if !filled {
-        return;
-    }
-    FILL_SEEN.store(h, Ordering::Relaxed);
-    let hwnd = hwnd_from(h);
-    // A minimised or user-maximised window is not ours to place right now.
-    if IsIconic(hwnd).as_bool() || IsZoomed(hwnd).as_bool() {
-        return;
-    }
-    let wa = mgr.monitors[mi].work_area;
-    set_pos_raw(h, adjust_for_border(hwnd, wa));
-    raise_nowait(hwnd);
 }
 
 /// Compute the visible-frame correction: Win32 GetWindowRect includes an
@@ -13858,12 +13689,15 @@ unsafe fn set_monitor_layout(mgr: &mut Manager, mi: usize, layout: String) {
     // Away from scrolling the new layout's tiles are all on screen, so the
     // retile brings every parked window back; a hidden workspace's parked
     // windows come back when it is next shown. Nothing is parked there to
-    // need a cold snapshot.
-    // Away from scrolling the new layout's tiles are all on screen, so the
-    // retile brings every parked window back. Checks the ACTIVE workspace's
-    // effective layout (a `workspace_layouts` override counts, not just the
-    // monitor fallback).
+    // need a cold snapshot. Checks the ACTIVE workspace's effective layout (a
+    // `workspace_layouts` override counts, not just the monitor fallback).
     let a = mgr.monitors[mi].active;
+    // A layout change is the user leaving Alt+E's full-size view: drop it
+    // first, so what they asked for is what they see (and so the layout keys
+    // still visibly do something while maximized).
+    if let Some(ws) = mgr.monitors[mi].workspaces.get_mut(a) {
+        ws.maximized = false;
+    }
     let was_scrolling = mgr.is_scrolling(mi, a);
     mgr.monitors[mi].layout = layout;
     if was_scrolling && !mgr.is_scrolling(mi, a) {
@@ -14261,6 +14095,9 @@ unsafe fn swap_workspaces(mgr: &mut Manager, mi: usize, wi: usize, to_mi: usize,
         ws.focused = focus_b;
         ws.splits.clear();
         ws.strip = Strip::default();
+        // A swap is a change of what the workspace holds, and Alt+E's view is
+        // temporary: both sides come back laid out.
+        ws.maximized = false;
     }
     {
         let ws = &mut mgr.monitors[to_mi].workspaces[to_wi];
@@ -14269,6 +14106,7 @@ unsafe fn swap_workspaces(mgr: &mut Manager, mi: usize, wi: usize, to_mi: usize,
         ws.focused = focus_a;
         ws.splits.clear();
         ws.strip = Strip::default();
+        ws.maximized = false;
     }
     for (m, w) in [(mi, wi), (to_mi, to_wi)] {
         let ws = &mut mgr.monitors[m].workspaces[w];
@@ -14360,13 +14198,6 @@ unsafe fn untrack_window(mgr: &mut Manager, h: isize) {
         SCRATCHPAD_HIDDEN.store(false, Ordering::Relaxed);
     }
     unmark_hidden_by_us(h); // untracked -> marker would only go stale
-    if let Some(map) = FILLED.lock().unwrap().as_mut() {
-        for fw in map.values_mut() {
-            fw.wins.retain(|w| w.h != h);
-        }
-        map.retain(|_, fw| !fw.wins.is_empty());
-        FILL_ACTIVE.store(map.len(), Ordering::Relaxed);
-    }
     let was_focus = mgr.focused().2 == h;
     if let Some((mi, wi, _)) = mgr.detach_window(h) {
         // Nothing places it from here on, and exit and crash rescue know only
@@ -15151,7 +14982,7 @@ unsafe fn process(mgr: &mut Manager, cmd: Cmd) {
             // and the focus did not move: repaint the state change now.
             restyle_workspace(mgr, mi, a);
         }
-        Cmd::ToggleFill => toggle_fill(mgr),
+        Cmd::ToggleMaximize => toggle_maximize(mgr),
         Cmd::CloseFocused => {
             let (_, _, h) = mgr.focused();
             if h != 0 {
@@ -17409,15 +17240,17 @@ unsafe fn update_bar(mgr: &Manager) {
             apps,
             ws_icons,
             focused: mi == mgr.focused_mon,
+            // Alt+E's view is temporary: the bar keeps naming the workspace's
+            // real layout and flags the toggle separately.
+            maximized: m.workspaces.get(m.active).is_some_and(|ws| ws.maximized),
             layout: {
-                let eff = mgr.layout_at(mi, m.active);
                 match m.workspaces.get(m.active) {
                     // `scrolling 2/5`: the focused column of the shown strip.
-                    Some(ws) if eff == "scrolling" => {
+                    Some(ws) if mgr.is_scrolling(mi, m.active) => {
                         let cols = ws.strip.columns(&tiled_windows(ws));
                         scroll_label(locate_tile(&cols, ws.focused).map(|p| p.0), cols.len())
                     }
-                    _ => eff.to_string(),
+                    _ => mgr.base_layout_at(mi, m.active).to_string(),
                 }
             },
         });
@@ -17848,7 +17681,12 @@ unsafe fn bar_widget_text(
             // Each bar shows its own monitor's layout; none before the
             // manager's first snapshot names the monitor.
             let s = if data.tiling {
-                format!("[{}]", mb?.layout)
+                // Alt+E's full-size view is temporary, so the layout name stays
+                // and a marker says the workspace is showing it (U+1F51D TOP
+                // ARROW; a bar font without it draws a box, and any short mark
+                // works here).
+                let mark = if mb?.maximized { "\u{1F51D}" } else { "" };
+                format!("[{}{}]", mb?.layout, mark)
             } else {
                 "[float]".to_string()
             };
@@ -21101,7 +20939,6 @@ fn manager_loop(cfg: Config) {
         let t1 = probe.map(|_| Instant::now());
         strip_after_command(&mut mgr);
         unsafe {
-            fill_follow(&mgr);
             claim_empty_focus(&mgr, focus_before);
             // The focus moved with no retile (a focus key off scrolling,
             // FocusMouse, Windows' own pick after a close) while a motion
@@ -21209,13 +21046,6 @@ fn sync_managed(mgr: &Manager) {
     }
     if let Some(warm) = WARM.lock().unwrap().as_mut() {
         warm.retain(|h| map.contains_key(h));
-    }
-    if let Some(filled) = FILLED.lock().unwrap().as_mut() {
-        for fw in filled.values_mut() {
-            fw.wins.retain(|w| map.contains_key(&w.h));
-        }
-        filled.retain(|_, fw| !fw.wins.is_empty());
-        FILL_ACTIVE.store(filled.len(), Ordering::Relaxed);
     }
     if let Some(exe) = EXE_CACHE.lock().unwrap().as_mut() {
         exe.retain(|h, _| map.contains_key(h));
@@ -31047,6 +30877,7 @@ mod tests {
                 })
                 .collect(),
             layout: "dwindle".into(),
+            maximized: false,
             ws_icons: Vec::new(),
             focused: false,
         };
@@ -32082,6 +31913,40 @@ mod tests {
         assert!(!mgr.is_scrolling(1, 2));
     }
 
+    #[test]
+    fn maximize_shows_the_monocle_geometry_and_keeps_the_layout_name() {
+        let mut mgr = test_manager(1, 2);
+        mgr.cfg.per_monitor = true;
+        mgr.monitors[0].layout = "dwindle".into();
+        mgr.monitors[0].workspaces[0].maximized = true;
+        // The effective layout is the monocle geometry, which is what
+        // `workspace_layout` places and what the strip-aware code asks about...
+        assert_eq!(mgr.layout_at(0, 0), "monocle");
+        // ...while the bar keeps naming the workspace's own layout...
+        assert_eq!(mgr.base_layout_at(0, 0), "dwindle");
+        // ...and only the workspace the key was pressed on is affected.
+        assert_eq!(mgr.layout_at(0, 1), "dwindle");
+        mgr.monitors[0].workspaces[0].maximized = false;
+        assert_eq!(mgr.layout_at(0, 0), "dwindle");
+    }
+
+    #[test]
+    fn maximize_switches_a_scrolling_workspace_off_its_strip() {
+        let mut mgr = test_manager(1, 1);
+        mgr.cfg.per_monitor = true;
+        mgr.cfg.workspace_layouts = vec!["scrolling".into()];
+        assert!(mgr.is_scrolling(0, 0));
+        mgr.monitors[0].workspaces[0].maximized = true;
+        // Nothing is parked off screen while the full-size view is up, and the
+        // strip-only keys have no strip to act on.
+        assert!(!mgr.is_scrolling(0, 0));
+        assert_eq!(mgr.layout_at(0, 0), "monocle");
+        // Going back lays the strip out again: the column order never changed.
+        mgr.monitors[0].workspaces[0].maximized = false;
+        assert!(mgr.is_scrolling(0, 0));
+        assert_eq!(mgr.base_layout_at(0, 0), "scrolling");
+    }
+
     // ---- scrolling keys, mouse, focus, drag (scrolling slice 5) ----
 
     // ---- hotkeys: the table against the lookup it replaced ----
@@ -32180,7 +32045,7 @@ mod tests {
             return one(Cmd::RestoreAll);
         }
         if vk == c.key_fill_desktop {
-            return one(Cmd::ToggleFill);
+            return one(Cmd::ToggleMaximize);
         }
         if vk == c.key_cycle_width {
             return pick(Cmd::CycleWidth, Cmd::CycleHeight);

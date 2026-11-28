@@ -219,7 +219,7 @@ pub struct Config {
     pub key_center_column: u32,  // Alt+<key> scrolling: centre focused column (default X)
     pub key_consume_left: u32,   // Alt+<key> scrolling: consume/expel left (default [)
     pub key_consume_right: u32,  // Alt+<key> scrolling: consume/expel right (default ])
-    pub key_fill_desktop: u32,   // Alt+<key> fill the workspace, focused on top (default E)
+    pub key_fill_desktop: u32,   // Alt+<key> maximize the workspace, focused on top (default E)
     pub key_system_menu: u32,    // Alt+<key> open the power menu (default M)
     pub key_swap_workspace: u32, // Alt+<key> enter swap-workspace mode (default P)
     pub key_switch_ws_1: u32,    // Alt+<key> go to the focused monitor's 1st workspace (default ,)
@@ -1956,7 +1956,8 @@ main_key = ralt
 #   Alt+arrows           focus window by direction (cursor follows)
 #   Alt+Shift+arrows     move window by direction (across monitors)
 #   Alt+S                promote focused window to master
-#   Alt+E                fill the workspace (the focused window on top), and back
+#   Alt+E                maximize this workspace (every tiled window full size,
+#                        the focused one on top), and back
 #   Alt+M                open the power menu (lock, sleep, restart ...)
 #   Alt+, / Alt+. / Alt+/  go to the 1st / 2nd / 3rd workspace of THIS screen
 #   Alt+L / Alt+; / Alt+'  go to the 1st / 2nd / 3rd workspace of the NEXT screen
@@ -4322,7 +4323,7 @@ impl Action {
             MoveUp => "Move the window up",
             MoveRight => "Move the window right",
             MoveDown => "Move the window down",
-            FillDesktop => "Fill the workspace, focused window on top",
+            FillDesktop => "Maximize the workspace, focused window on top",
             SwitchWorkspace => "Go to a workspace",
             MoveToWorkspace => "Move the window to a workspace",
             SwitchMonitorWorkspace => "Go to a workspace of this screen",

@@ -212,7 +212,7 @@ Right Alt.
 | `Alt` + `Shift` + arrows | Move window by direction (across monitors) |
 | `Alt` + `Z` / `C` | Shrink / grow master column (`master` layout) |
 | `Alt` + `S` | Promote focused window to master |
-| `Alt` + `E` | Fill the whole workspace (the focused window on top), or back (toggle) |
+| `Alt` + `E` | Maximize this workspace: every tiled window full size, the focused one on top; again to go back (rebindable: `key_fill_desktop`) |
 | `Alt` + `K` | Show the taskbar for a moment, if hiding it is on (rebindable: `hide_taskbar_hotkey`) |
 | `Alt` + `F` | Toggle float for focused window |
 | `Alt` + `W` | Close focused window |

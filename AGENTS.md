@@ -245,7 +245,11 @@ queues. Keep it that way — do not move work onto the hooks (main thread).
 
 ## Conventions
 
-- **No emojis in code.** Monochrome only, UI surfaces only.
+- **No emojis in code.** Monochrome only, UI surfaces only. One deliberate
+  exception, the owner's call: the bar's layout widget marks Alt+E's full-size
+  view with `\u{1F51D}`, written as an escape so the source stays ASCII. Other
+  user-facing strings may carry what the owner asks for; code and comments stay
+  ASCII.
 - Win32 calls are `unsafe`; keep `unsafe` blocks tight and comment the invariant.
 - **Never wait on an app's thread.** A window that stopped pumping makes a
   synchronous ShowWindow, BringWindowToTop, SetWindowPos, SetWindowPlacement or
@@ -293,12 +297,13 @@ positives, and `4288a7c` (README Star History). All reviewed; none adopted.
   key is RAlt and fully reserved, so no path reaches it. Premise to watch: a
   `main_key` of `win` or a passed-through Alt.
 - **`#32` keep an app-fullscreen or user-maximised tile as it is across a
-  switch.** Our maximise is fill mode (`FILLED` / `FilledWs`: remember the rect
-  and the floating state, keep the layout), never Win32 `IsZoomed`, so the
-  user-maximised half cannot happen. The app-fullscreen half (F11, a video, a
-  borderless game) would still apply to this tree, and was judged not wanted:
-  we have our own maximise key and do not recommend Win's. Premise to watch:
-  adopting Win's maximise.
+  switch.** Our maximise is Alt+E's temporary full-size view
+  (`Workspace.maximized`: `layout_at` reports `monocle`, the layout, the splits
+  and the strip are untouched), never Win32 `IsZoomed`, so the user-maximised
+  half cannot happen. The app-fullscreen half (F11, a video, a borderless game)
+  would still apply to this tree, and was judged not wanted: we have our own
+  maximise key and do not recommend Win's. Premise to watch: adopting Win's
+  maximise.
 - **Focus skips minimised windows.** Already ours, commit `195e57c`: `focusable`
   = not the toggled-away scratchpad and not `IsIconic`, used by `focus_target`,
   `focus_step` and `active_window_rects`.
